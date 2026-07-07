@@ -58,6 +58,8 @@ class Portfolio:
     def buy(self, d: Date, symbol: str, market: Market, quantity: int, price: float,
             reason: TradeReason, green_count: int = 0,
             fired: tuple[str, ...] = ()) -> Trade:
+        if symbol in self.positions:
+            raise ValueError(f"{self.character}: {symbol} 이미 보유 중 — 재매수 금지")
         cur = MARKET_CURRENCY[market]
         gross = quantity * price
         fee, tax = costmod.trade_costs(market, Side.BUY, gross, self.config.costs)
@@ -117,6 +119,8 @@ class Portfolio:
 
     def assert_invariants(self) -> None:
         for cur, amt in self.cash.items():
-            assert amt >= -_EPS, f"{self.character}: {cur} 현금 음수 ({amt})"
+            if amt < -_EPS:
+                raise RuntimeError(f"{self.character}: {cur} 현금 음수 ({amt})")
         for pos in self.positions.values():
-            assert pos.quantity > 0, f"{self.character}: {pos.symbol} 수량 0 이하"
+            if pos.quantity <= 0:
+                raise RuntimeError(f"{self.character}: {pos.symbol} 수량 0 이하")

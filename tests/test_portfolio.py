@@ -59,3 +59,29 @@ def test_flows_ledger_records_deposit_and_withdrawal():
     p.withdraw(D, 2_000_000, fx_rate=1300.0)
     assert [f.amount_krw for f in p.flows] == [10_000_000, -2_000_000]
     assert p.cash[Currency.KRW] == pytest.approx(8_000_000)
+
+def test_convert_to_usd_deducts_krw_with_fee():
+    p = krw_portfolio()
+    p.convert_to_usd(1000.0, fx_rate=1300.0)
+    assert p.cash[Currency.USD] == pytest.approx(1000.0)
+    assert p.cash[Currency.KRW] == pytest.approx(10_000_000 - 1000.0 * 1300.0 / 0.999)
+
+def test_convert_all_usd_to_krw():
+    p = krw_portfolio()
+    p.convert_to_usd(1000.0, fx_rate=1300.0)
+    krw_before = p.cash[Currency.KRW]
+    p.convert_all_usd_to_krw(fx_rate=1300.0)
+    assert p.cash[Currency.USD] == 0.0
+    assert p.cash[Currency.KRW] == pytest.approx(krw_before + 1000.0 * 1300.0 * 0.999)
+
+def test_rebuy_held_symbol_raises():
+    p = krw_portfolio()
+    p.buy(D, "005930", Market.KR, 10, 60000.0, TradeReason.SIGNAL_BUY)
+    with pytest.raises(ValueError):
+        p.buy(D, "005930", Market.KR, 10, 60000.0, TradeReason.SIGNAL_BUY)
+
+def test_invariant_violation_raises_even_without_asserts():
+    p = krw_portfolio()
+    p.cash[Currency.KRW] = -1.0
+    with pytest.raises(RuntimeError):
+        p.assert_invariants()
