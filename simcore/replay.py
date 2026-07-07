@@ -1,0 +1,130 @@
+"""리플레이 오케스트레이션: 과거 일봉을 날짜 루프로 엔진에 주입한다.
+같은 달력 날짜의 KR·US 세션은 같은 스텝에서 처리한다(일 단위 근사)."""
+from __future__ import annotations
+from dataclasses import dataclass, field
+from datetime import date as Date
+import pandas as pd
+
+from simcore.config import Config
+from simcore.engine import Engine
+from simcore.models import DailyBar, Market, SymbolSnapshot
+from simcore import signals as sigmod
+from simcore import metrics
+
+
+@dataclass
+class DataBundle:
+    kr: dict[str, pd.DataFrame]
+    us: dict[str, pd.DataFrame]
+    fx: pd.Series  # KRW per USD
+
+
+@dataclass(frozen=True)
+class FlowEvent:
+    date: Date
+    character: str
+    amount_krw: float
+    liquidate: tuple[str, ...] = ()
+
+
+@dataclass
+class ReplayResult:
+    trades: pd.DataFrame
+    equity: pd.DataFrame
+    flows_by_char: dict[str, pd.Series]
+    green_hist: pd.Series
+    summary: dict
+
+
+def _market_data(bundle: DataBundle) -> dict[Market, dict[str, pd.DataFrame]]:
+    return {Market.KR: bundle.kr, Market.US: bundle.us}
+
+
+def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
+               flows: list[FlowEvent] = ()) -> ReplayResult:
+    md = _market_data(bundle)
+    # 1) 신호 표를 종목당 한 번 벡터화 계산
+    frames = {m: {sym: sigmod.evaluate_frame(df, config.signals)
+                  for sym, df in data.items()}
+              for m, data in md.items()}
+    # 2) 시뮬 날짜 = 두 시장 거래일 합집합 (start~end)
+    all_dates = sorted({d for data in md.values() for df in data.values()
+                        for d in df.index if start <= d.date() <= end})
+    if not all_dates:
+        raise ValueError("리플레이 구간에 거래일이 없습니다")
+    flow_map: dict[Date, list[FlowEvent]] = {}
+    for f in flows:
+        flow_map.setdefault(f.date, []).append(f)
+
+    engine = Engine(config)
+    fx0 = float(bundle.fx.asof(all_dates[0]))
+    engine.start(all_dates[0].date(), fx0)
+
+    last_close: dict[str, float] = {}
+    equity_rows, green_counts = [], []
+    for ts in all_dates:
+        d = ts.date()
+        fx = float(bundle.fx.asof(ts))
+        opens_today: dict[str, float] = {}
+        for market, data in md.items():
+            opens = {sym: float(df.loc[ts, "open"])
+                     for sym, df in data.items() if ts in df.index}
+            opens_today.update(opens)
+            if not opens:
+                continue
+            # (a) 입출금은 첫 시장 개장 전 1회 처리 (아래 공통 블록에서)
+        for f in flow_map.get(d, []):
+            engine.apply_flow(d, f.character, f.amount_krw, fx,
+                              open_prices=opens_today, liquidate=f.liquidate)
+        for market, data in md.items():
+            todays = {sym: df for sym, df in data.items() if ts in df.index}
+            if not todays:
+                continue
+            opens = {sym: float(df.loc[ts, "open"]) for sym, df in todays.items()}
+            engine.fill_open(d, market, opens, fx)
+            bars = {sym: DailyBar(sym, d, float(df.loc[ts, "open"]),
+                                  float(df.loc[ts, "high"]), float(df.loc[ts, "low"]),
+                                  float(df.loc[ts, "close"]), float(df.loc[ts, "volume"]))
+                    for sym, df in todays.items()}
+            engine.check_stops(d, market, bars, fx)
+            snaps: dict[str, SymbolSnapshot] = {}
+            for sym, df in todays.items():
+                green, red = sigmod.fired_at(frames[market][sym], ts)
+                loc = df.index.get_loc(ts)
+                prev_close = float(df["close"].iloc[loc - 1]) if loc > 0 else float(df.loc[ts, "close"])
+                close = float(df.loc[ts, "close"])
+                snaps[sym] = SymbolSnapshot(
+                    sym, market, green, red, close,
+                    close / prev_close - 1.0, float(df.loc[ts, "volume"]))
+                last_close[sym] = close
+                green_counts.append(len(green))
+            engine.evaluate_close(d, market, snaps)
+        eq = engine.snapshot(last_close, fx)
+        equity_rows.append({"date": ts, **eq})
+
+    # ---- 결과 집계 ----
+    equity = pd.DataFrame(equity_rows).set_index("date")
+    trades = pd.DataFrame([{
+        "date": t.date, "character": t.character, "symbol": t.symbol,
+        "market": t.market.value, "side": t.side.value, "quantity": t.quantity,
+        "price": t.price, "fee": t.fee, "tax": t.tax, "reason": t.reason.value,
+        "green_count": t.green_count, "red_count": t.red_count,
+        "fired": ";".join(t.fired), "realized_pnl": t.realized_pnl,
+    } for st in engine.states.values() for t in st.portfolio.trades])
+
+    flows_by_char, summary = {}, {}
+    for name, st in engine.states.items():
+        f = pd.Series({pd.Timestamp(fl.date): fl.amount_krw
+                       for fl in st.portfolio.flows[1:]})  # 첫 입금(초기자금) 제외
+        f = f.groupby(level=0).sum()
+        flows_by_char[name] = f
+        eq = equity[name]
+        char_trades = trades[trades.character == name] if not trades.empty else trades
+        summary[name] = {
+            "twr": metrics.time_weighted_return(eq, f),
+            "mdd": metrics.max_drawdown(eq),
+            "pnl_krw": metrics.simple_pnl_krw(eq, f),
+            "n_trades": int(len(char_trades)),
+        }
+    green_hist = pd.Series(green_counts).value_counts().sort_index()
+    return ReplayResult(trades, equity, flows_by_char, green_hist, summary)
