@@ -51,7 +51,7 @@ class CharacterState:
     portfolio: Portfolio
     pending_buys: list[PendingBuy] = field(default_factory=list)
     pending_sells: list[PendingSell] = field(default_factory=list)
-    cooldowns: dict[str, int] = field(default_factory=dict)
+    cooldowns: dict[str, list] = field(default_factory=dict)  # sym -> [Market, remaining_days]
 
 
 class Engine:
@@ -74,12 +74,16 @@ class Engine:
         for st in self.states.values():
             if market not in st.spec.markets:
                 continue
-            # 쿨다운: 이 시장 마감마다 1 감소 (이 시장 종목만)
+            # 쿨다운: 이 시장 마감마다 무조건 1 감소 (스냅샷 누락·거래정지와 무관)
             for sym in list(st.cooldowns):
-                if sym in snaps:
-                    st.cooldowns[sym] -= 1
-                    if st.cooldowns[sym] <= 0:
-                        del st.cooldowns[sym]
+                cd_market, remaining = st.cooldowns[sym]
+                if cd_market != market:
+                    continue
+                remaining -= 1
+                if remaining <= 0:
+                    del st.cooldowns[sym]
+                else:
+                    st.cooldowns[sym][1] = remaining
             # 보유 종목 매도 판정 (R7/R10 은 종가 기준으로 여기서 추가)
             already_pending = {ps.symbol for ps in st.pending_sells}
             for sym, pos in st.portfolio.positions.items():
@@ -97,7 +101,7 @@ class Engine:
             # 매수 후보 (미보유 · 쿨다운 아님 · 임계값 이상)
             held = set(st.portfolio.positions) | {b.symbol for b in st.pending_buys}
             for sym, s in snaps.items():
-                if (sym in held or st.cooldowns.get(sym, 0) > 0
+                if (sym in held or sym in st.cooldowns
                         or len(s.green) < r.buy_threshold):
                     continue
                 st.pending_buys.append(PendingBuy(
@@ -135,7 +139,7 @@ class Engine:
                     break
                 price = opens.get(b.symbol)
                 if (price is None or b.symbol in st.portfolio.positions
-                        or st.cooldowns.get(b.symbol, 0) > 0):
+                        or b.symbol in st.cooldowns):
                     continue
                 self._buy(st, d, b, price, fx_rate, slots)
 
@@ -166,6 +170,6 @@ class Engine:
         fill_price = price * (1 - self.config.costs.slippage)
         st.portfolio.sell(d, symbol, fill_price, reason,
                           red_count=red_count, fired=fired)
-        st.cooldowns[symbol] = self.config.rules.cooldown_days
+        st.cooldowns[symbol] = [pos.market, self.config.rules.cooldown_days]
         if st.spec.base_currency == Currency.KRW and pos.market == Market.US:
             st.portfolio.convert_all_usd_to_krw(fx_rate)  # 범용형: 매도 대금 즉시 원화로

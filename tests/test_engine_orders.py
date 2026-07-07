@@ -93,3 +93,23 @@ def test_r7_close_based_counts_toward_sell_threshold():
     e.evaluate_close(D2, Market.KR, {"A": snap("A", red=("R1", "R2"), close=92.0)})
     st = e.states["국내형"]
     assert len(st.pending_sells) == 1 and "R7" in st.pending_sells[0].fired
+
+def test_cooldown_decrements_even_when_symbol_missing_from_snaps():
+    e = make_engine(buy_threshold=1)
+    e.evaluate_close(D1, Market.KR, {"A": snap("A", green=("G1",))})
+    e.fill_open(D2, Market.KR, {"A": 100.0}, fx_rate=1300.0)
+    e.evaluate_close(D2, Market.KR, {"A": snap("A", red=("R1", "R2", "R4"))})
+    e.fill_open(D3, Market.KR, {"A": 100.0}, fx_rate=1300.0)   # 매도 체결, 쿨다운 시작
+    # A 가 거래정지로 이틀간 스냅샷에서 빠져도 쿨다운은 시장 마감마다 감소해야 함
+    e.evaluate_close(D3, Market.KR, {"B": snap("B")})
+    e.evaluate_close(D4, Market.KR, {"B": snap("B")})
+    assert "A" not in e.states["국내형"].cooldowns
+
+def test_r10_close_based_counts_toward_sell_threshold():
+    e = make_engine(buy_threshold=1)
+    e.evaluate_close(D1, Market.KR, {"A": snap("A", green=("G1",))})
+    e.fill_open(D2, Market.KR, {"A": 100.0}, fx_rate=1300.0)
+    # 종가 116 = 평단 100 대비 +16% → R10 추가, R1·R2 와 합쳐 3개 도달
+    e.evaluate_close(D2, Market.KR, {"A": snap("A", red=("R1", "R2"), close=116.0)})
+    st = e.states["국내형"]
+    assert len(st.pending_sells) == 1 and "R10" in st.pending_sells[0].fired
