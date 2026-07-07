@@ -173,3 +173,50 @@ class Engine:
         st.cooldowns[symbol] = [pos.market, self.config.rules.cooldown_days]
         if st.spec.base_currency == Currency.KRW and pos.market == Market.US:
             st.portfolio.convert_all_usd_to_krw(fx_rate)  # 범용형: 매도 대금 즉시 원화로
+
+    # ---- 장중: 손절/익절 (리플레이 = 당일 OHLC 근사, 라이브 = 현재가 bar) ----
+    def check_stops(self, d: Date, market: Market, bars: dict[str, DailyBar],
+                    fx_rate: float) -> None:
+        r = self.config.rules
+        for st in self.states.values():
+            if market not in st.spec.markets:
+                continue
+            for sym in list(st.portfolio.positions):
+                pos = st.portfolio.positions[sym]
+                if pos.market != market or sym not in bars:
+                    continue
+                b = bars[sym]
+                stop_px = pos.avg_price * (1 + r.stop_loss_pct)
+                take_px = pos.avg_price * (1 + r.take_profit_pct)
+                if b.low <= stop_px:  # 손절 우선 (보수적)
+                    self._sell(st, d, sym, stop_px, TradeReason.STOP_LOSS, fx_rate)
+                elif b.high >= take_px:
+                    self._sell(st, d, sym, take_px, TradeReason.TAKE_PROFIT, fx_rate)
+
+    # ---- 사용자 입출금 ----
+    def apply_flow(self, d: Date, character: str, amount_krw: float, fx_rate: float,
+                   open_prices: dict[str, float] | None = None,
+                   liquidate: tuple[str, ...] = ()) -> None:
+        st = self.states[character]
+        if amount_krw >= 0:
+            st.portfolio.deposit(d, amount_krw, fx_rate)
+            return
+        for sym in liquidate:  # 사용자가 지정한 청산 종목을 당일 시가로 매도
+            if sym not in st.portfolio.positions:
+                continue
+            price = (open_prices or {}).get(sym)
+            if price is None:
+                raise ValueError(f"{character}: {sym} 청산 가격이 없습니다")
+            self._sell(st, d, sym, price, TradeReason.USER_WITHDRAWAL, fx_rate)
+        st.portfolio.withdraw(d, -amount_krw, fx_rate)
+
+    # ---- 평가·강제 처리 ----
+    def snapshot(self, last_close: dict[str, float], fx_rate: float) -> dict[str, float]:
+        return {name: st.portfolio.equity_krw(last_close, fx_rate)
+                for name, st in self.states.items()}
+
+    def force_close(self, d: Date, symbol: str, price: float, fx_rate: float) -> None:
+        """상장폐지 등: 모든 캐릭터에서 마지막 가격으로 강제 청산."""
+        for st in self.states.values():
+            if symbol in st.portfolio.positions:
+                self._sell(st, d, symbol, price, TradeReason.DELISTED, fx_rate)
