@@ -1,0 +1,26 @@
+[project]
+name = "simcore"
+version = "0.1.0"
+description = "규칙 기반 롱온리 페이퍼 트레이딩 시뮬레이터 엔진 코어"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "pykrx>=1.0.45",
+    "yfinance>=0.2.40",
+    "pyarrow>=15",
+    "lxml>=5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["simcore*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
