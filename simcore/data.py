@@ -23,7 +23,7 @@ def _cached(cache_dir: Path, key: str, fetch: Callable[[], pd.DataFrame]) -> pd.
         return df
     df = fetch()
     if df.empty:
-        print(f"[data] {key}: 빈 응답 — 캐시에 저장하지 않음 (다음 실행 시 재시도)")
+        print(f"[data] {key}: 빈 응답 - 캐시에 저장하지 않음 (다음 실행 시 재시도)")
         return df
     df.to_parquet(path)
     return df
