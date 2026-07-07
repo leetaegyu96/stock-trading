@@ -15,6 +15,9 @@ venv/
 data/cache/
 *.parquet
 
+# 리플레이 산출물
+out/
+
 # OS/에디터
 .DS_Store
 Thumbs.db
