@@ -27,3 +27,14 @@ def test_cache_returns_copy_schema():
         df = _cached(pathlib.Path(td), "k", fake_fetch)
         assert isinstance(df.index, pd.DatetimeIndex)
         assert list(df.columns) == ["open", "high", "low", "close", "volume"]
+
+def test_empty_fetch_result_is_not_cached(tmp_path):
+    calls = []
+    def fetch_empty():
+        calls.append(1)
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    df1 = _cached(tmp_path, "KR_000000_20250101_20250131", fetch_empty)
+    df2 = _cached(tmp_path, "KR_000000_20250101_20250131", fetch_empty)
+    assert df1.empty and df2.empty
+    assert len(calls) == 2  # 빈 응답은 캐시되지 않아 재시도됨
+    assert not (tmp_path / "KR_000000_20250101_20250131.parquet").exists()
