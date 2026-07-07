@@ -1741,9 +1741,10 @@ def make_ohlcv(closes, idx):
 
 def make_bundle():
     idx = pd.bdate_range("2024-10-01", periods=160)
-    # UPUP: 90일 상승 후 하루 -12% 폭락 → 매수 후 손절 시나리오
+    # UPUP: 120일 상승 후 하루 -20% 폭락 → 매수 후 손절 시나리오
+    # (-20%: 상승 중 익절/재매수로 평단이 갱신되어도 확실히 -7% 손절선을 뚫는 크기)
     closes = list(100 * (1.005 ** np.arange(120)))
-    crash = closes[-1] * 0.88
+    crash = closes[-1] * 0.80
     closes += [crash] * 40
     kr = {"UPUP": make_ohlcv(closes, idx)}
     fx = pd.Series(1300.0, index=idx)
@@ -1775,8 +1776,7 @@ def test_withdrawal_flow_with_liquidation():
     r = run_replay(CFG, bundle, idx[70].date(), idx[-1].date(), flows=flows)
     tr = r.trades[(r.trades.character == "국내형") & (r.trades.reason == "USER_WITHDRAWAL")]
     assert len(tr) == 1
-    assert r.summary["국내형"]["twr"] == pytest.approx(
-        r.summary["국내형"]["twr"])  # smoke: 계산 가능
+    assert r.flows_by_char["국내형"].sum() == pytest.approx(-95_000_000)
 ```
 
 - [ ] **Step 2: 실패 확인** — Run: `.venv\Scripts\python -m pytest tests\test_replay_integration.py -v` — Expected: FAIL
