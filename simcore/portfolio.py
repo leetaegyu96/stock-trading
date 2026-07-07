@@ -16,7 +16,7 @@ class InsufficientCashError(Exception):
         self.character = character
         self.shortfall_krw = shortfall_krw
         super().__init__(
-            f"{character}: 출금 부족액 {shortfall_krw:,.0f} KRW — 청산할 종목을 지정하세요")
+            f"{character}: 출금 부족액 {shortfall_krw:,.0f} KRW - 청산할 종목을 지정하세요")
 
 
 class Portfolio:
@@ -59,7 +59,7 @@ class Portfolio:
             reason: TradeReason, green_count: int = 0,
             fired: tuple[str, ...] = ()) -> Trade:
         if symbol in self.positions:
-            raise ValueError(f"{self.character}: {symbol} 이미 보유 중 — 재매수 금지")
+            raise ValueError(f"{self.character}: {symbol} 이미 보유 중 - 재매수 금지")
         cur = MARKET_CURRENCY[market]
         gross = quantity * price
         fee, tax = costmod.trade_costs(market, Side.BUY, gross, self.config.costs)

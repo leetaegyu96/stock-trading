@@ -18,7 +18,7 @@ def time_weighted_return(equity: pd.Series, flows: pd.Series | None = None) -> f
     if flows is None:
         f = pd.Series(0.0, index=eq.index)
     else:
-        f = flows.reindex(eq.index).fillna(0.0)
+        f = flows.reindex(eq.index).astype("float64").fillna(0.0)
     twr = 1.0
     prev = eq.iloc[0]
     for d in eq.index[1:]:
@@ -43,5 +43,5 @@ def simple_pnl_krw(equity: pd.Series, flows: pd.Series | None = None) -> float:
         return 0.0
     net_flows = 0.0
     if flows is not None:
-        net_flows = float(flows.reindex(eq.index[1:]).fillna(0.0).sum())
+        net_flows = float(flows.reindex(eq.index[1:]).astype("float64").fillna(0.0).sum())
     return float(eq.iloc[-1] - eq.iloc[0] - net_flows)

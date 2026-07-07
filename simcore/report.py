@@ -27,7 +27,8 @@ def write_outputs(result: ReplayResult, config: Config, out_dir: Path,
         lines += ["", "## 벤치마크 (매수후보유)", ""]
         lines += [f"- {k}: {v:+.2%}" for k, v in benchmarks.items()]
     lines += ["", "## 신호 분포 (청신호 개수별 종목-일 수)", "",
-              result.green_hist.to_string(), "", "## 설정 스냅샷", "",
+              "> 참고: 청신호 최대 8개 (G8·G9 감정·수급 신호는 스텁, 항상 꺼짐). 매수 임계값 7 = 가능한 8개 중 7개 충족.",
+              "", result.green_hist.to_string(), "", "## 설정 스냅샷", "",
               "```python", repr(asdict(config)), "```"]
     text = "\n".join(lines)
     print(text)
