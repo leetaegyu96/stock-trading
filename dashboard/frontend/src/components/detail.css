@@ -1,0 +1,212 @@
+/* 상세 페이지(자산곡선·보유종목·거래내역·성과지표) 전용 스타일.
+ * 공통 토큰(theme.css)의 --color-up(빨강=상승)/--color-down(파랑=하락)을 그대로 재사용한다. */
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.detail-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.detail-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  padding: 16px 20px;
+}
+
+.detail-panel__title {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 12px;
+  color: var(--color-text);
+}
+
+.detail-panel__state {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  padding: 20px 0;
+  text-align: center;
+}
+
+/* 자산곡선 차트 */
+.equity-chart__toggle {
+  display: inline-flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.equity-chart__toggle-btn {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.equity-chart__toggle-btn.is-active {
+  background: var(--color-text);
+  color: var(--color-surface);
+  border-color: var(--color-text);
+}
+
+.equity-chart__summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: 6px;
+}
+
+.equity-chart__summary span:last-child {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.equity-chart__axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 4px;
+}
+
+.equity-chart__state {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  padding: 20px 0;
+  text-align: center;
+}
+
+/* 공용 테이블 */
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 560px;
+}
+
+.detail-table th {
+  text-align: left;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.detail-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.detail-table__symbol {
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.detail-table__market {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.detail-table__reason {
+  white-space: normal;
+  color: var(--color-text-muted);
+  max-width: 220px;
+}
+
+.detail-table__signals {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.detail-table__no-signal {
+  color: var(--color-text-muted);
+}
+
+/* 배지 공용 */
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  line-height: 1.6;
+}
+
+.badge--stale {
+  margin-left: 6px;
+  background: rgba(107, 114, 128, 0.16);
+  color: var(--color-text-muted);
+}
+
+.badge--signal-green {
+  background: rgba(46, 125, 50, 0.14);
+  color: #2e7d32;
+}
+
+.badge--signal-red {
+  background: rgba(198, 40, 40, 0.14);
+  color: #c62828;
+}
+
+.badge--signal-unknown {
+  background: rgba(107, 114, 128, 0.14);
+  color: var(--color-text-muted);
+}
+
+@media (prefers-color-scheme: dark) {
+  .badge--signal-green {
+    color: #66bb6a;
+  }
+  .badge--signal-red {
+    color: #ef5350;
+  }
+}
+
+:root[data-theme="dark"] .badge--signal-green {
+  color: #66bb6a;
+}
+
+:root[data-theme="dark"] .badge--signal-red {
+  color: #ef5350;
+}
+
+/* 성과지표 패널 */
+.metrics-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 16px;
+}
+
+.metrics-panel__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metrics-panel__label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.metrics-panel__value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text);
+}
