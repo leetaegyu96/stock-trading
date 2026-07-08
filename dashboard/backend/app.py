@@ -8,7 +8,7 @@ from simcore.live.ratelimit import RateLimiter
 from simcore.live.repository import DbTokenStore, Repository
 from simcore.live.settings import load_settings
 
-from dashboard.backend import db, queries, summary
+from dashboard.backend import db, flows, queries, summary
 from dashboard.backend.live_prices import current_prices
 from dashboard.backend.schemas import (
     CardSummary,
@@ -117,3 +117,13 @@ def character_trades(name: str, limit: int = 200, sf=Depends(get_sf)) -> list[Tr
 @app.get("/api/characters/{name}/flows", response_model=list[FlowOut])
 def character_flows(name: str, sf=Depends(get_sf)) -> list[FlowOut]:
     return [FlowOut(**f) for f in queries.flows(sf, name)]
+
+
+@app.post("/api/characters/{name}/deposit")
+def deposit_flow(name: str, body: flows.DepositIn, sf=Depends(get_sf)) -> dict:
+    return flows.deposit(sf, name, body)
+
+
+@app.post("/api/characters/{name}/withdraw")
+def withdraw_flow(name: str, body: flows.WithdrawIn, sf=Depends(get_sf)) -> dict:
+    return flows.withdraw(sf, name, body)
