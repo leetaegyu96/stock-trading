@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -41,7 +42,8 @@ async def _broadcast_loop(interval: float) -> None:
         try:
             await broadcaster.poll_once(db.session_factory())
         except Exception:
-            pass  # 폴링 1회 실패는 무시하고 다음 주기에 재시도
+            logging.getLogger(__name__).exception("broadcast poll failed")
+            # 폴링 1회 실패는 무시하고 다음 주기에 재시도
         await asyncio.sleep(interval)
 
 
