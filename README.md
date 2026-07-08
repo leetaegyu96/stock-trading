@@ -13,6 +13,24 @@
 
 입출금 CSV 형식: `date,character,amount_krw,liquidate` (liquidate 는 세미콜론 구분 종목코드, 출금 시 청산 지정)
 
+## 라이브 모드 (KIS 실시세)
+
+KIS 실시세로 스케줄러가 엔진을 실시간 구동하고 상태·거래내역을 PostgreSQL에 영속한다.
+KIS는 **데이터 피드 전용**(주문하지 않음)이며 3캐릭터는 엔진이 자체 시뮬레이션한다.
+
+    # 1) PostgreSQL 준비 후 .env 채우기 (KIS 키·DATABASE_URL — .env.example 참고)
+    # 2) 데몬 시작
+    py -m simcore.live run
+    # 3) 입출금 예약 (다음 개장에 반영)
+    py -m simcore.live deposit 국내형 5000000
+    py -m simcore.live withdraw 해외형 3000000 --liquidate AAPL
+
+- KIS `access_token` 은 앱키/시크릿으로 자동 발급·캐시된다(직접 입력 불필요).
+- 재시작 시 DB에서 상태를 복원하고, 꺼져 있던 거래일은 확정 일봉으로 재생(갭 리플레이)해 따라잡는다.
+- 라이브와 리플레이는 동일한 엔진 코드 경로를 타며, 동치성 테스트로 보증한다.
+
+설계: `docs/superpowers/specs/2026-07-08-simcore-live-kis-design.md`
+
 ## 테스트
     .venv\Scripts\python -m pytest
 
