@@ -3,6 +3,13 @@
 equity_curve 의 ts(장마감 시각)와 capital_flows 의 date(날짜)를 같은 거래일 인덱스로
 맞추기 위해 equity 타임스탬프를 자정으로 정규화한다. capital_flows 는 replay.run_replay
 와 동일하게 첫 건(초기입금)을 제외하고 나머지만 순입출금으로 반영한다.
+
+주의(한계): 이 정규화는 "같은 날 중복 포인트"(simcore/live/orchestrator.on_close 가
+KR·US 마감마다 하루 2회 equity 를 기록)만 하루 1점으로 접어 해결한다. on_close 는
+equity 를 서버 벽시계(datetime.now())로 기록하므로, KST 서버 기준 US 세션 마감은
+자정을 넘겨 flow 의 거래일(date=d)보다 하루 뒤 버킷에 잡힐 수 있다 — 이 cross-midnight
+귀속 어긋남은 여기서 해결하지 못하며, US 측 입출금 전후 TWR/PNL 이 하루 어긋날 수 있다.
+근본 해결은 simcore/live 후속 과제(EquityPoint 에 세션 거래일을 별도 저장)로 추적한다.
 """
 from __future__ import annotations
 
