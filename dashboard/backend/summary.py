@@ -16,6 +16,7 @@ from __future__ import annotations
 import pandas as pd
 
 from simcore import metrics
+from simcore.engine import DEFAULT_CHARACTERS
 from simcore.models import Market
 
 from dashboard.backend import queries
@@ -23,6 +24,16 @@ from dashboard.backend.schemas import CardSummary, Metrics
 
 _SPARK_POINTS = 30
 _ALL_TRADES_LIMIT = 1_000_000  # win_rate/n_trades 는 페이지네이션 없이 전체 이력을 봐야 함
+_SPEC_BY_NAME = {s.name: s for s in DEFAULT_CHARACTERS}
+
+
+def _character_identity(name: str) -> tuple[str, list[str]]:
+    """DEFAULT_CHARACTERS(국내형/해외형/범용형)에서 base_currency/markets 매핑.
+    테스트 등 알 수 없는 이름은 기본값(KRW, markets 없음)으로 폴백한다."""
+    spec = _SPEC_BY_NAME.get(name)
+    if spec is None:
+        return "KRW", []
+    return spec.base_currency.value, [m.value for m in spec.markets]
 
 
 def _equity_series(sf, name: str) -> pd.Series:
@@ -78,7 +89,13 @@ def card_summary(sf, name: str, fx_rate: float, last_prices: dict[str, float]) -
     cash_krw = cash.get("KRW", 0.0) + cash.get("USD", 0.0) * fx_rate
     positions_krw = sum(_position_value_krw(p, last_prices, fx_rate) for p in positions)
 
+    base_currency, markets = _character_identity(name)
+
     return CardSummary(
+        name=name,
+        base_currency=base_currency,
+        markets=markets,
+        benchmark_delta=None,
         total_asset_krw=cash_krw + positions_krw,
         twr=twr,
         pnl_krw=pnl_krw,

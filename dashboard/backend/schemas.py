@@ -8,6 +8,10 @@ from pydantic import BaseModel
 
 class CardSummary(BaseModel):
     """캐릭터 카드 요약."""
+    name: str
+    base_currency: str
+    markets: list[str]
+    benchmark_delta: float | None = None
     total_asset_krw: float
     twr: float
     pnl_krw: float

@@ -68,9 +68,21 @@ def test_list_characters_returns_all_seeded_cards(sf):
     assert len(cards) == 3
     for card in cards:
         assert set(card) == {
+            "name", "base_currency", "markets", "benchmark_delta",
             "total_asset_krw", "twr", "pnl_krw", "today_pnl_pct",
             "equity_spark", "n_positions", "cash_krw",
         }
+
+    # 각 카드가 name 으로 식별되고, DEFAULT_CHARACTERS 매핑(시장/기준통화)이 반영된다.
+    by_name = {c["name"]: c for c in cards}
+    assert set(by_name) == {"국내형", "해외형", "범용형"}
+    assert by_name["국내형"]["base_currency"] == "KRW"
+    assert by_name["국내형"]["markets"] == ["KR"]
+    assert by_name["해외형"]["base_currency"] == "USD"
+    assert by_name["해외형"]["markets"] == ["US"]
+    assert by_name["범용형"]["base_currency"] == "KRW"
+    assert by_name["범용형"]["markets"] == ["KR", "US"]
+    assert all(c["benchmark_delta"] is None for c in cards)
 
 
 @needs_db
