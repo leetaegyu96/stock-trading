@@ -1,4 +1,6 @@
+import shutil
 from datetime import date, datetime
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,6 +15,54 @@ from dashboard.backend.app import app, get_kis, get_sf
 def test_health():
     r = TestClient(app).get("/api/health")
     assert r.status_code == 200 and r.json()["status"] == "ok"
+
+
+_FRONTEND_DIR = Path(__file__).resolve().parents[2] / "dashboard" / "frontend"
+_DIST_DIR = _FRONTEND_DIR / "dist"
+
+
+@pytest.fixture(autouse=True)
+def _clean_frontend_dist():
+    """빌드 산출물(dist)이 테스트 전후로 남지 않도록 보장한다(hermetic)."""
+    shutil.rmtree(_DIST_DIR, ignore_errors=True)
+    yield
+    shutil.rmtree(_DIST_DIR, ignore_errors=True)
+
+
+def test_root_without_dist_returns_friendly_message():
+    assert not _DIST_DIR.exists()
+    r = TestClient(app).get("/")
+    assert r.status_code == 200
+    assert "빌드" in r.text
+
+
+def test_root_serves_built_index_when_dist_exists():
+    _DIST_DIR.mkdir(parents=True, exist_ok=True)
+    (_DIST_DIR / "index.html").write_text("<html><body>dashboard-app</body></html>", encoding="utf-8")
+
+    r = TestClient(app).get("/")
+    assert r.status_code == 200
+    assert "dashboard-app" in r.text
+    assert "text/html" in r.headers["content-type"]
+
+
+def test_api_and_ws_not_shadowed_by_spa_when_dist_exists():
+    _DIST_DIR.mkdir(parents=True, exist_ok=True)
+    (_DIST_DIR / "index.html").write_text("<html><body>dashboard-app</body></html>", encoding="utf-8")
+
+    # /api/* 는 여전히 JSON.
+    r_api = TestClient(app).get("/api/health")
+    assert r_api.status_code == 200
+    assert r_api.json() == {"status": "ok"}
+
+    # 존재하지 않는 /api/* 경로는 SPA index.html 로 폴백하지 않고 404.
+    r_unknown_api = TestClient(app).get("/api/does-not-exist")
+    assert r_unknown_api.status_code == 404
+
+    # 알 수 없는 클라이언트 라우트는 index.html 로 폴백(SPA 라우팅 지원).
+    r_fallback = TestClient(app).get("/characters/some-name")
+    assert r_fallback.status_code == 200
+    assert "dashboard-app" in r_fallback.text
 
 
 def _seed_full(s, name="테스트형"):

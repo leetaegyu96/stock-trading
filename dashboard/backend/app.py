@@ -4,8 +4,10 @@ from __future__ import annotations
 import asyncio
 import os
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 
-from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, PlainTextResponse
 
 from simcore.live.kis_client import KisClient
 from simcore.live.ratelimit import RateLimiter
@@ -155,3 +157,48 @@ def deposit_flow(name: str, body: flows.DepositIn, sf=Depends(get_sf)) -> dict:
 @app.post("/api/characters/{name}/withdraw")
 def withdraw_flow(name: str, body: flows.WithdrawIn, sf=Depends(get_sf)) -> dict:
     return flows.withdraw(sf, name, body)
+
+
+# --- React 정적 빌드 서빙 + SPA 폴백 -----------------------------------------
+# dashboard/frontend/dist 가 존재하면(빌드됨) 정적 자산 + index.html 을 서빙하고,
+# API/WS 가 아닌 알 수 없는 경로는 index.html 로 폴백해 클라이언트 라우팅을 지원한다.
+# dist 가 없으면(아직 빌드 전) 안내 메시지를 200 으로 반환한다.
+# 존재 여부는 요청마다 확인한다(테스트가 dist 를 동적으로 생성/삭제하고, 빌드 후
+# 서버 재기동 없이도 즉시 반영되어야 하므로 앱 부팅 시점에 고정하지 않는다).
+_FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+_FRONTEND_NOT_BUILT_MSG = (
+    "프론트엔드가 아직 빌드되지 않았습니다. dashboard/frontend에서 npm run build 하세요."
+)
+
+
+def _serve_frontend(rel_path: str):
+    """dist/{rel_path} 정적 파일이 있으면 그것을, 없으면 index.html(SPA 폴백)을 반환.
+    dist 자체가 없으면 안내 메시지를 200 으로 반환한다."""
+    dist_root = _FRONTEND_DIST.resolve()
+    if not dist_root.is_dir():
+        return PlainTextResponse(_FRONTEND_NOT_BUILT_MSG, status_code=200)
+
+    index_file = dist_root / "index.html"
+    if rel_path:
+        candidate = (dist_root / rel_path).resolve()
+        # path traversal 방지: dist 밖을 벗어나는 경로는 무시하고 index.html 로 폴백.
+        if candidate.is_file() and dist_root in candidate.parents:
+            return FileResponse(candidate)
+
+    if index_file.is_file():
+        return FileResponse(index_file)
+    return PlainTextResponse(_FRONTEND_NOT_BUILT_MSG, status_code=200)
+
+
+@app.get("/")
+async def frontend_root():
+    return _serve_frontend("")
+
+
+@app.get("/{full_path:path}")
+async def frontend_spa_fallback(full_path: str):
+    # /api/* 와 /ws 는 위에서 이미 라우트가 정의되어 우선 매칭되므로, 여기 도달했다는
+    # 것은 정의되지 않은 api/ws 경로라는 뜻 → SPA 로 폴백하지 않고 404 를 유지한다.
+    if full_path == "ws" or full_path.startswith("ws/") or full_path == "api" or full_path.startswith("api/"):
+        raise HTTPException(status_code=404)
+    return _serve_frontend(full_path)
