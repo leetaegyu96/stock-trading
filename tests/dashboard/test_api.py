@@ -7,7 +7,7 @@ from simcore.live import db
 from simcore.models import Market
 
 from tests.dashboard.conftest import needs_db
-from dashboard.backend.app import app, get_sf
+from dashboard.backend.app import app, get_kis, get_sf
 
 
 def test_health():
@@ -166,6 +166,19 @@ def test_character_equity_returns_points_in_order(sf):
     assert points[-1]["equity_krw"] == 12_800_000.0
 
 
+class _FakeKis:
+    """일부 심볼은 성공(가격 반환), 일부는 예외를 던지는 KIS 더블."""
+
+    def __init__(self, prices: dict[tuple[str, str], float], fail: "set[tuple[str, str]]" = frozenset()):
+        self._prices = prices
+        self._fail = fail
+
+    def current_price(self, market: str, symbol: str) -> float:
+        if (market, symbol) in self._fail:
+            raise RuntimeError(f"KIS 현재가 조회 실패: {market}/{symbol}")
+        return self._prices[(market, symbol)]
+
+
 @needs_db
 def test_character_positions_returns_rows(sf):
     with sf() as s:
@@ -173,10 +186,12 @@ def test_character_positions_returns_rows(sf):
         s.commit()
 
     app.dependency_overrides[get_sf] = lambda: sf
+    app.dependency_overrides[get_kis] = lambda: _FakeKis(prices={("US", "AAPL"): 160.0})
     try:
         r = TestClient(app).get("/api/characters/테스트형/positions")
     finally:
         app.dependency_overrides.pop(get_sf, None)
+        app.dependency_overrides.pop(get_kis, None)
 
     assert r.status_code == 200
     [pos] = r.json()
@@ -185,6 +200,36 @@ def test_character_positions_returns_rows(sf):
     assert pos["quantity"] == 5
     assert pos["avg_price"] == 150.0
     assert pos["opened_date"] == "2026-01-02"
+    # KIS 현재가 병합: 성공분은 live 가격 사용, stale=False.
+    assert pos["current_price"] == 160.0
+    assert pos["eval_value"] == 5 * 160.0
+    assert pos["pnl_pct"] == pytest.approx(160.0 / 150.0 - 1.0)
+    assert pos["stale"] is False
+
+
+@needs_db
+def test_character_positions_falls_back_when_kis_fails(sf):
+    with sf() as s:
+        _seed_full(s)
+        s.add(db.DailyBarRow(market="US", symbol="AAPL", date=date(2026, 1, 2),
+                              open=155.0, high=162.0, low=154.0, close=158.0, volume=1200.0))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    app.dependency_overrides[get_kis] = lambda: _FakeKis(prices={}, fail={("US", "AAPL")})
+    try:
+        r = TestClient(app).get("/api/characters/테스트형/positions")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+        app.dependency_overrides.pop(get_kis, None)
+
+    assert r.status_code == 200
+    [pos] = r.json()
+    # KIS 실패 → daily_bars 마지막 종가로 폴백, stale=True.
+    assert pos["current_price"] == 158.0
+    assert pos["eval_value"] == 5 * 158.0
+    assert pos["pnl_pct"] == pytest.approx(158.0 / 150.0 - 1.0)
+    assert pos["stale"] is True
 
 
 @needs_db

@@ -36,6 +36,10 @@ class PositionOut(BaseModel):
     quantity: int
     avg_price: float
     opened_date: date
+    current_price: float | None = None
+    eval_value: float | None = None
+    pnl_pct: float | None = None
+    stale: bool | None = None
 
 
 class TradeOut(BaseModel):

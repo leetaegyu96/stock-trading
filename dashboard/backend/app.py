@@ -3,9 +3,13 @@ from __future__ import annotations
 
 from fastapi import Depends, FastAPI
 
-from simcore.live.repository import Repository
+from simcore.live.kis_client import KisClient
+from simcore.live.ratelimit import RateLimiter
+from simcore.live.repository import DbTokenStore, Repository
+from simcore.live.settings import load_settings
 
 from dashboard.backend import db, queries, summary
+from dashboard.backend.live_prices import current_prices
 from dashboard.backend.schemas import (
     CardSummary,
     EquityPoint,
@@ -17,13 +21,46 @@ from dashboard.backend.schemas import (
 
 app = FastAPI(title="simcore dashboard")
 
-# 라이브 KIS 현재가는 Task 5 에서 병합. 이 태스크는 daily_bars 최신 종가(또는 avg_price 폴백)만 사용.
+# 카드/집계(list_character_cards)는 daily_bars 최신 종가(또는 avg_price 폴백)만 사용한다.
 _FALLBACK_FX_RATE = 1300.0
 
 
 def get_sf():
     """세션팩토리 FastAPI dependency. 테스트에서 `app.dependency_overrides[get_sf]`로 주입."""
     return db.session_factory()
+
+
+def get_kis():
+    """KIS 클라이언트 FastAPI dependency. 테스트에서 `app.dependency_overrides[get_kis]`로 주입(Fake kis).
+
+    토큰은 `DbTokenStore`(DB 영속)를 통해 캐시를 공유하므로, 매 요청마다 클라이언트를 새로
+    만들어도 유효 토큰이 있으면 추가 발급이 일어나지 않는다."""
+    settings = load_settings()
+    sf = db.session_factory()
+    return KisClient(settings, DbTokenStore(sf), RateLimiter(settings.kis_rate_limit_per_sec))
+
+
+def _symbols_by_market(positions: list[dict]) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    for p in positions:
+        result.setdefault(p["market"], []).append(p["symbol"])
+    return result
+
+
+def _merge_live_price(pos: dict, live: dict | None) -> dict:
+    """포지션에 현재가·평가액(eval_value)·손익%(pnl_pct)·stale 을 병합한다.
+    live 정보가 없거나 폴백 가격조차 없으면 avg_price 로 더 폴백하고 stale=True."""
+    live = live or {"price": None, "stale": True}
+    price = live["price"] if live["price"] is not None else pos["avg_price"]
+    stale = live["stale"] or live["price"] is None
+    pnl_pct = (price / pos["avg_price"] - 1.0) if pos["avg_price"] else 0.0
+    return {
+        **pos,
+        "current_price": price,
+        "eval_value": pos["quantity"] * price,
+        "pnl_pct": pnl_pct,
+        "stale": stale,
+    }
 
 
 @app.get("/api/health")
@@ -65,8 +102,11 @@ def character_equity(name: str, sf=Depends(get_sf)) -> list[EquityPoint]:
 
 
 @app.get("/api/characters/{name}/positions", response_model=list[PositionOut])
-def character_positions(name: str, sf=Depends(get_sf)) -> list[PositionOut]:
-    return [PositionOut(**p) for p in queries.positions(sf, name)]
+def character_positions(name: str, sf=Depends(get_sf), kis=Depends(get_kis)) -> list[PositionOut]:
+    positions = queries.positions(sf, name)
+    repo = Repository(sf)
+    prices = current_prices(kis, _symbols_by_market(positions), repo)
+    return [PositionOut(**_merge_live_price(p, prices.get(p["symbol"]))) for p in positions]
 
 
 @app.get("/api/characters/{name}/trades", response_model=list[TradeOut])
