@@ -1,8 +1,15 @@
+import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { Main } from "./pages/Main";
+import { Detail } from "./pages/Detail";
+
 function App() {
   return (
-    <div>
-      <h1>simcore dashboard</h1>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Main />} />
+        <Route path="/character/:name" element={<Detail />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
