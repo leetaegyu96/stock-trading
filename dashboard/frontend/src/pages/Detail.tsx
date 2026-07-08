@@ -12,6 +12,8 @@ import { EquityChart } from "../components/EquityChart";
 import { PositionsTable } from "../components/PositionsTable";
 import { TradesTable } from "../components/TradesTable";
 import { MetricsPanel } from "../components/MetricsPanel";
+import { FlowModal } from "../components/FlowModal";
+import type { FlowMode } from "../components/FlowModal";
 import type { EquityPoint, Metrics, PositionOut, TradeOut } from "../types";
 import "../components/theme.css";
 import "../components/detail.css";
@@ -32,6 +34,7 @@ export function Detail() {
   const [data, setData] = useState<DetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [flowMode, setFlowMode] = useState<FlowMode | null>(null);
   const liveCards = useCardsSocket();
   const positionsSignatureRef = useRef<string | null>(null);
 
@@ -95,7 +98,34 @@ export function Detail() {
       <header className="detail-header">
         <Avatar character={name || "?"} mood={mood} size={64} />
         <h1 className="main-page__title">{name || "알 수 없음"}</h1>
+        {name && (
+          <div className="detail-header__actions">
+            <button
+              type="button"
+              className="detail-header__flow-btn"
+              onClick={() => setFlowMode("deposit")}
+            >
+              입금
+            </button>
+            <button
+              type="button"
+              className="detail-header__flow-btn"
+              onClick={() => setFlowMode("withdraw")}
+            >
+              출금
+            </button>
+          </div>
+        )}
       </header>
+
+      {name && flowMode && (
+        <FlowModal
+          name={name}
+          mode={flowMode}
+          positions={data?.positions ?? []}
+          onClose={() => setFlowMode(null)}
+        />
+      )}
 
       {!name && (
         <div className="main-page__state main-page__state--error">

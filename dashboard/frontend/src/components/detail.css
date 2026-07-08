@@ -8,6 +8,27 @@
   margin-bottom: 20px;
 }
 
+.detail-header__actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.detail-header__flow-btn {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.detail-header__flow-btn:hover {
+  border-color: var(--color-text);
+}
+
 .detail-sections {
   display: flex;
   flex-direction: column;

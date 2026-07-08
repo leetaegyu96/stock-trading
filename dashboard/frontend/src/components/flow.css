@@ -1,0 +1,148 @@
+/* 입출금 모달(FlowModal) 전용 스타일. theme.css 공용 토큰 재사용. */
+
+.flow-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 100;
+}
+
+.flow-modal {
+  width: 100%;
+  max-width: 380px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  padding: 20px;
+}
+
+.flow-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.flow-modal__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.flow-modal__close {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.flow-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
+.flow-modal__field input[type="text"] {
+  font-size: 15px;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.flow-modal__field input[aria-invalid="true"] {
+  border-color: var(--color-down);
+}
+
+.flow-modal__field-label {
+  display: block;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
+.flow-modal__hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 0 0 8px;
+}
+
+.flow-modal__error {
+  font-size: 12px;
+  color: var(--color-down);
+  margin: 0 0 8px;
+}
+
+.flow-modal__liquidate {
+  margin: 12px 0;
+}
+
+.flow-modal__liquidate-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.flow-modal__liquidate-list li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+.flow-modal__liquidate-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.flow-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.flow-modal__actions button {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.flow-modal__submit {
+  background: var(--color-text) !important;
+  color: var(--color-surface) !important;
+  border-color: var(--color-text) !important;
+}
+
+.flow-modal__actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.flow-modal__success {
+  text-align: center;
+  padding: 8px 0;
+  color: var(--color-text);
+}
