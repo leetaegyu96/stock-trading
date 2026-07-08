@@ -5,7 +5,7 @@ import pandas as pd
 
 from simcore.config import Config
 from simcore.engine import Engine
-from simcore.models import Market, SymbolSnapshot
+from simcore.models import CapitalFlow, DailyBar, Market, SymbolSnapshot
 from simcore import signals as sigmod
 
 
@@ -74,3 +74,66 @@ class Orchestrator:
             self.repo.append_new_trades(self.engine, session=s)
             self.repo.record_equity(datetime.now(), snap, session=s)
             self.repo.mark_close(market, d, fx, session=s)
+
+    def on_open(self, d: date, market: str, universe: list[str]) -> None:
+        rs = self.repo.get_run_state(market)
+        if rs.last_open_date == d:
+            return                                  # 멱등: 이미 처리
+        m = Market(market)
+        fx = self.fx(d)
+        # 1) 대기 입출금 처리 (이 시장을 거래하는 캐릭터만 — 각 flow 는 첫 해당 시장 개장에 1회)
+        applied: list = []
+        for req in self.repo.pending_flow_requests():
+            st = self.engine.states.get(req.character)
+            if st is None or m not in st.spec.markets:
+                continue
+            liq = tuple(req.liquidate or ())
+            try:
+                opens = {sym: self.kis.current_price(market, sym) for sym in liq}
+                self.engine.apply_flow(d, req.character, req.amount_krw, fx,
+                                       open_prices=opens, liquidate=liq)
+            except Exception as exc:
+                print(f"[live] flow {req.id} 적용 실패(보류): {exc}")
+                continue
+            applied.append(req)
+        # 2) 예약 주문 종목 현재가(=시가)로 체결. 가격 없는 종목은 fill_open 이 이월.
+        pend_syms = {b.symbol for st in self.engine.states.values()
+                     for b in st.pending_buys if b.market == m}
+        pend_syms |= {ps.symbol for st in self.engine.states.values()
+                      for ps in st.pending_sells if ps.market == m}
+        opens: dict[str, float] = {}
+        for sym in pend_syms:
+            try:
+                opens[sym] = self.kis.current_price(market, sym)
+                self._last_price[sym] = opens[sym]
+            except Exception as exc:
+                print(f"[live] {market} {sym} 시가 조회 실패(이월): {exc}")
+        self.engine.fill_open(d, m, opens, fx)
+        with self.repo.transaction() as s:
+            for req in applied:
+                self.repo.record_flow(
+                    CapitalFlow(d, req.character, req.amount_krw, fx), session=s)
+                self.repo.mark_flow_applied(req.id, session=s)
+            self.repo.persist_state(self.engine, session=s)
+            self.repo.append_new_trades(self.engine, session=s)
+            self.repo.mark_open(market, d, fx, session=s)
+
+    def on_tick(self, d: date, market: str) -> None:
+        m = Market(market)
+        fx = self.fx(d)
+        held = {sym for st in self.engine.states.values()
+                for sym, pos in st.portfolio.positions.items() if pos.market == m}
+        bars: dict[str, DailyBar] = {}
+        for sym in held:
+            try:
+                px = self.kis.current_price(market, sym)
+            except Exception:
+                continue                            # 이번 사이클 스킵, 다음 틱 재시도
+            self._last_price[sym] = px
+            bars[sym] = DailyBar(sym, d, px, px, px, px, 0.0)  # o=h=l=c=현재가 유사봉
+        if not bars:
+            return
+        self.engine.check_stops(d, m, bars, fx)
+        with self.repo.transaction() as s:
+            self.repo.persist_state(self.engine, session=s)
+            self.repo.append_new_trades(self.engine, session=s)

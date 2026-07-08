@@ -80,3 +80,42 @@ def test_on_close_idempotent_no_duplicate_equity(session):
     with sf() as s:
         n2 = s.query(db.EquityPoint).count()
     assert n1 == n2 and n1 > 0
+
+
+@needs_db
+def test_on_tick_triggers_stop_loss(session):
+    """보유 종목 현재가가 손절선 아래면 on_tick 이 즉시 청산 (유사봉 o=h=l=c)."""
+    from simcore.models import Market, TradeReason
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    eng = Engine(Config())
+    eng.start(date(2026, 1, 1), 1300.0)
+    st = eng.states["국내형"]
+    st.portfolio.buy(date(2026, 1, 2), "005930", Market.KR, 10, 100000.0,
+                     TradeReason.SIGNAL_BUY)
+    bars = {("KR", "005930"): pd.DataFrame(
+        {"open": [92000.], "high": [92000.], "low": [92000.], "close": [92000.],
+         "volume": [1.]}, index=pd.to_datetime(["2026-01-05"]))}     # 평단 대비 -8%
+    orch = Orchestrator(eng, FakeKis(bars), repo, Config(), fx_provider=lambda d: 1300.0)
+    orch.on_tick(date(2026, 1, 5), "KR")
+    assert "005930" not in st.portfolio.positions       # 손절 청산됨
+
+
+@needs_db
+def test_on_open_applies_pending_flow(session):
+    """대기 입출금이 개장 시 반영되고 capital_flows 에 기록된다."""
+    from simcore.models import Currency
+    from simcore.live import db
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    eng = Engine(Config())
+    eng.start(date(2026, 1, 1), 1300.0)
+    krw_before = eng.states["국내형"].portfolio.cash[Currency.KRW]
+    repo.enqueue_flow("국내형", 5_000_000.0)
+    orch = Orchestrator(eng, FakeKis({("KR", "005930"): _uptrend()}), repo, Config(),
+                        fx_provider=lambda d: 1300.0)
+    orch.on_open(date(2026, 1, 6), "KR", ["005930"])
+    assert repo.pending_flow_requests() == []           # 큐 소비됨
+    assert eng.states["국내형"].portfolio.cash[Currency.KRW] == krw_before + 5_000_000.0
+    with sf() as s:
+        assert s.query(db.CapitalFlowRow).count() == 1  # 원장 기록됨
