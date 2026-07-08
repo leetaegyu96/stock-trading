@@ -1,5 +1,9 @@
-"""엔진 상태 영속/복원 + 이력 append + run_state 멱등 (스펙 §5)."""
+"""엔진 상태 영속/복원 + 이력 append + run_state 멱등 (스펙 §5).
+
+write 메서드는 `session=None` 이면 자체 세션을 열고 commit(하위호환), session 이 주어지면
+그 세션을 쓰고 commit 하지 않는다(호출자가 `transaction()` 으로 한 번에 commit)."""
 from __future__ import annotations
+from contextlib import contextmanager
 from datetime import date, datetime
 import pandas as pd
 from sqlalchemy import delete, select
@@ -33,8 +37,25 @@ class Repository:
         self.sf = session_factory
         self._trade_cursor: dict[str, int] = {}
 
-    def persist_state(self, engine: Engine) -> None:
+    @contextmanager
+    def transaction(self):
+        """여러 write 를 한 트랜잭션으로 묶는다. 예외 시 commit 하지 않아 롤백된다."""
         with self.sf() as s:
+            yield s
+            s.commit()
+
+    @contextmanager
+    def _session(self, session):
+        """session 주어지면 그대로 yield(호출자 commit), 없으면 자체 세션 + commit."""
+        if session is not None:
+            yield session
+        else:
+            with self.sf() as s:
+                yield s
+                s.commit()
+
+    def persist_state(self, engine: Engine, session=None) -> None:
+        with self._session(session) as s:
             for t in (db.CashBalance, db.PositionRow, db.PendingOrder, db.Cooldown):
                 s.execute(delete(t))
             for name, st in engine.states.items():
@@ -59,7 +80,6 @@ class Repository:
                 for sym, (mkt, rem) in st.cooldowns.items():
                     s.add(db.Cooldown(character=name, symbol=sym, market=mkt.value,
                                       remaining_days=rem))
-            s.commit()
 
     def rehydrate(self, engine: Engine) -> bool:
         with self.sf() as s:
@@ -100,20 +120,20 @@ class Repository:
             s.expunge(rs)
             return rs
 
-    def mark_open(self, market: str, d, fx: float) -> None:
-        with self.sf() as s:
+    def mark_open(self, market: str, d, fx: float, session=None) -> None:
+        with self._session(session) as s:
             rs = s.get(db.RunState, market) or db.RunState(market=market)
             rs.last_open_date, rs.last_fx_rate = d, fx
-            s.merge(rs); s.commit()
+            s.merge(rs)
 
-    def mark_close(self, market: str, d, fx: float) -> None:
-        with self.sf() as s:
+    def mark_close(self, market: str, d, fx: float, session=None) -> None:
+        with self._session(session) as s:
             rs = s.get(db.RunState, market) or db.RunState(market=market)
             rs.last_close_date, rs.last_fx_rate = d, fx
-            s.merge(rs); s.commit()
+            s.merge(rs)
 
-    def append_new_trades(self, engine) -> None:
-        with self.sf() as s:
+    def append_new_trades(self, engine, session=None) -> None:
+        with self._session(session) as s:
             for name, st in engine.states.items():
                 start = self._trade_cursor.get(name, 0)
                 for t in st.portfolio.trades[start:]:
@@ -124,13 +144,11 @@ class Repository:
                         red_count=t.red_count, fired=list(t.fired),
                         realized_pnl=t.realized_pnl))
                 self._trade_cursor[name] = len(st.portfolio.trades)
-            s.commit()
 
-    def record_equity(self, ts, snap: dict) -> None:
-        with self.sf() as s:
+    def record_equity(self, ts, snap: dict, session=None) -> None:
+        with self._session(session) as s:
             for name, eq in snap.items():
                 s.add(db.EquityPoint(ts=ts, character=name, equity_krw=eq))
-            s.commit()
 
     def enqueue_flow(self, character: str, amount_krw: float, liquidate=()) -> int:
         with self.sf() as s:
@@ -150,12 +168,11 @@ class Repository:
                 s.expunge(r)
             return rows
 
-    def mark_flow_applied(self, req_id: int) -> None:
-        with self.sf() as s:
+    def mark_flow_applied(self, req_id: int, session=None) -> None:
+        with self._session(session) as s:
             r = s.get(db.FlowRequest, req_id)
             if r:
                 r.status, r.applied_at = "applied", datetime.now()
-                s.commit()
 
     def upsert_daily_bars(self, market: str, symbol: str, df: pd.DataFrame) -> None:
         with self.sf() as s:
@@ -187,8 +204,7 @@ class Repository:
                     .order_by(db.UniverseRow.rank).all()
             return [r.symbol for r in rows]
 
-    def record_flow(self, flow) -> None:
-        with self.sf() as s:
+    def record_flow(self, flow, session=None) -> None:
+        with self._session(session) as s:
             s.add(db.CapitalFlowRow(date=flow.date, character=flow.character,
                 amount_krw=flow.amount_krw, fx_rate=flow.fx_rate))
-            s.commit()
