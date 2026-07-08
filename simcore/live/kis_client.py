@@ -106,7 +106,49 @@ class KisClient:
             return df[["open", "high", "low", "close", "volume"]]
         return self._overseas_daily(symbol, start, end)  # Task 4
 
-    # Task 4 에서 정의
-    def _overseas_price(self, symbol: str) -> float: ...
-    def _overseas_daily(self, symbol, start, end) -> pd.DataFrame: ...
-    def market_cap_ranking(self, top_n: int) -> list[str]: ...
+    # ---- 시총 랭킹(KR) ----
+    def market_cap_ranking(self, top_n: int) -> list[str]:
+        j = self._get("/uapi/domestic-stock/v1/ranking/market-cap",
+                      _TR[("rank_mcap", "KR")],
+                      {"fid_cond_mrkt_div_code": "J", "fid_cond_scr_div_code": "20174",
+                       "fid_div_cls_code": "0", "fid_input_iscd": "0000",
+                       "fid_trgt_cls_code": "0", "fid_trgt_exls_cls_code": "0",
+                       "fid_input_price_1": "", "fid_input_price_2": "",
+                       "fid_vol_cnt": ""})
+        syms = [row["mksc_shrn_iscd"] for row in j.get("output", [])]
+        return syms[:top_n]
+
+    # ---- 해외 시세 ----
+    def _split_us(self, symbol: str) -> "list[tuple[str, str]]":
+        if ":" in symbol:
+            exch, tkr = symbol.split(":", 1)
+            return [(exch, tkr)]
+        return [("NAS", symbol), ("NYS", symbol)]
+
+    def _overseas_price(self, symbol: str) -> float:
+        for excd, tkr in self._split_us(symbol):
+            j = self._get("/uapi/overseas-price/v1/quotations/price",
+                          _TR[("price", "US")],
+                          {"AUTH": "", "EXCD": excd, "SYMB": tkr})
+            out = j.get("output") or {}
+            if out.get("last"):
+                return float(out["last"])
+        raise RuntimeError(f"US 현재가 조회 실패: {symbol}")
+
+    def _overseas_daily(self, symbol, start, end) -> pd.DataFrame:
+        for excd, tkr in self._split_us(symbol):
+            j = self._get("/uapi/overseas-price/v1/quotations/dailyprice",
+                          _TR[("daily", "US")],
+                          {"AUTH": "", "EXCD": excd, "SYMB": tkr,
+                           "GUBN": "0", "BYMD": f"{end:%Y%m%d}", "MODP": "1"})
+            rows = j.get("output2", [])
+            if not rows:
+                continue
+            recs = [{"date": pd.to_datetime(r["xymd"]), "open": float(r["open"]),
+                     "high": float(r["high"]), "low": float(r["low"]),
+                     "close": float(r["clos"]), "volume": float(r["tvol"])}
+                    for r in rows if r.get("xymd")]
+            df = pd.DataFrame(recs).set_index("date").sort_index()
+            df = df[(df.index.date >= start) & (df.index.date <= end)]
+            return df[["open", "high", "low", "close", "volume"]]
+        raise RuntimeError(f"US 일봉 조회 실패: {symbol}")

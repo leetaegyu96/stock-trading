@@ -65,3 +65,25 @@ def test_reissues_token_on_401():
     c = _client()
     assert c.current_price("KR", "005930") == 5.0
     assert route.call_count == 2
+
+
+@respx.mock
+def test_market_cap_ranking():
+    respx.post(f"{BASE}/oauth2/tokenP").mock(return_value=httpx.Response(
+        200, json={"access_token": "T", "expires_in": 86400}))
+    respx.get(f"{BASE}/uapi/domestic-stock/v1/ranking/market-cap").mock(
+        return_value=httpx.Response(200, json={"output": [
+            {"mksc_shrn_iscd": "005930"}, {"mksc_shrn_iscd": "000660"},
+            {"mksc_shrn_iscd": "373220"}]}))
+    c = _client()
+    assert c.market_cap_ranking(2) == ["005930", "000660"]
+
+
+@respx.mock
+def test_overseas_price():
+    respx.post(f"{BASE}/oauth2/tokenP").mock(return_value=httpx.Response(
+        200, json={"access_token": "T", "expires_in": 86400}))
+    respx.get(f"{BASE}/uapi/overseas-price/v1/quotations/price").mock(
+        return_value=httpx.Response(200, json={"output": {"last": "191.24"}}))
+    c = _client()
+    assert c.current_price("US", "NAS:AAPL") == 191.24
