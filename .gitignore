@@ -19,6 +19,10 @@ data/cache/
 # 리플레이 산출물
 out/
 
+# 프론트엔드 빌드 산출물
+dashboard/frontend/node_modules/
+dashboard/frontend/dist/
+
 # OS/에디터
 .DS_Store
 Thumbs.db

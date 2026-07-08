@@ -31,6 +31,13 @@ KIS는 **데이터 피드 전용**(주문하지 않음)이며 3캐릭터는 엔�
 
 설계: `docs/superpowers/specs/2026-07-08-simcore-live-kis-design.md`
 
+## 대시보드
+    cd dashboard/frontend && npm install && npm run build
+    uvicorn dashboard.backend.app:app        # http://localhost:8000
+
+라이브 데몬(`simcore.live run`)과 동일한 PostgreSQL(`DATABASE_URL`)을 읽어, 3캐릭터 카드·상세(차트·표·지표)·입출금 예약을 REST + WebSocket으로 제공한다.
+프론트 빌드(`dist/`)가 있으면 백엔드가 SPA를 그대로 서빙하며, KIS 실시세를 종가에 병합해 카드/차트에 반영한다.
+
 ## 테스트
     .venv\Scripts\python -m pytest
 
