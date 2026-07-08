@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import select
 
 from simcore.live import db
+from simcore.live.repository import Repository
 
 
 def list_characters(sf) -> list[dict]:
@@ -92,6 +93,17 @@ def equity_series(sf, name: str) -> list[tuple[datetime, float]]:
             .order_by(db.EquityPoint.ts)
         ).scalars().all()
         return [(r.ts, r.equity_krw) for r in rows]
+
+
+def last_prices(sf, positions: list[dict]) -> dict[str, float]:
+    """보유 종목의 daily_bars 최신 종가. 없으면 비워두어 summary 쪽 avg_price 폴백에 맡긴다."""
+    repo = Repository(sf)
+    prices: dict[str, float] = {}
+    for pos in positions:
+        bars = repo.load_daily_bars(pos["market"], pos["symbol"])
+        if not bars.empty:
+            prices[pos["symbol"]] = float(bars["close"].iloc[-1])
+    return prices
 
 
 def cash(sf, name: str) -> dict[str, float]:

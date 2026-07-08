@@ -1,7 +1,11 @@
-"""simcore 대시보드 백엔드 — FastAPI 스켈레톤 + 조회 REST 엔드포인트."""
+"""simcore 대시보드 백엔드 — FastAPI 스켈레톤 + 조회 REST 엔드포인트 + WS 실시간 브로드캐스트."""
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI
+import asyncio
+import os
+from contextlib import asynccontextmanager, suppress
+
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 
 from simcore.live.kis_client import KisClient
 from simcore.live.ratelimit import RateLimiter
@@ -9,6 +13,7 @@ from simcore.live.repository import DbTokenStore, Repository
 from simcore.live.settings import load_settings
 
 from dashboard.backend import db, flows, queries, summary
+from dashboard.backend.broadcaster import Broadcaster, ConnectionManager
 from dashboard.backend.live_prices import current_prices
 from dashboard.backend.schemas import (
     CardSummary,
@@ -19,10 +24,37 @@ from dashboard.backend.schemas import (
     TradeOut,
 )
 
-app = FastAPI(title="simcore dashboard")
-
 # 카드/집계(list_character_cards)는 daily_bars 최신 종가(또는 avg_price 폴백)만 사용한다.
 _FALLBACK_FX_RATE = 1300.0
+# WS 백그라운드 폴링 주기(초). 테스트는 poll_once 를 직접 호출하므로 이 값에 의존하지 않는다.
+_WS_POLL_INTERVAL_SEC = float(os.environ.get("WS_POLL_INTERVAL_SEC", "5.0"))
+
+manager = ConnectionManager()
+broadcaster = Broadcaster(manager, fx_rate=_FALLBACK_FX_RATE)
+
+
+async def _broadcast_loop(interval: float) -> None:
+    """주기적으로 poll_once 를 호출해 변경분만 push하는 백그라운드 루프."""
+    while True:
+        try:
+            await broadcaster.poll_once(db.session_factory())
+        except Exception:
+            pass  # 폴링 1회 실패는 무시하고 다음 주기에 재시도
+        await asyncio.sleep(interval)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(_broadcast_loop(_WS_POLL_INTERVAL_SEC))
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
+app = FastAPI(title="simcore dashboard", lifespan=lifespan)
 
 
 def get_sf():
@@ -68,27 +100,23 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-def _last_prices(sf, positions: list[dict]) -> dict[str, float]:
-    """보유 종목의 daily_bars 최신 종가. 없으면 비워두어 summary 쪽 avg_price 폴백에 맡긴다."""
-    repo = Repository(sf)
-    prices: dict[str, float] = {}
-    for pos in positions:
-        bars = repo.load_daily_bars(pos["market"], pos["symbol"])
-        if not bars.empty:
-            prices[pos["symbol"]] = float(bars["close"].iloc[-1])
-    return prices
-
-
 @app.get("/api/characters", response_model=list[CardSummary])
 def list_character_cards(sf=Depends(get_sf)) -> list[CardSummary]:
-    cards = []
-    for c in queries.list_characters(sf):
-        positions = queries.positions(sf, c["name"])
-        last_prices = _last_prices(sf, positions)
-        cards.append(
-            summary.card_summary(sf, c["name"], fx_rate=_FALLBACK_FX_RATE, last_prices=last_prices)
-        )
-    return cards
+    return broadcaster.snapshot(sf)
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket, sf=Depends(get_sf)) -> None:
+    """접속 시 초기 카드 스냅샷 1회 전송 후, 연결을 유지하며 브로드캐스트를 수신한다."""
+    await manager.connect(websocket)
+    try:
+        await websocket.send_json(broadcaster.snapshot_message(sf))
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect(websocket)
 
 
 @app.get("/api/characters/{name}", response_model=Metrics)
