@@ -1,0 +1,126 @@
+"""라이브 데몬 진입점 + 입출금 CLI.
+
+  python -m simcore.live run                         # 데몬 시작(스케줄러)
+  python -m simcore.live deposit 국내형 5000000       # 입금 예약(다음 개장 반영)
+  python -m simcore.live withdraw 해외형 3000000 --liquidate AAPL   # 출금 예약
+"""
+from __future__ import annotations
+import argparse
+import time
+from datetime import date
+from pathlib import Path
+
+from simcore.config import Config
+from simcore.engine import Engine
+from simcore.live.settings import load_settings, LiveSettings
+from simcore.live.ratelimit import RateLimiter
+from simcore.live.kis_client import KisClient
+from simcore.live.repository import Repository, DbTokenStore
+from simcore.live.orchestrator import Orchestrator
+from simcore.live.scheduler import LiveScheduler
+from simcore.live.recovery import catch_up
+from simcore.live import db
+
+_MARKETS = ("KR", "US")
+
+
+def _fx_provider(repo: Repository):
+    """USD/KRW 일별 환율. KIS 전용 FX 엔드포인트가 없어 yfinance(KRW=X) 사용,
+    실패 시 마지막 알려진 환율(run_state.last_fx_rate) 폴백."""
+    def fx(d: date) -> float:
+        try:
+            from simcore import data as datamod
+            s = datamod.load_fx(d, d, cache_dir=Path("data/cache"))
+            return float(s.iloc[-1])
+        except Exception:
+            return repo.get_run_state("KR").last_fx_rate or 1300.0
+    return fx
+
+
+def build_app(settings: LiveSettings):
+    engine = db.make_engine(settings.database_url)
+    db.create_all(engine)
+    sf = db.make_session_factory(engine)
+    repo = Repository(sf)
+    kis = KisClient(settings, DbTokenStore(sf),
+                    RateLimiter(settings.kis_rate_limit_per_sec))
+    eng = Engine(Config())
+    orch = Orchestrator(eng, kis, repo, Config(), fx_provider=_fx_provider(repo))
+    return eng, kis, repo, orch
+
+
+def _holidays_provider(kis):
+    """휴장일 집합. KR 은 KIS 휴장일 API, US 는 NYSE 목록으로 정밀화 예정(서브프로젝트 5).
+    현재는 주말만 비거래(빈 집합)."""
+    def provider(market: str) -> set[date]:
+        return set()
+    return provider
+
+
+def _universe_provider(kis, repo, kr_top: int = 30, us_top: int = 30):
+    from simcore import universe as uni
+
+    def provider(market: str) -> list[str]:
+        today = date.today()
+        cached = repo.load_universe(market, today)
+        if cached:
+            return cached
+        if market == "KR":
+            syms = kis.market_cap_ranking(kr_top)
+        else:
+            syms = uni.sp500(Path("data/cache"))[:us_top]
+        repo.save_universe(market, syms, today)
+        return syms
+    return provider
+
+
+def boot(settings: LiveSettings) -> None:
+    eng, kis, repo, orch = build_app(settings)
+    if not repo.rehydrate(eng):
+        eng.start(date.today(), orch.fx(date.today()))     # 콜드스타트: 3캐릭터 1억
+        repo.persist_state(eng)
+    holidays = _holidays_provider(kis)
+    universe = _universe_provider(kis, repo)
+    for market in _MARKETS:
+        catch_up(orch, repo, market, date.today(), universe(market), holidays(market))
+    sched = LiveScheduler(orch, repo, holidays, universe).build()
+    sched.start()
+    print("[live] 스케줄러 가동. Ctrl+C 로 종료.")
+    try:
+        while True:
+            time.sleep(3600)
+    except (KeyboardInterrupt, SystemExit):
+        sched.shutdown()
+        print("[live] 종료됨.")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(prog="simcore.live")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("run")
+    dep = sub.add_parser("deposit")
+    dep.add_argument("character")
+    dep.add_argument("amount", type=float)
+    wd = sub.add_parser("withdraw")
+    wd.add_argument("character")
+    wd.add_argument("amount", type=float)
+    wd.add_argument("--liquidate", default="")
+    args = ap.parse_args()
+
+    settings = load_settings()
+    if args.cmd == "run":
+        boot(settings)
+        return
+    _, _, repo, _ = build_app(settings)
+    if args.cmd == "deposit":
+        repo.enqueue_flow(args.character, args.amount)
+        print(f"입금 예약됨: {args.character} +{args.amount:,.0f} (다음 개장 반영)")
+    elif args.cmd == "withdraw":
+        liq = tuple(x for x in args.liquidate.split(";") if x)
+        repo.enqueue_flow(args.character, -args.amount, liquidate=liq)
+        print(f"출금 예약됨: {args.character} -{args.amount:,.0f} "
+              f"{'(청산: ' + ','.join(liq) + ')' if liq else ''}(다음 개장 반영)")
+
+
+if __name__ == "__main__":
+    main()
