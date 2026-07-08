@@ -1,6 +1,6 @@
 """엔진 상태 영속/복원 + 이력 append + run_state 멱등 (스펙 §5)."""
 from __future__ import annotations
-from datetime import date, datetime
+from datetime import date
 from sqlalchemy import delete, select
 
 from simcore.engine import Engine, PendingBuy, PendingSell
