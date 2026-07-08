@@ -1,6 +1,6 @@
 from datetime import date
 from tests.live.conftest import needs_db
-from simcore.live.db import CashBalance
+from simcore.live.db import CashBalance, TradeRow
 from simcore.config import Config
 from simcore.engine import Engine, PendingBuy, PendingSell
 from simcore.models import Currency, Market, TradeReason
@@ -108,3 +108,41 @@ def test_daily_bars_upsert_load(session):
     repo.upsert_daily_bars("KR", "005930", df)
     got = repo.load_daily_bars("KR", "005930")
     assert got.iloc[0]["close"] == 1.5
+
+
+@needs_db
+def test_append_new_trades_survives_restart(session):
+    """재시작(새 Repository + rehydrate로 trades 빈 리스트 시작) 이후에도
+    신규 거래가 DB에 정상 기록되어야 한다 (세션 로컬 커서 방식)."""
+    import os
+    from simcore.live.db import make_engine, make_session_factory
+    engine_ = make_engine(os.environ["TEST_DATABASE_URL"])
+    sf = make_session_factory(engine_)
+
+    repo1 = Repository(sf)
+    eng_a = Engine(Config())
+    eng_a.start(date(2026, 7, 6), 1300.0)
+    st_a = eng_a.states["국내형"]
+    st_a.portfolio.buy(date(2026, 7, 6), "005930", Market.KR, 10, 70000.0,
+                        TradeReason.SIGNAL_BUY)
+    repo1.append_new_trades(eng_a)
+    repo1.persist_state(eng_a)
+    with sf() as s:
+        assert s.query(TradeRow).filter_by(character="국내형").count() == 1
+
+    # 프로세스 재시작 시뮬레이션: 새 Repository 인스턴스 + 새 엔진(rehydrate로 trades는 빈 리스트로 시작)
+    repo2 = Repository(sf)
+    eng_b = Engine(Config())
+    eng_b.start(date(2026, 7, 6), 1300.0)
+    assert repo2.rehydrate(eng_b) is True
+    st_b = eng_b.states["국내형"]
+    assert st_b.portfolio.trades == []
+
+    st_b.portfolio.buy(date(2026, 7, 6), "000660", Market.KR, 5, 50000.0,
+                        TradeReason.SIGNAL_BUY)
+    repo2.append_new_trades(eng_b)
+
+    with sf() as s:
+        rows = s.query(TradeRow).filter_by(character="국내형").all()
+        assert len(rows) == 2
+        assert {r.symbol for r in rows} == {"005930", "000660"}

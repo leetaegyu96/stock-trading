@@ -31,6 +31,7 @@ class DbTokenStore:
 class Repository:
     def __init__(self, session_factory):
         self.sf = session_factory
+        self._trade_cursor: dict[str, int] = {}
 
     def persist_state(self, engine: Engine) -> None:
         with self.sf() as s:
@@ -114,14 +115,15 @@ class Repository:
     def append_new_trades(self, engine) -> None:
         with self.sf() as s:
             for name, st in engine.states.items():
-                have = s.query(db.TradeRow).filter_by(character=name).count()
-                for t in st.portfolio.trades[have:]:
+                start = self._trade_cursor.get(name, 0)
+                for t in st.portfolio.trades[start:]:
                     s.add(db.TradeRow(ts=datetime.now(), date=t.date, character=name,
                         symbol=t.symbol, market=t.market.value, side=t.side.value,
                         quantity=t.quantity, price=t.price, fee=t.fee, tax=t.tax,
                         reason=t.reason.value, green_count=t.green_count,
                         red_count=t.red_count, fired=list(t.fired),
                         realized_pnl=t.realized_pnl))
+                self._trade_cursor[name] = len(st.portfolio.trades)
             s.commit()
 
     def record_equity(self, ts, snap: dict) -> None:
