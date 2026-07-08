@@ -1,4 +1,4 @@
-import httpx, respx, pytest
+import httpx, respx
 from datetime import date
 from simcore.live.kis_client import KisClient, InMemoryTokenStore
 from simcore.live.ratelimit import RateLimiter
@@ -41,6 +41,18 @@ def test_daily_bars_parsed():
     df = c.daily_bars("KR", "005930", date(2026, 7, 1), date(2026, 7, 7))
     assert list(df.columns) == ["open", "high", "low", "close", "volume"]
     assert df.iloc[0]["close"] == 105.0
+
+
+@respx.mock
+def test_daily_bars_empty_output2_returns_empty_dataframe():
+    respx.post(f"{BASE}/oauth2/tokenP").mock(return_value=httpx.Response(
+        200, json={"access_token": "T", "expires_in": 86400}))
+    respx.get(f"{BASE}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice").mock(
+        return_value=httpx.Response(200, json={"output2": []}))
+    c = _client()
+    df = c.daily_bars("KR", "005930", date(2026, 7, 1), date(2026, 7, 7))
+    assert list(df.columns) == ["open", "high", "low", "close", "volume"]
+    assert len(df) == 0
 
 
 @respx.mock

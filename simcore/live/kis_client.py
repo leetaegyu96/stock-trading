@@ -100,6 +100,8 @@ class KisClient:
                      "low": float(r["stck_lwpr"]), "close": float(r["stck_clpr"]),
                      "volume": float(r["acml_vol"])}
                     for r in rows if r.get("stck_bsop_date")]
+            if not recs:
+                return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
             df = pd.DataFrame(recs).set_index("date").sort_index()
             return df[["open", "high", "low", "close", "volume"]]
         return self._overseas_daily(symbol, start, end)  # Task 4
