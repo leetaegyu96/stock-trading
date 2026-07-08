@@ -1,6 +1,7 @@
 """엔진 상태 영속/복원 + 이력 append + run_state 멱등 (스펙 §5)."""
 from __future__ import annotations
-from datetime import date
+from datetime import date, datetime
+import pandas as pd
 from sqlalchemy import delete, select
 
 from simcore.engine import Engine, PendingBuy, PendingSell
@@ -88,3 +89,104 @@ class Repository:
                 if st:
                     st.cooldowns[c.symbol] = [Market(c.market), c.remaining_days]
             return True
+
+    def get_run_state(self, market: str):
+        with self.sf() as s:
+            rs = s.get(db.RunState, market)
+            if rs is None:
+                rs = db.RunState(market=market, schema_version=1, last_fx_rate=0.0)
+                s.add(rs); s.commit(); s.refresh(rs)
+            s.expunge(rs)
+            return rs
+
+    def mark_open(self, market: str, d, fx: float) -> None:
+        with self.sf() as s:
+            rs = s.get(db.RunState, market) or db.RunState(market=market)
+            rs.last_open_date, rs.last_fx_rate = d, fx
+            s.merge(rs); s.commit()
+
+    def mark_close(self, market: str, d, fx: float) -> None:
+        with self.sf() as s:
+            rs = s.get(db.RunState, market) or db.RunState(market=market)
+            rs.last_close_date, rs.last_fx_rate = d, fx
+            s.merge(rs); s.commit()
+
+    def append_new_trades(self, engine) -> None:
+        with self.sf() as s:
+            for name, st in engine.states.items():
+                have = s.query(db.TradeRow).filter_by(character=name).count()
+                for t in st.portfolio.trades[have:]:
+                    s.add(db.TradeRow(ts=datetime.now(), date=t.date, character=name,
+                        symbol=t.symbol, market=t.market.value, side=t.side.value,
+                        quantity=t.quantity, price=t.price, fee=t.fee, tax=t.tax,
+                        reason=t.reason.value, green_count=t.green_count,
+                        red_count=t.red_count, fired=list(t.fired),
+                        realized_pnl=t.realized_pnl))
+            s.commit()
+
+    def record_equity(self, ts, snap: dict) -> None:
+        with self.sf() as s:
+            for name, eq in snap.items():
+                s.add(db.EquityPoint(ts=ts, character=name, equity_krw=eq))
+            s.commit()
+
+    def enqueue_flow(self, character: str, amount_krw: float, liquidate=()) -> int:
+        with self.sf() as s:
+            fr = db.FlowRequest(character=character, amount_krw=amount_krw,
+                                liquidate=list(liquidate), status="pending",
+                                requested_at=datetime.now())
+            s.add(fr); s.commit(); s.refresh(fr)
+            return fr.id
+
+    def pending_flow_requests(self, character=None):
+        with self.sf() as s:
+            q = s.query(db.FlowRequest).filter_by(status="pending")
+            if character:
+                q = q.filter_by(character=character)
+            rows = q.order_by(db.FlowRequest.id).all()
+            for r in rows:
+                s.expunge(r)
+            return rows
+
+    def mark_flow_applied(self, req_id: int) -> None:
+        with self.sf() as s:
+            r = s.get(db.FlowRequest, req_id)
+            if r:
+                r.status, r.applied_at = "applied", datetime.now()
+                s.commit()
+
+    def upsert_daily_bars(self, market: str, symbol: str, df: pd.DataFrame) -> None:
+        with self.sf() as s:
+            for ts, r in df.iterrows():
+                s.merge(db.DailyBarRow(market=market, symbol=symbol, date=ts.date(),
+                    open=float(r["open"]), high=float(r["high"]), low=float(r["low"]),
+                    close=float(r["close"]), volume=float(r["volume"])))
+            s.commit()
+
+    def load_daily_bars(self, market: str, symbol: str) -> pd.DataFrame:
+        with self.sf() as s:
+            rows = s.query(db.DailyBarRow).filter_by(market=market, symbol=symbol) \
+                    .order_by(db.DailyBarRow.date).all()
+            recs = [{"date": pd.Timestamp(r.date), "open": r.open, "high": r.high,
+                     "low": r.low, "close": r.close, "volume": r.volume} for r in rows]
+            if not recs:
+                return pd.DataFrame(columns=["open","high","low","close","volume"])
+            return pd.DataFrame(recs).set_index("date")
+
+    def save_universe(self, market: str, symbols: list[str], as_of) -> None:
+        with self.sf() as s:
+            for rank, sym in enumerate(symbols):
+                s.merge(db.UniverseRow(market=market, symbol=sym, as_of_date=as_of, rank=rank))
+            s.commit()
+
+    def load_universe(self, market: str, as_of) -> list[str]:
+        with self.sf() as s:
+            rows = s.query(db.UniverseRow).filter_by(market=market, as_of_date=as_of) \
+                    .order_by(db.UniverseRow.rank).all()
+            return [r.symbol for r in rows]
+
+    def record_flow(self, flow) -> None:
+        with self.sf() as s:
+            s.add(db.CapitalFlowRow(date=flow.date, character=flow.character,
+                amount_krw=flow.amount_krw, fx_rate=flow.fx_rate))
+            s.commit()

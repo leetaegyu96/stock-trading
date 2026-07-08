@@ -75,3 +75,36 @@ def test_persist_rehydrate_pending_orders_roundtrip(session):
     assert rs.reason == ps.reason
     assert rs.red_count == ps.red_count
     assert tuple(rs.fired) == ps.fired
+
+
+@needs_db
+def test_run_state_idempotency_and_flow_queue(session):
+    import os
+    from simcore.live.repository import Repository
+    from simcore.live.db import make_engine, make_session_factory
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    rs = repo.get_run_state("KR")
+    assert rs.last_close_date is None
+    repo.mark_close("KR", date(2026, 7, 6), 1300.0)
+    assert repo.get_run_state("KR").last_close_date == date(2026, 7, 6)
+
+    rid = repo.enqueue_flow("국내형", 5_000_000.0)
+    pend = repo.pending_flow_requests()
+    assert len(pend) == 1 and pend[0].amount_krw == 5_000_000.0
+    repo.mark_flow_applied(rid)
+    assert repo.pending_flow_requests() == []
+
+
+@needs_db
+def test_daily_bars_upsert_load(session):
+    import os, pandas as pd
+    from simcore.live.repository import Repository
+    from simcore.live.db import make_engine, make_session_factory
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    df = pd.DataFrame({"open":[1.],"high":[2.],"low":[0.5],"close":[1.5],"volume":[10.]},
+                      index=pd.to_datetime(["2026-07-06"]))
+    repo.upsert_daily_bars("KR", "005930", df)
+    got = repo.load_daily_bars("KR", "005930")
+    assert got.iloc[0]["close"] == 1.5
