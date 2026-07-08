@@ -1,0 +1,160 @@
+/* 대시보드 공용 테마: 라이트/다크 + 상승/하락 색 변수.
+ * 한국 관례: 상승(양수) = 빨강, 하락(음수) = 파랑. */
+:root {
+  color-scheme: light dark;
+
+  --color-bg: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-border: #e2e5ea;
+  --color-text: #1a1d23;
+  --color-text-muted: #6b7280;
+
+  --color-up: #d32f2f; /* 상승 = 빨강 */
+  --color-down: #1565c0; /* 하락 = 파랑 */
+  --color-neutral: #6b7280;
+
+  --color-domestic: #c62828;
+  --color-global: #1565c0;
+  --color-mixed: #6a1b9a;
+
+  --card-radius: 16px;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #14161a;
+    --color-surface: #1c1f26;
+    --color-border: #2b2f38;
+    --color-text: #eef0f3;
+    --color-text-muted: #9aa1ac;
+
+    --color-up: #ff6659; /* 다크에서도 상승 = 빨강 계열 유지, 대비 확보 */
+    --color-down: #64b5f6; /* 하락 = 파랑 계열, 대비 확보 */
+    --color-neutral: #9aa1ac;
+  }
+}
+
+/* 명시적 테마 토글 지원 (data-theme 속성) */
+:root[data-theme="light"] {
+  --color-bg: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-border: #e2e5ea;
+  --color-text: #1a1d23;
+  --color-text-muted: #6b7280;
+  --color-up: #d32f2f;
+  --color-down: #1565c0;
+  --color-neutral: #6b7280;
+}
+
+:root[data-theme="dark"] {
+  --color-bg: #14161a;
+  --color-surface: #1c1f26;
+  --color-border: #2b2f38;
+  --color-text: #eef0f3;
+  --color-text-muted: #9aa1ac;
+  --color-up: #ff6659;
+  --color-down: #64b5f6;
+  --color-neutral: #9aa1ac;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.char-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 260px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.char-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.char-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.char-card__identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.char-card__name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--color-text);
+}
+
+.char-card__meta {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.char-card__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.char-card__row-label {
+  color: var(--color-text-muted);
+}
+
+.char-card__row-value {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.char-card__today {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.up {
+  color: var(--color-up);
+}
+
+.down {
+  color: var(--color-down);
+}
+
+.neutral {
+  color: var(--color-neutral);
+}
+
+.char-card__spark {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0;
+}
+
+.char-card__footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+}
