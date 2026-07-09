@@ -43,3 +43,8 @@ def test_empty_fetch_result_is_not_cached(tmp_path):
 def test_lookback_pad_covers_ichimoku():
     from simcore.data import LOOKBACK_PAD_DAYS
     assert LOOKBACK_PAD_DAYS >= 120     # 일목 워밍업 안전 여유
+
+
+def test_market_trend_period_default():
+    from simcore.config import SignalParams
+    assert SignalParams().market_trend_period == 20
