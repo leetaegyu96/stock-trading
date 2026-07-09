@@ -9,6 +9,7 @@ from simcore.config import Config
 from simcore.replay import DataBundle, run_replay
 from dashboard.scripts.seed_from_replay import seed_replay_result_into_db
 from dashboard.backend import summary, queries
+from dashboard.backend.constants import FALLBACK_FX_RATE
 from simcore.live import db
 
 
@@ -91,3 +92,42 @@ def test_seed_requires_force_flag_when_run_as_cli(monkeypatch):
         assert False, "SystemExit 이 발생해야 한다"
     except SystemExit as exc:
         assert exc.code  # 0 이 아닌/문자열 메시지
+
+
+def test_cli_seeds_with_shared_fallback_fx_rate(monkeypatch):
+    """회귀 가드: CLI(_cli)가 seed_replay_result_into_db 에 넘기는 fx_rate 는 반드시
+    dashboard.backend.constants.FALLBACK_FX_RATE(카드가 쓰는 고정값)여야 한다.
+    누군가 다시 `fx_rate = float(bundle.fx.iloc[-1])`(리플레이 마지막날의 실제 환율)로
+    되돌리면, 이 테스트의 bundle(fx 가 1300→1400 으로 변함)에서 즉시 실패한다."""
+    import sys
+
+    import dashboard.scripts.seed_from_replay as mod
+    from simcore import data as datamod, universe
+
+    bundle = _bundle_with_us_and_drifting_fx()  # 마지막날 fx = 1400.0 (!= FALLBACK_FX_RATE)
+
+    monkeypatch.setattr(universe, "kospi200", lambda *a, **k: list(bundle.kr.keys()))
+    monkeypatch.setattr(universe, "sp500", lambda *a, **k: list(bundle.us.keys()))
+    monkeypatch.setattr(datamod, "load_kr_daily", lambda *a, **k: bundle.kr)
+    monkeypatch.setattr(datamod, "load_us_daily", lambda *a, **k: bundle.us)
+    monkeypatch.setattr(datamod, "load_fx", lambda *a, **k: bundle.fx)
+
+    captured = {}
+    real_seed = mod.seed_replay_result_into_db
+
+    def spy_seed(result, bundle_, sf, fx_rate=None, initial_capital_krw=None):
+        captured["fx_rate"] = fx_rate
+        return real_seed(result, bundle_, sf, fx_rate=fx_rate,
+                          initial_capital_krw=initial_capital_krw)
+
+    monkeypatch.setattr(mod, "seed_replay_result_into_db", spy_seed)
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    monkeypatch.setattr(sys, "argv", [
+        "seed_from_replay.py", "--force",
+        "--start", "2025-09-01", "--end", "2026-02-01",
+    ])
+
+    mod._cli()
+
+    assert abs(bundle.fx.iloc[-1] - FALLBACK_FX_RATE) > 1.0  # 이 테스트가 실제로 두 값을 구분하는지 확인
+    assert captured["fx_rate"] == FALLBACK_FX_RATE

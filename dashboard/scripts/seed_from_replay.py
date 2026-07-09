@@ -17,6 +17,7 @@ from datetime import date, datetime, time
 
 import pandas as pd
 
+from dashboard.backend.constants import FALLBACK_FX_RATE
 from simcore.config import Config
 from simcore.engine import DEFAULT_CHARACTERS
 from simcore.live import db
@@ -196,12 +197,17 @@ def _cli() -> None:
 
     url = os.environ["DATABASE_URL"]
     engine = db.make_engine(url)
+    # --force 는 이미 명시적 파괴적 리셋이므로, 스키마 drift(모델에 컬럼이 추가됐지만
+    # create_all 은 기존 테이블에 컬럼을 더하지 못해 실 DB가 뒤처진 경우)까지 포함해
+    # 완전히 새로 만든다. create_all 만으로는 이런 drift 를 스스로 복구하지 못한다.
+    db.Base.metadata.drop_all(engine)
     db.create_all(engine)
     sf = db.make_session_factory(engine)
-    # dashboard.backend.app._FALLBACK_FX_RATE(1300.0)과 반드시 같아야 한다 — 라이브 카드는
-    # 그 시점의 실제 fx(bundle.fx.iloc[-1])가 아니라 이 고정값으로 총자산을 계산하므로,
-    # 여기서 다른 값을 쓰면 총자산(card_summary)과 자산곡선 마지막 값이 어긋난다(정합 위반).
-    fx_rate = 1300.0
+    # dashboard.backend.constants.FALLBACK_FX_RATE(=dashboard.backend.app._FALLBACK_FX_RATE)
+    # 와 반드시 같아야 한다 — 라이브 카드는 그 시점의 실제 fx(bundle.fx.iloc[-1])가 아니라
+    # 이 고정값으로 총자산을 계산하므로, 여기서 다른 값을 쓰면 총자산(card_summary)과
+    # 자산곡선 마지막 값이 어긋난다(정합 위반 — 과거 실제 발생, 회귀 테스트로 가드).
+    fx_rate = FALLBACK_FX_RATE
     seed_replay_result_into_db(result, bundle, sf, fx_rate=fx_rate,
                                initial_capital_krw=cfg.initial_capital_krw)
     print("[seed_from_replay] 시딩 완료.")

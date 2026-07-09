@@ -21,6 +21,7 @@ from simcore import signal_display as sd
 
 from dashboard.backend import db, flows, queries, summary
 from dashboard.backend.broadcaster import Broadcaster, ConnectionManager
+from dashboard.backend.constants import FALLBACK_FX_RATE
 from dashboard.backend.live_prices import current_prices
 from dashboard.backend.schemas import (
     CardSummary,
@@ -33,7 +34,8 @@ from dashboard.backend.schemas import (
 )
 
 # 카드/집계(list_character_cards)는 daily_bars 최신 종가(또는 avg_price 폴백)만 사용한다.
-_FALLBACK_FX_RATE = 1300.0
+# dashboard.backend.constants.FALLBACK_FX_RATE 와 동일해야 한다(seed_from_replay 도 공유).
+_FALLBACK_FX_RATE = FALLBACK_FX_RATE
 # WS 백그라운드 폴링 주기(초). 테스트는 poll_once 를 직접 호출하므로 이 값에 의존하지 않는다.
 _WS_POLL_INTERVAL_SEC = float(os.environ.get("WS_POLL_INTERVAL_SEC", "5.0"))
 
