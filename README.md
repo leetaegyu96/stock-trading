@@ -48,6 +48,11 @@ KIS는 **데이터 피드 전용**(주문하지 않음)이며 3캐릭터는 엔�
 라이브 데몬(`simcore.live run`)과 동일한 PostgreSQL(`DATABASE_URL`)을 읽어, 3캐릭터 카드·상세(차트·표·지표)·입출금 예약을 REST + WebSocket으로 제공한다.
 프론트 빌드(`dist/`)가 있으면 백엔드가 SPA를 그대로 서빙하며, KIS 실시세를 종가에 병합해 카드/차트에 반영한다.
 
+대시보드 DB를 6개월 리플레이 결과로 초기화(리셋)하려면(⚠️ `DATABASE_URL`의 기존 거래·자산·포지션을 전부 지움):
+
+    python dashboard/scripts/seed_from_replay.py --force
+    # 옵션: --start/--end (기본 최근 6개월) --kr-top 50 --us-top 50 --cache data/cache
+
 ## 테스트
     .venv\Scripts\python -m pytest
 
