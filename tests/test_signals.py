@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from simcore.config import SignalParams
+from simcore.config import SignalParams, SignalScores
 from simcore.signals import evaluate_frame, fired_at, min_history, GREEN_COLS, RED_COLS
 from simcore import signals as sig
 
@@ -115,3 +115,34 @@ def test_r18_support_break():
     df = _frame(closes)
     out = sig.evaluate_frame(df, SignalParams())
     assert out["R18"].iloc[-1]
+
+
+def test_score_applies_category_caps():
+    sc = SignalScores()
+    # 추세 신호 5개(각 5·5·5·5·5=25) → 상한 10
+    total, by_cat = sig.score(["G1", "G4", "G11", "G12", "G15"], sc)
+    assert by_cat["추세"] == 10
+    assert total == 10
+
+
+def test_score_sums_across_categories_capped():
+    sc = SignalScores()
+    total, by_cat = sig.score(["G1", "G4", "G7", "G5"], sc)
+    # 추세 G1+G4=10(상한10), 돌파 G7=5, 거래량 G5=4 → 19
+    assert total == 19
+
+
+def test_buy_gate_requires_all_three():
+    sc = SignalScores()
+    assert not sig.buy_gate_ok(["G1", "G4", "G7"], sc)      # 거래량 없음
+    assert not sig.buy_gate_ok(["G1", "G5"], sc)            # 돌파 없음
+    assert sig.buy_gate_ok(["G1", "G7", "G5"], sc)          # 추세+돌파+거래량 OK
+    assert sig.buy_gate_ok(["G11", "G18", "G23"], sc)       # G23 가 거래량 요건 충족
+
+
+def test_snapshot_scores_helper():
+    sc = SignalScores()
+    gs, rs, gate = sig.snapshot_scores(("G1", "G7", "G5"), ("R1",), sc)
+    assert gs == 5 + 5 + 4
+    assert rs == 5
+    assert gate is True

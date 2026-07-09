@@ -115,3 +115,25 @@ def fired_at(frame: pd.DataFrame, d) -> tuple[tuple[str, ...], tuple[str, ...]]:
     green = tuple(c for c in GREEN_COLS if bool(row[c]))
     red = tuple(c for c in RED_COLS if bool(row[c]))
     return green, red
+
+
+def score(codes, scores: SignalScores) -> tuple[int, dict]:
+    by_cat: dict[str, int] = {}
+    for c in codes:
+        cat = scores.category.get(c)
+        if cat is None:
+            continue
+        by_cat[cat] = by_cat.get(cat, 0) + scores.points.get(c, 0)
+    capped = {cat: min(pts, scores.caps.get(cat, pts)) for cat, pts in by_cat.items()}
+    return sum(capped.values()), capped
+
+
+def buy_gate_ok(green_codes, scores: SignalScores) -> bool:
+    fired = set(green_codes)
+    return all(bool(fired & members) for members in scores.buy_gate.values())
+
+
+def snapshot_scores(green, red, scores: SignalScores) -> tuple[int, int, bool]:
+    gs, _ = score(green, scores)
+    rs, _ = score(red, scores)
+    return gs, rs, buy_gate_ok(green, scores)
