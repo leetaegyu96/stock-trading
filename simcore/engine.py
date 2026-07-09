@@ -31,6 +31,7 @@ class PendingBuy:
     symbol: str
     market: Market
     green_count: int
+    green_score: int
     fired: tuple[str, ...]
     change_pct: float
     volume: float
@@ -42,7 +43,9 @@ class PendingSell:
     market: Market
     reason: TradeReason
     red_count: int
+    red_score: int
     fired: tuple[str, ...]
+    partial: bool = False
 
 
 @dataclass
@@ -84,28 +87,38 @@ class Engine:
                     del st.cooldowns[sym]
                 else:
                     st.cooldowns[sym][1] = remaining
-            # 보유 종목 매도 판정 (R7/R10 은 종가 기준으로 여기서 추가)
+            # 매도 판정
             already_pending = {ps.symbol for ps in st.pending_sells}
             for sym, pos in st.portfolio.positions.items():
                 if pos.market != market or sym not in snaps or sym in already_pending:
                     continue
                 s = snaps[sym]
-                red = list(s.red)
-                if s.close <= pos.avg_price * (1 + r.stop_loss_pct):
-                    red.append("R7")
-                if s.close >= pos.avg_price * (1 + r.take_profit_pct):
-                    red.append("R10")
-                if len(red) >= r.sell_threshold:
+                red = set(s.red)
+                stop_px = pos.avg_price * (1 + pos.locked_stop_pct)
+                forced = (s.close <= stop_px            # R7/트레일링 (종가 갭)
+                          or "R18" in red               # 지지선 붕괴
+                          or ({"R5", "R23"} <= red))     # 거래량 급증 음봉 + 장대 음봉
+                if forced:
                     st.pending_sells.append(PendingSell(
-                        sym, market, TradeReason.SIGNAL_SELL, len(red), tuple(red)))
-            # 매수 후보 (미보유 · 쿨다운 아님 · 임계값 이상)
+                        sym, market, TradeReason.SIGNAL_SELL, len(red), s.red_score,
+                        tuple(s.red), partial=False))
+                elif s.red_score >= r.sell_full_min:
+                    st.pending_sells.append(PendingSell(
+                        sym, market, TradeReason.SIGNAL_SELL, len(red), s.red_score,
+                        tuple(s.red), partial=False))
+                elif s.red_score >= r.sell_partial_min:
+                    st.pending_sells.append(PendingSell(
+                        sym, market, TradeReason.SIGNAL_SELL, len(red), s.red_score,
+                        tuple(s.red), partial=True))
+            # 매수 후보
             held = set(st.portfolio.positions) | {b.symbol for b in st.pending_buys}
             for sym, s in snaps.items():
                 if (sym in held or sym in st.cooldowns
-                        or len(s.green) < r.buy_threshold):
+                        or s.green_score < r.buy_score_min or not s.buy_gate):
                     continue
                 st.pending_buys.append(PendingBuy(
-                    sym, market, len(s.green), s.green, s.change_pct, s.volume))
+                    sym, market, len(s.green), s.green_score, s.green,
+                    s.change_pct, s.volume))
 
     # ---- 개장: 예약 주문 체결 ----
     def fill_open(self, d: Date, market: Market, opens: dict[str, float],
@@ -118,20 +131,26 @@ class Engine:
             carried: list[PendingSell] = []
             for ps in st.pending_sells:
                 if ps.market != market:
-                    carried.append(ps)
-                    continue
+                    carried.append(ps); continue
                 if ps.symbol not in st.portfolio.positions:
-                    continue  # 이미 손절 등으로 청산됨 → 폐기
+                    continue
                 price = opens.get(ps.symbol)
                 if price is None:
-                    carried.append(ps)
-                    continue
+                    carried.append(ps); continue
+                pos = st.portfolio.positions[ps.symbol]
+                qty = None
+                if ps.partial:
+                    qty = max(1, int(pos.quantity * r.partial_sell_fraction))
+                # 부분매도 수량이 반올림으로 잔량 전체를 청산하는 경우(예: quantity==1)에도
+                # 쿨다운이 정확히 걸려야 하므로, 등급이 아니라 _sell 의 "실제 청산 여부" 가드에
+                # 위임한다 (cooldown=True 는 포지션이 남아 있으면 자동으로 무시됨).
                 self._sell(st, d, ps.symbol, price, ps.reason, fx_rate,
-                           red_count=ps.red_count, fired=ps.fired)
+                           quantity=qty, cooldown=True,
+                           red_count=ps.red_count, red_score=ps.red_score, fired=ps.fired)
             st.pending_sells = carried
-            # 2) 매수: 우선순위 = 신호 수 → 등락률 → 거래량
+            # 2) 매수: 우선순위 = green_score → 등락률 → 거래량
             buys = sorted((b for b in st.pending_buys if b.market == market),
-                          key=lambda b: (-b.green_count, -b.change_pct, -b.volume))
+                          key=lambda b: (-b.green_score, -b.change_pct, -b.volume))
             st.pending_buys = [b for b in st.pending_buys if b.market != market]
             for b in buys:
                 slots = r.max_positions - len(st.portfolio.positions)
@@ -161,23 +180,38 @@ class Engine:
         if cross_currency:
             pf.convert_to_usd(qty * fill_price * (1 + fee_rate), fx_rate)
         pf.buy(d, b.symbol, b.market, qty, fill_price, TradeReason.SIGNAL_BUY,
-               green_count=b.green_count, fired=b.fired)
+               green_count=b.green_count, green_score=b.green_score, fired=b.fired)
 
     def _sell(self, st: CharacterState, d: Date, symbol: str, price: float,
-              reason: TradeReason, fx_rate: float, red_count: int = 0,
+              reason: TradeReason, fx_rate: float, quantity: int | None = None,
+              cooldown: bool = True, red_count: int = 0, red_score: int = 0,
               fired: tuple[str, ...] = ()) -> None:
         pos = st.portfolio.positions[symbol]
+        market = pos.market
         fill_price = price * (1 - self.config.costs.slippage)
-        st.portfolio.sell(d, symbol, fill_price, reason,
-                          red_count=red_count, fired=fired)
-        st.cooldowns[symbol] = [pos.market, self.config.rules.cooldown_days]
-        if st.spec.base_currency == Currency.KRW and pos.market == Market.US:
+        st.portfolio.sell(d, symbol, fill_price, reason, quantity=quantity,
+                          red_count=red_count, red_score=red_score, fired=fired)
+        if cooldown and symbol not in st.portfolio.positions:
+            st.cooldowns[symbol] = [market, self.config.rules.cooldown_days]
+        if st.spec.base_currency == Currency.KRW and market == Market.US:
             st.portfolio.convert_all_usd_to_krw(fx_rate)  # 범용형: 매도 대금 즉시 원화로
 
-    # ---- 장중: 손절/익절 (리플레이 = 당일 OHLC 근사, 라이브 = 현재가 bar) ----
+    def _update_trailing(self, pos, high: float) -> None:
+        r = self.config.rules
+        if high > pos.peak_price:
+            pos.peak_price = high
+        peak_gain = pos.peak_price / pos.avg_price - 1.0
+        for thr, lock in r.trailing_tiers:          # 내림차순, 첫 매칭
+            if peak_gain >= thr:
+                pos.locked_stop_pct = max(pos.locked_stop_pct, lock)
+                break
+        if peak_gain >= r.trailing_top:             # 최고가 대비 트레일
+            trail = pos.peak_price * (1 - r.trail_pct) / pos.avg_price - 1.0
+            pos.locked_stop_pct = max(pos.locked_stop_pct, trail)
+
+    # ---- 장중: 트레일링 스탑 (리플레이 = 당일 OHLC 근사, 라이브 = 현재가 bar) ----
     def check_stops(self, d: Date, market: Market, bars: dict[str, DailyBar],
                     fx_rate: float) -> None:
-        r = self.config.rules
         for st in self.states.values():
             if market not in st.spec.markets:
                 continue
@@ -186,12 +220,14 @@ class Engine:
                 if pos.market != market or sym not in bars:
                     continue
                 b = bars[sym]
-                stop_px = pos.avg_price * (1 + r.stop_loss_pct)
-                take_px = pos.avg_price * (1 + r.take_profit_pct)
-                if b.low <= stop_px:  # 손절 우선 (보수적)
-                    self._sell(st, d, sym, stop_px, TradeReason.STOP_LOSS, fx_rate)
-                elif b.high >= take_px:
-                    self._sell(st, d, sym, take_px, TradeReason.TAKE_PROFIT, fx_rate)
+                stop_px = pos.avg_price * (1 + pos.locked_stop_pct)  # 갱신 전 잠금선
+                if b.low <= stop_px:                                 # 트리거 우선(보수적)
+                    reason = (TradeReason.TRAILING_STOP
+                              if pos.locked_stop_pct > self.config.rules.stop_loss_pct
+                              else TradeReason.STOP_LOSS)
+                    self._sell(st, d, sym, stop_px, reason, fx_rate)
+                    continue
+                self._update_trailing(pos, b.high)                   # 미발동 시 peak 갱신
 
     # ---- 사용자 입출금 ----
     def apply_flow(self, d: Date, character: str, amount_krw: float, fx_rate: float,

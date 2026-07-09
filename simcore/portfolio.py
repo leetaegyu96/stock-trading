@@ -56,7 +56,7 @@ class Portfolio:
 
     # ---- 매매 ----
     def buy(self, d: Date, symbol: str, market: Market, quantity: int, price: float,
-            reason: TradeReason, green_count: int = 0,
+            reason: TradeReason, green_count: int = 0, green_score: int = 0,
             fired: tuple[str, ...] = ()) -> Trade:
         if symbol in self.positions:
             raise ValueError(f"{self.character}: {symbol} 이미 보유 중 - 재매수 금지")
@@ -68,24 +68,33 @@ class Portfolio:
             raise ValueError(f"{self.character}: {symbol} 매수 현금 부족 "
                              f"(필요 {total:,.0f} {cur}, 보유 {self.cash[cur]:,.0f})")
         self.cash[cur] -= total
-        self.positions[symbol] = Position(symbol, market, quantity, price, d)
+        self.positions[symbol] = Position(
+            symbol, market, quantity, price, d,
+            peak_price=price, locked_stop_pct=self.config.rules.stop_loss_pct)
         trade = Trade(d, self.character, symbol, market, Side.BUY, quantity, price,
-                      fee, tax, reason, green_count=green_count, fired=fired)
+                      fee, tax, reason, green_count=green_count, fired=fired,
+                      green_score=green_score)
         self.trades.append(trade)
         self.assert_invariants()
         return trade
 
     def sell(self, d: Date, symbol: str, price: float, reason: TradeReason,
-             red_count: int = 0, fired: tuple[str, ...] = ()) -> Trade:
-        pos = self.positions.pop(symbol)
+             quantity: int | None = None, red_count: int = 0, red_score: int = 0,
+             fired: tuple[str, ...] = ()) -> Trade:
+        pos = self.positions[symbol]
+        qty = pos.quantity if quantity is None else min(quantity, pos.quantity)
         cur = MARKET_CURRENCY[pos.market]
-        gross = pos.quantity * price
+        gross = qty * price
         fee, tax = costmod.trade_costs(pos.market, Side.SELL, gross, self.config.costs)
         self.cash[cur] += gross - fee - tax
-        pnl = (price - pos.avg_price) * pos.quantity - fee - tax
-        trade = Trade(d, self.character, symbol, pos.market, Side.SELL, pos.quantity,
+        pnl = (price - pos.avg_price) * qty - fee - tax
+        if qty >= pos.quantity:
+            self.positions.pop(symbol)
+        else:
+            pos.quantity -= qty                       # 부분매도: 평단·트레일링 유지
+        trade = Trade(d, self.character, symbol, pos.market, Side.SELL, qty,
                       price, fee, tax, reason, red_count=red_count, fired=fired,
-                      realized_pnl=pnl)
+                      red_score=red_score, realized_pnl=pnl)
         self.trades.append(trade)
         self.assert_invariants()
         return trade

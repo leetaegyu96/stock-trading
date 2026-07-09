@@ -25,7 +25,7 @@ def make_bundle():
     fx = pd.Series(1300.0, index=idx)
     return DataBundle(kr=kr, us={}, fx=fx), idx
 
-CFG = replace(Config(), rules=replace(Config().rules, buy_threshold=3))
+CFG = replace(Config(), rules=replace(Config().rules, buy_score_min=1))
 
 def test_buys_then_stops_out_deterministically():
     bundle, idx = make_bundle()
@@ -33,7 +33,10 @@ def test_buys_then_stops_out_deterministically():
     r2 = run_replay(CFG, bundle, idx[70].date(), idx[-1].date())
     trades = r1.trades[r1.trades.character == "국내형"]
     assert (trades.side == "BUY").sum() >= 1
-    assert "STOP_LOSS" in set(trades.reason)
+    # v2: 매수 후 상승 지속 시 트레일링 티어가 먼저 잠기므로 (-7% 원본 손절선이 아니라)
+    # TRAILING_STOP 으로 청산될 수 있다. 두 사유 모두 "폭락에 의한 강제 청산"이라는
+    # 테스트 의도(결정론적 강제매도)를 충족한다.
+    assert {"STOP_LOSS", "TRAILING_STOP"} & set(trades.reason)
     pd.testing.assert_frame_equal(r1.trades, r2.trades)  # 결정론
 
 def test_equity_curve_continuous_and_invariant():
@@ -52,3 +55,22 @@ def test_withdrawal_flow_with_liquidation():
     tr = r.trades[(r.trades.character == "국내형") & (r.trades.reason == "USER_WITHDRAWAL")]
     assert len(tr) == 1
     assert r.flows_by_char["국내형"].sum() == pytest.approx(-95_000_000)
+
+def test_snapshot_carries_scores(tmp_path):
+    # 상승 추세 합성 데이터로 리플레이 → 최소 하나의 매수(점수 게이트 통과) 발생
+    import numpy as np, pandas as pd
+    from datetime import date
+    from simcore.config import Config
+    from simcore.replay import DataBundle, run_replay
+
+    idx = pd.date_range("2025-06-01", periods=200, freq="B")
+    up = np.linspace(100, 400, 200)
+    df = pd.DataFrame({"open": up, "high": up + 2, "low": up - 2,
+                       "close": up, "volume": np.linspace(1000, 5000, 200)}, index=idx)
+    bundle = DataBundle(kr={"AAA": df}, us={},
+                        fx=pd.Series(1300.0, index=idx))
+    res = run_replay(Config(), bundle, date(2025, 9, 1), date(2026, 2, 1))
+    # 거래가 발생했고 매수 거래에 green_score 기록
+    buys = res.trades[res.trades.side == "BUY"] if not res.trades.empty else res.trades
+    assert not buys.empty
+    assert (buys["green_score"] >= 18).all()

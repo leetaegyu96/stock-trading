@@ -26,6 +26,9 @@ def test_persist_rehydrate_roundtrip(session):
     st = eng.states["국내형"]
     st.portfolio.buy(date(2026, 7, 6), "005930", Market.KR, 10, 70000.0,
                      __import__("simcore.models", fromlist=["TradeReason"]).TradeReason.SIGNAL_BUY)
+    # 트레일링이 이미 한 단계 잠긴 상태를 흉내낸다 (peak 갱신 + 잠금선 상향)
+    st.portfolio.positions["005930"].peak_price = 120.0
+    st.portfolio.positions["005930"].locked_stop_pct = 0.10
     st.cooldowns["000660"] = [Market.KR, 2]
     repo.persist_state(eng)
 
@@ -34,6 +37,10 @@ def test_persist_rehydrate_roundtrip(session):
     s2 = eng2.states["국내형"]
     assert "005930" in s2.portfolio.positions
     assert s2.portfolio.positions["005930"].quantity == 10
+    # 재기동 후에도 트레일링 잠금 상태(peak_price/locked_stop_pct)가 유지되어야 한다 —
+    # 그렇지 않으면 check_stops 가 stop_px=avg_price(락 0.0)로 계산해 즉시 강제매도된다.
+    assert s2.portfolio.positions["005930"].peak_price == 120.0
+    assert s2.portfolio.positions["005930"].locked_stop_pct == 0.10
     assert abs(s2.portfolio.cash[Currency.KRW] - st.portfolio.cash[Currency.KRW]) < 1e-3
     assert abs(s2.portfolio.cash[Currency.USD] - st.portfolio.cash[Currency.USD]) < 1e-3
     assert s2.cooldowns["000660"][1] == 2
@@ -47,10 +54,10 @@ def test_persist_rehydrate_pending_orders_roundtrip(session):
     eng = Engine(Config())
     eng.start(date(2026, 7, 6), 1300.0)
     st = eng.states["국내형"]
-    pb = PendingBuy(symbol="000660", market=Market.KR, green_count=8,
+    pb = PendingBuy(symbol="000660", market=Market.KR, green_count=8, green_score=20,
                      fired=("R1", "R2", "R3"), change_pct=3.5, volume=123456.0)
     ps = PendingSell(symbol="005930", market=Market.KR, reason=TradeReason.SIGNAL_SELL,
-                      red_count=4, fired=("R4", "R5"))
+                      red_count=4, red_score=12, fired=("R4", "R5"), partial=True)
     st.pending_buys.append(pb)
     st.pending_sells.append(ps)
     repo.persist_state(eng)
@@ -64,6 +71,7 @@ def test_persist_rehydrate_pending_orders_roundtrip(session):
     assert rb.symbol == pb.symbol
     assert rb.market == pb.market
     assert rb.green_count == pb.green_count
+    assert rb.green_score == pb.green_score
     assert tuple(rb.fired) == pb.fired
     assert rb.change_pct == pb.change_pct
     assert rb.volume == pb.volume
@@ -74,6 +82,8 @@ def test_persist_rehydrate_pending_orders_roundtrip(session):
     assert rs.market == ps.market
     assert rs.reason == ps.reason
     assert rs.red_count == ps.red_count
+    assert rs.red_score == ps.red_score
+    assert rs.partial == ps.partial is True
     assert tuple(rs.fired) == ps.fired
 
 
