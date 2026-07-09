@@ -81,13 +81,13 @@ function FaceFeatures({ mood }: { mood: Mood }) {
     default:
       return (
         <>
-          {/* 처진 눈썹 (시무룩) */}
-          <line x1="26" y1="34" x2="40" y2="38" stroke="#3E2723" strokeWidth="2.8" strokeLinecap="round" />
-          <line x1="74" y1="34" x2="60" y2="38" stroke="#3E2723" strokeWidth="2.8" strokeLinecap="round" />
+          {/* 살짝 처진 눈썹 (화남이 아니라 시무룩 — 안쪽이 위로) */}
+          <line x1="28" y1="37" x2="41" y2="34.5" stroke="#3E2723" strokeWidth="2.4" strokeLinecap="round" />
+          <line x1="72" y1="37" x2="59" y2="34.5" stroke="#3E2723" strokeWidth="2.4" strokeLinecap="round" />
           <circle cx="35" cy="45" r="4" fill="#3E2723" />
           <circle cx="65" cy="45" r="4" fill="#3E2723" />
-          {/* 아래로 처진 입 (찡그림) */}
-          <path d="M34 70 Q50 58 66 70" stroke="#3E2723" strokeWidth="3.2" strokeLinecap="round" fill="none" />
+          {/* 완만하게 처진 입 */}
+          <path d="M37 68 Q50 61 63 68" stroke="#3E2723" strokeWidth="3" strokeLinecap="round" fill="none" />
         </>
       );
   }
@@ -142,13 +142,6 @@ const VARIANT_BADGE: Record<CharacterVariant, () => JSX.Element> = {
   mixed: MixedBadge,
 };
 
-/** 캐릭터별 통화 표기(₩/$/₩·$) 소품 — 뺨 옆 작은 배지. */
-const VARIANT_CURRENCY_MARK: Record<CharacterVariant, string> = {
-  domestic: "₩",
-  global: "$",
-  mixed: "₩$",
-};
-
 /**
  * 성과연동 표정 아바타. 캐릭터별 고유 색·소품 + mood에 따른 표정 변화를 담은
  * 자체 완결형(외부 자산/네트워크 불필요) 인라인 SVG.
@@ -167,26 +160,15 @@ export function Avatar({ character, mood, size = 64, className }: AvatarProps) {
       role="img"
       aria-label={`${character} 아바타 (표정: ${mood})`}
     >
-      {/* 얼굴 */}
-      <circle cx="50" cy="54" r="38" fill={theme.skin} stroke={theme.ring} strokeWidth="2.5" />
+      {/* 얼굴 — 얇은 링으로 정돈 */}
+      <circle cx="50" cy="54" r="38" fill={theme.skin} stroke={theme.ring} strokeWidth="1.8" opacity="0.98" />
       {/* 볼터치 */}
-      <circle cx="26" cy="58" r="6" fill={theme.cheek} opacity="0.6" />
-      <circle cx="74" cy="58" r="6" fill={theme.cheek} opacity="0.6" />
+      <circle cx="27" cy="59" r="5.5" fill={theme.cheek} opacity="0.5" />
+      <circle cx="73" cy="59" r="5.5" fill={theme.cheek} opacity="0.5" />
       {/* 표정 (눈/입, mood에 따라 변경) */}
       <FaceFeatures mood={mood} />
       {/* 캐릭터 정체성 소품 (태극/지구본/혼합) */}
       <Badge />
-      {/* 통화 마크 */}
-      <text
-        x="50"
-        y="94"
-        textAnchor="middle"
-        fontSize="10"
-        fontWeight="700"
-        fill={theme.ring}
-      >
-        {VARIANT_CURRENCY_MARK[variant]}
-      </text>
     </svg>
   );
 }

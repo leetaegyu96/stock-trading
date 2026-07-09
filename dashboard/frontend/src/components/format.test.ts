@@ -98,3 +98,53 @@ describe("shortDate", () => {
     expect(shortDate("nope")).toBe("nope");
   });
 });
+
+// ── UI 개편에서 추가된 포맷터 ──
+import { formatKrwCompact, formatPrice, formatSignedKrw, formatSignedPrice, reasonInfo } from "./format";
+
+describe("formatKrwCompact", () => {
+  it("formats 억 with two decimals", () => {
+    expect(formatKrwCompact(124_328_302)).toBe("1.24억");
+  });
+  it("formats 만 rounded", () => {
+    expect(formatKrwCompact(82_400_00)).toBe("824만");
+  });
+  it("keeps small values raw and preserves the sign", () => {
+    expect(formatKrwCompact(-1234)).toBe("-1,234");
+  });
+});
+
+describe("formatSignedKrw", () => {
+  it("adds plus for gains", () => {
+    expect(formatSignedKrw(17726338)).toBe("+₩17,726,338");
+  });
+  it("puts the minus before the won sign", () => {
+    expect(formatSignedKrw(-1419227)).toBe("-₩1,419,227");
+  });
+});
+
+describe("formatPrice", () => {
+  it("uses won without decimals for KR", () => {
+    expect(formatPrice("KR", 265300)).toBe("₩265,300");
+  });
+  it("uses dollars with two decimals for US", () => {
+    expect(formatPrice("US", 310.66)).toBe("$310.66");
+  });
+});
+
+describe("formatSignedPrice", () => {
+  it("signs US pnl in dollars", () => {
+    expect(formatSignedPrice("US", -416.5)).toBe("-$416.50");
+  });
+});
+
+describe("reasonInfo", () => {
+  it("maps engine enums to Korean labels", () => {
+    expect(reasonInfo("STOP_LOSS")).toEqual({ label: "손절", kind: "stop" });
+    expect(reasonInfo("TAKE_PROFIT")).toEqual({ label: "익절", kind: "take" });
+    expect(reasonInfo("SIGNAL_BUY").label).toBe("신호 매수");
+  });
+  it("falls back to the raw value for unknown reasons", () => {
+    expect(reasonInfo("SOMETHING")).toEqual({ label: "SOMETHING", kind: "unknown" });
+  });
+});

@@ -16,8 +16,8 @@
   max-width: 380px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--card-radius);
-  box-shadow: var(--card-shadow);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-pop);
   padding: 20px;
 }
 
@@ -55,7 +55,9 @@
 }
 
 .flow-modal__field input[type="text"] {
+  font-family: inherit;
   font-size: 15px;
+  font-variant-numeric: tabular-nums;
   color: var(--color-text);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
@@ -64,7 +66,7 @@
 }
 
 .flow-modal__field input[aria-invalid="true"] {
-  border-color: var(--color-down);
+  border-color: var(--color-danger);
 }
 
 .flow-modal__field-label {
@@ -82,7 +84,7 @@
 
 .flow-modal__error {
   font-size: 12px;
-  color: var(--color-down);
+  color: var(--color-danger);
   margin: 0 0 8px;
 }
 
@@ -126,7 +128,9 @@
   color: var(--color-text);
   border-radius: 8px;
   padding: 8px 16px;
+  font-family: inherit;
   font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
 }
 

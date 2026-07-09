@@ -50,3 +50,55 @@ export function shortDate(value: string): string {
   if (Number.isNaN(d.getTime())) return value;
   return d.toISOString().slice(0, 10);
 }
+
+/** 원화 축약 표기 (차트 축·요약용): 1.24억 / 8,240만 / 1,234원 단위. */
+export function formatKrwCompact(value: number): string {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1e8) {
+    const eok = abs / 1e8;
+    return `${sign}${eok >= 100 ? Math.round(eok).toLocaleString("ko-KR") : eok.toFixed(2)}억`;
+  }
+  if (abs >= 1e4) return `${sign}${Math.round(abs / 1e4).toLocaleString("ko-KR")}만`;
+  return `${sign}${Math.round(abs).toLocaleString("ko-KR")}`;
+}
+
+/** 부호 있는 원화 표기 (+₩1,234 / -₩1,234 / ₩0). */
+export function formatSignedKrw(value: number): string {
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  return `${sign}₩${Math.abs(Math.round(value)).toLocaleString("ko-KR")}`;
+}
+
+/** 거래 사유 enum → 한글 라벨 + 칩 톤. 미지의 값은 원문 그대로 중립 표기. */
+export type ReasonKind = "buy" | "sell" | "stop" | "take" | "flow" | "unknown";
+
+const REASON_MAP: Record<string, { label: string; kind: ReasonKind }> = {
+  SIGNAL_BUY: { label: "신호 매수", kind: "buy" },
+  SIGNAL_SELL: { label: "신호 매도", kind: "sell" },
+  STOP_LOSS: { label: "손절", kind: "stop" },
+  TAKE_PROFIT: { label: "익절", kind: "take" },
+  USER_WITHDRAWAL: { label: "출금 청산", kind: "flow" },
+  DELISTED: { label: "상장폐지", kind: "flow" },
+};
+
+export function reasonInfo(reason: string): { label: string; kind: ReasonKind } {
+  return REASON_MAP[reason.toUpperCase()] ?? { label: reason, kind: "unknown" };
+}
+
+/** 시장 통화 인지 가격 표기: KR → ₩(정수), US → $(소수 2자리). */
+export function formatPrice(market: string, value: number): string {
+  if (market.toUpperCase() === "US") {
+    return `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  return `₩${Math.round(value).toLocaleString("ko-KR")}`;
+}
+
+/** 부호 있는 시장 통화 표기 (실현손익용). */
+export function formatSignedPrice(market: string, value: number): string {
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  if (market.toUpperCase() === "US") {
+    return `${sign}$${abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  return `${sign}₩${Math.round(abs).toLocaleString("ko-KR")}`;
+}

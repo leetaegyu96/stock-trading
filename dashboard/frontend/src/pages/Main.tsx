@@ -1,17 +1,12 @@
-// 메인 페이지 (설계 스펙 §6 "메인"): 캐릭터 카드 3개 + 실시간 갱신.
-// 마운트 시 getCharacters()로 초기 스냅샷을 그리고, 이후 useCardsSocket()이
-// 밀어주는 `cards` 메시지로 화면을 계속 갱신한다(이름 기준 병합).
+// 메인 페이지: 캐릭터 카드 그리드 + 실시간 갱신 + 상단 요약(전체 자산·연결 상태).
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getCharacters, ApiError } from "../api";
 import { useCardsSocket } from "../ws";
 import { CharacterCard } from "../components/CharacterCard";
+import { formatKrw } from "../components/format";
 import type { CardSummary } from "../types";
 import "../components/theme.css";
-
-function formatKrw(value: number): string {
-  return `₩${Math.round(value).toLocaleString("ko-KR")}`;
-}
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString("ko-KR", { hour12: false });
@@ -22,7 +17,7 @@ export function Main() {
   const [cards, setCards] = useState<CardSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const liveCards = useCardsSocket();
+  const { cards: liveCards, connected } = useCardsSocket();
 
   // 초기 로드: REST로 첫 화면을 그린다.
   useEffect(() => {
@@ -45,7 +40,7 @@ export function Main() {
     };
   }, []);
 
-  // 실시간 갱신: 서버는 매번 전체 카드 스냅샷(이름 전체)을 보내므로 그대로 교체한다.
+  // 실시간 갱신: 서버는 전체 카드 스냅샷을 보내므로 그대로 교체.
   useEffect(() => {
     if (liveCards.length === 0) return;
     setCards(liveCards);
@@ -63,35 +58,40 @@ export function Main() {
   };
 
   return (
-    <div className="main-page">
-      <header className="main-page__topbar">
-        <h1 className="main-page__title">simcore dashboard</h1>
-        <div className="main-page__summary">
-          <span className="main-page__summary-item">
-            전체 합계 <strong>{formatKrw(totalAssetKrw)}</strong>
-          </span>
-          <span className="main-page__summary-item main-page__summary-item--muted">
-            마지막 갱신 {lastUpdated ? formatTime(lastUpdated) : "—"}
-          </span>
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="topbar__brand">
+          <h1 className="topbar__title">simcore</h1>
+          <span className="topbar__tag">모의투자</span>
         </div>
+        <div className="topbar__stat">
+          <span className="topbar__stat-label">전체 자산</span>
+          <span className="topbar__stat-value num">{formatKrw(totalAssetKrw)}</span>
+        </div>
+        <span className="topbar__live">
+          <span
+            className={`topbar__live-dot${connected ? " topbar__live-dot--on" : ""}`}
+            aria-hidden="true"
+          />
+          {connected ? "실시간" : "오프라인"}
+          {lastUpdated && ` · ${formatTime(lastUpdated)}`}
+        </span>
       </header>
 
       {error && cards === null && (
-        <div className="main-page__state main-page__state--error">
+        <div className="page-state page-state--error">
           데이터를 불러오지 못했습니다: {error}
         </div>
       )}
 
-      {cards === null && !error && (
-        <div className="main-page__state">불러오는 중…</div>
-      )}
+      {cards === null && !error && <div className="page-state">불러오는 중…</div>}
 
       {cards !== null && cards.length === 0 && (
-        <div className="main-page__state">아직 데이터 없음</div>
+        <div className="page-state">아직 데이터가 없습니다.</div>
       )}
 
       {cards !== null && cards.length > 0 && (
-        <div className="main-page__grid">
+        <div className="card-grid">
           {cards.map((card) => (
             <CharacterCard key={card.name} summary={card} onClick={handleCardClick} />
           ))}

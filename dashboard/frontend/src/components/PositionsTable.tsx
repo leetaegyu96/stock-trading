@@ -1,9 +1,7 @@
-// 상세 페이지 보유종목 테이블: 종목·수량·평단·현재가·평가액·손익%·보유일.
-// 상승(손익 양수)=빨강, 하락(음수)=파랑. 시세가 지연된 종목은 "지연" 배지 표시.
-// 주의: PositionOut.pnl_pct는 백엔드 관례상 비율(ratio, 예: 0.05 = +5%)로 내려온다
-// (CardSummary.twr/today_pnl_pct와 동일 관례) — 화면 표기 직전에 한 번만 *100 한다.
+// 보유종목 테이블: 숫자 우측 정렬 + 등폭 숫자, 시장 통화 인지 가격 표기(₩/$),
+// 손익 상승=빨강/하락=파랑, 시세 지연 시 "지연" 배지.
 import type { PositionOut } from "../types";
-import { formatKrw, holdingDays, signClass, signedPct } from "./format";
+import { formatPrice, holdingDays, signClass, signedPct } from "./format";
 
 export interface PositionsTableProps {
   positions: PositionOut[];
@@ -25,12 +23,12 @@ export function PositionsTable({ positions, className }: PositionsTableProps) {
         <thead>
           <tr>
             <th>종목</th>
-            <th>수량</th>
-            <th>평단</th>
-            <th>현재가</th>
-            <th>평가액</th>
-            <th>손익%</th>
-            <th>보유일</th>
+            <th className="ta-r">수량</th>
+            <th className="ta-r">평단가</th>
+            <th className="ta-r">현재가</th>
+            <th className="ta-r">평가액</th>
+            <th className="ta-r">손익률</th>
+            <th className="ta-r">보유일</th>
           </tr>
         </thead>
         <tbody>
@@ -41,17 +39,21 @@ export function PositionsTable({ positions, className }: PositionsTableProps) {
               <tr key={`${pos.market}:${pos.symbol}`}>
                 <td>
                   <span className="detail-table__symbol">{pos.symbol}</span>
-                  <span className="detail-table__market">{pos.market}</span>
+                  <span className={`mkt mkt--${pos.market.toLowerCase()}`}>{pos.market}</span>
                   {pos.stale && <span className="badge badge--stale">지연</span>}
                 </td>
-                <td>{pos.quantity.toLocaleString("ko-KR")}</td>
-                <td>{formatKrw(pos.avg_price)}</td>
-                <td>{pos.current_price === null ? "—" : formatKrw(pos.current_price)}</td>
-                <td>{pos.eval_value === null ? "—" : formatKrw(pos.eval_value)}</td>
-                <td className={pnlSign}>
+                <td className="ta-r num">{pos.quantity.toLocaleString("ko-KR")}</td>
+                <td className="ta-r num">{formatPrice(pos.market, pos.avg_price)}</td>
+                <td className="ta-r num">
+                  {pos.current_price === null ? "—" : formatPrice(pos.market, pos.current_price)}
+                </td>
+                <td className="ta-r num">
+                  {pos.eval_value === null ? "—" : formatPrice(pos.market, pos.eval_value)}
+                </td>
+                <td className={`ta-r num strong ${pnlSign}`}>
                   {pnlPct === null ? "—" : signedPct(pnlPct)}
                 </td>
-                <td>{holdingDays(pos.opened_date)}일</td>
+                <td className="ta-r num muted">{holdingDays(pos.opened_date)}일</td>
               </tr>
             );
           })}

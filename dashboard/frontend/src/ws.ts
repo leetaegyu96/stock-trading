@@ -25,10 +25,16 @@ export class ReconnectingSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private closedByUser = false;
   private onMessage: (msg: CardsMessage) => void;
+  private onStateChange?: (connected: boolean) => void;
 
-  constructor(path: string, onMessage: (msg: CardsMessage) => void) {
+  constructor(
+    path: string,
+    onMessage: (msg: CardsMessage) => void,
+    onStateChange?: (connected: boolean) => void
+  ) {
     this.path = path;
     this.onMessage = onMessage;
+    this.onStateChange = onStateChange;
   }
 
   connect(): void {
@@ -38,6 +44,7 @@ export class ReconnectingSocket {
 
     socket.onopen = () => {
       this.reconnectDelay = MIN_RECONNECT_DELAY_MS;
+      this.onStateChange?.(true);
     };
 
     socket.onmessage = (event: MessageEvent<string>) => {
@@ -52,6 +59,7 @@ export class ReconnectingSocket {
     };
 
     socket.onclose = () => {
+      this.onStateChange?.(false);
       if (this.closedByUser) return;
       this.scheduleReconnect();
     };
@@ -80,17 +88,28 @@ export class ReconnectingSocket {
   }
 }
 
-/** `/ws` 에 연결해 최신 카드 스냅샷을 반환하는 훅. */
-export function useCardsSocket(): CardSummary[] {
+export interface CardsSocketState {
+  cards: CardSummary[];
+  /** WebSocket 연결 여부 — 끊기면 화면은 마지막 스냅샷 유지 + "오프라인" 표시용. */
+  connected: boolean;
+}
+
+/** `/ws` 에 연결해 최신 카드 스냅샷과 연결 상태를 반환하는 훅. */
+export function useCardsSocket(): CardsSocketState {
   const [cards, setCards] = useState<CardSummary[]>([]);
+  const [connected, setConnected] = useState(false);
   const socketRef = useRef<ReconnectingSocket | null>(null);
 
   useEffect(() => {
-    const socket = new ReconnectingSocket("/ws", (msg) => setCards(msg.data));
+    const socket = new ReconnectingSocket(
+      "/ws",
+      (msg) => setCards(msg.data),
+      setConnected
+    );
     socketRef.current = socket;
     socket.connect();
     return () => socket.close();
   }, []);
 
-  return cards;
+  return { cards, connected };
 }
