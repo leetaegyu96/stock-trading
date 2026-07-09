@@ -62,15 +62,17 @@ def _final_equity_krw(name: str, result: ReplayResult, fx_rate: float) -> float:
 
 
 def seed_replay_result_into_db(result: ReplayResult, bundle: DataBundle, sf,
-                                fx_rate: float = 1300.0,
+                                fx_rate: float = FALLBACK_FX_RATE,
                                 initial_capital_krw: float = 100_000_000.0) -> None:
     """리플레이 결과(result)와 그 입력 데이터(bundle)를 세션 팩토리 sf 의 DB에 적재한다.
 
     positions_by_char/cash_by_char(최종 포지션·현금)와 daily_bars(같은 최종 스냅샷의
     마지막 종가)를 함께 써서, card_summary.total_asset_krw == equity 마지막 값이
-    성립하도록 한다. 마지막 EquityPoint 는 카드가 쓰는 것과 동일한 fx_rate 로
-    재평가한 값(_final_equity_krw)으로 덮어써서, fx 가 날짜별로 변해도(USD 보유
-    캐릭터 포함) 정합이 정확히 성립하도록 한다.
+    성립하도록 한다. 캐릭터별 자산곡선 전체를 상수 비율(ratio)로 스케일링해서 마지막
+    점이 카드와 동일한 fx_rate 재평가 값(_final_equity_krw)이 되도록 맞춘다 — 마지막
+    점만 덮어쓰면 그 하루의 일일수익률(오늘%)이 fx 재평가로 왜곡되므로(USD 보유
+    캐릭터), 상수 배율로 전체를 스케일링해 일별 수익률(TWR/MDD/오늘%)은 리플레이
+    그대로 보존하면서 정합만 정확히 맞춘다.
     """
     with sf() as s:
         # ---- 0. 기존 데이터 초기화 ----
@@ -101,17 +103,22 @@ def seed_replay_result_into_db(result: ReplayResult, bundle: DataBundle, sf,
                                         amount_krw=float(amount), fx_rate=fx_rate))
 
         # ---- 3. 자산곡선 ----
-        # 마지막(최신) 포인트는 card_summary 와 동일한 fx_rate 로 재평가한 값으로
-        # 덮어써서 총자산 정합을 정확히 맞춘다(Fix 1) — 그 이전 포인트들은 리플레이
-        # 당시의 (날짜별로 다를 수 있는) fx 로 계산된 값을 그대로 둔다(스파크라인용).
+        # 전체 곡선을 상수 비율(ratio)로 스케일링해서, 마지막 점이 card_summary 와
+        # 동일한 fx_rate 로 재평가한 값(final_krw)이 되도록 맞춘다. 마지막 점만
+        # 덮어쓰면 그 지점의 일일수익률(오늘%)이 리플레이 당시 fx(~1506)와 조회
+        # fx_rate(고정값) 차이로 왜곡되는데(USD 보유 캐릭터에서 실제 발생, 약 -14%
+        # 가짜 손실), 상수 배율은 연속한 두 점의 비율(=일일수익률)을 그대로 보존하므로
+        # TWR/MDD/오늘% 는 리플레이 그대로이면서 총자산 정합(마지막 점)만 정확해진다.
         for name in names:
             col = result.equity[name]
             final_krw = _final_equity_krw(name, result, fx_rate)
+            replay_last = float(col.iloc[-1])
+            ratio = final_krw / replay_last if replay_last != 0 else 1.0
             for ts, equity_krw in col.items():
                 d = pd.Timestamp(ts).date()
-                value = final_krw if ts == last_ts else float(equity_krw)
+                value = float(equity_krw) * ratio
                 s.add(db.EquityPoint(ts=datetime.combine(d, _EQUITY_TIME),
-                                     character=name, equity_krw=float(value)))
+                                     character=name, equity_krw=value))
 
         # ---- 4. 포지션 (최종 스냅샷) ----
         for name, positions in result.positions_by_char.items():

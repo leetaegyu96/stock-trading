@@ -81,6 +81,40 @@ def test_seed_matches_exactly_with_drifting_fx_for_usd_holders():
     assert checked_usd_holder  # 이 케이스가 실제로 USD 보유 캐릭터를 검증했는지 확인
 
 
+def test_seed_preserves_real_today_return_for_usd_holders():
+    """Fix 3 회귀 가드: 마지막 EquityPoint 만 조회 fx_rate 로 덮어쓰면(예전 방식),
+    직전 점은 리플레이 당시의 fx(드리프트 중)로 계산된 값이라 오늘 수익률이 fx 차이만큼
+    가짜로 왜곡된다(과거 실제로 해외형/범용형에서 약 -14% 발생). 전체 곡선을 상수
+    비율로 스케일링하면 총자산 정합(마지막 점)은 그대로 유지하면서, 오늘 수익률은
+    리플레이가 계산한 실제 마지막 날 수익률(col.iloc[-1]/col.iloc[-2]-1)과 정확히
+    일치해야 한다."""
+    bundle = _bundle_with_us_and_drifting_fx()
+    result = run_replay(Config(), bundle, date(2025, 9, 1), date(2026, 2, 1))
+    engine = db.make_engine("sqlite://")
+    db.create_all(engine)
+    sf = db.make_session_factory(engine)
+    query_fx_rate = 1300.0  # 리플레이 마지막날 fx(≈1400)와 다른 값으로 조회
+    seed_replay_result_into_db(result, bundle, sf, fx_rate=query_fx_rate)
+
+    checked_usd_holder = False
+    for name in ["국내형", "해외형", "범용형"]:
+        positions = queries.positions(sf, name)
+        if not any(p["market"] == "US" for p in positions):
+            continue  # KRW 만 보유한 캐릭터는 fx 재평가로 왜곡될 여지가 없음
+
+        col = result.equity[name]
+        expected_today_pct = float(col.iloc[-1] / col.iloc[-2] - 1.0)
+
+        lp = queries.last_prices(sf, positions)
+        card = summary.card_summary(sf, name, query_fx_rate, lp)
+
+        assert abs(card.today_pnl_pct - expected_today_pct) < 1e-9
+        # fx 왜곡(예전 방식)이었다면 여기서 수십 %p 벌어졌을 것 — 실제로는 작은 진짜 수익률.
+        assert abs(card.today_pnl_pct) < 0.05
+        checked_usd_holder = True
+    assert checked_usd_holder  # 이 케이스가 실제로 USD 보유 캐릭터를 검증했는지 확인
+
+
 def test_seed_requires_force_flag_when_run_as_cli(monkeypatch):
     """--force 없이 CLI 실행하면 즉시 종료(가드)한다."""
     import runpy
