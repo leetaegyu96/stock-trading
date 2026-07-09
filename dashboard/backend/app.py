@@ -11,10 +11,12 @@ from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconn
 from fastapi.responses import FileResponse, PlainTextResponse
 
 from simcore.config import Config
+from simcore.engine import DEFAULT_CHARACTERS
 from simcore.live.kis_client import KisClient
 from simcore.live.ratelimit import RateLimiter
 from simcore.live.repository import DbTokenStore, Repository
 from simcore.live.settings import load_settings
+from simcore.names import display_name
 from simcore import signal_display as sd
 
 from dashboard.backend import db, flows, queries, summary
@@ -22,6 +24,7 @@ from dashboard.backend.broadcaster import Broadcaster, ConnectionManager
 from dashboard.backend.live_prices import current_prices
 from dashboard.backend.schemas import (
     CardSummary,
+    DashboardOut,
     EquityPoint,
     FlowOut,
     Metrics,
@@ -110,6 +113,24 @@ def health() -> dict[str, str]:
 @app.get("/api/characters", response_model=list[CardSummary])
 def list_character_cards(sf=Depends(get_sf)) -> list[CardSummary]:
     return broadcaster.snapshot(sf)
+
+
+@app.get("/api/dashboard", response_model=DashboardOut)
+def dashboard(sf=Depends(get_sf)) -> DashboardOut:
+    """일일 현황판: 시장별 movers·캐릭터별 요약·통합 최근 체결."""
+    movers = queries.universe_movers(sf)
+    for market in movers.values():
+        for lst in market.values():
+            for m in lst:
+                m["name"] = display_name(m["symbol"], m["market"])
+    last_prices_by_char = {}
+    for name in [s.name for s in DEFAULT_CHARACTERS]:
+        last_prices_by_char[name] = queries.last_prices(sf, queries.positions(sf, name))
+    chars = summary.character_portfolios(sf, _FALLBACK_FX_RATE, last_prices_by_char)
+    rts = queries.recent_trades(sf)
+    for t in rts:
+        t["name"] = display_name(t["symbol"], t["market"])
+    return DashboardOut(movers=movers, characters=chars, recent_trades=rts)
 
 
 @app.websocket("/ws")

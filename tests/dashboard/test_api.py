@@ -338,6 +338,73 @@ def test_trades_include_name_and_signal_summary(sf):
 
 
 @needs_db
+def test_dashboard_endpoint_shape(sf):
+    with sf() as s:
+        # movers: KR·US 각 2봉 → 등락률 계산 대상
+        s.add(db.DailyBarRow(market=Market.KR.value, symbol="005930", date=date(2026, 1, 1),
+                              open=70000.0, high=71000.0, low=69500.0, close=70000.0, volume=1000.0))
+        s.add(db.DailyBarRow(market=Market.KR.value, symbol="005930", date=date(2026, 1, 2),
+                              open=70000.0, high=73000.0, low=69800.0, close=73500.0, volume=1200.0))
+        s.add(db.DailyBarRow(market=Market.US.value, symbol="AAPL", date=date(2026, 1, 1),
+                              open=150.0, high=155.0, low=149.0, close=155.0, volume=1000.0))
+        s.add(db.DailyBarRow(market=Market.US.value, symbol="AAPL", date=date(2026, 1, 2),
+                              open=155.0, high=155.0, low=140.0, close=140.0, volume=1200.0))
+
+        # 캐릭터(국내형) 보유·거래
+        s.merge(db.CharacterRow(name="국내형", base_currency="KRW"))
+        s.add(db.PositionRow(character="국내형", symbol="005930", market=Market.KR.value,
+                              quantity=10, avg_price=68000.0, opened_date=date(2026, 1, 1)))
+        for d, eq in [(1, 10_000_000.0), (2, 10_300_000.0)]:
+            s.add(db.EquityPoint(ts=datetime(2026, 1, d, 15, 30), character="국내형", equity_krw=eq))
+        s.add(db.TradeRow(
+            ts=datetime(2026, 1, 2, 9, 30), date=date(2026, 1, 2),
+            character="국내형", symbol="005930", market=Market.KR.value, side="BUY",
+            quantity=10, price=68000.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+            green_count=1, red_count=0, fired=["G1"], realized_pnl=0.0,
+        ))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r = TestClient(app).get("/api/dashboard")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r.status_code == 200
+    d = r.json()
+    assert "movers" in d and "characters" in d and "recent_trades" in d
+
+    # movers: 시장별 up/down, name(display_name) 포함
+    assert set(d["movers"]) >= {"KR", "US"}
+    kr_up = d["movers"]["KR"]["up"]
+    assert kr_up and kr_up[0]["symbol"] == "005930"
+    assert kr_up[0]["name"] == "삼성전자"
+    assert kr_up[0]["change_pct"] == pytest.approx(73500.0 / 70000.0 - 1.0)
+    us_down = d["movers"]["US"]["down"]
+    assert us_down and us_down[0]["symbol"] == "AAPL"
+    assert us_down[0]["change_pct"] == pytest.approx(140.0 / 155.0 - 1.0)
+
+    # 캐릭터 요약은 DEFAULT_CHARACTERS 3개
+    assert len(d["characters"]) == 3
+    by_name = {c["name"]: c for c in d["characters"]}
+    assert set(by_name) == {"국내형", "해외형", "범용형"}
+    kr_char = by_name["국내형"]
+    assert kr_char["n_positions"] == 1
+    assert kr_char["best"]["symbol"] == "005930"
+    assert kr_char["best"]["name"] == "삼성전자"
+    assert kr_char["today_pnl_pct"] == pytest.approx(10_300_000.0 / 10_000_000.0 - 1.0)
+    # 보유 없는 캐릭터는 best/worst 없음
+    assert by_name["해외형"]["n_positions"] == 0
+    assert by_name["해외형"]["best"] is None
+
+    # 최근 체결: name(display_name) 포함
+    assert d["recent_trades"]
+    t = d["recent_trades"][0]
+    assert t["symbol"] == "005930" and t["name"] == "삼성전자"
+    assert t["character"] == "국내형"
+
+
+@needs_db
 def test_character_flows_returns_rows(sf):
     with sf() as s:
         _seed_full(s)
