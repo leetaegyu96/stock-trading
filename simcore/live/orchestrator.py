@@ -60,11 +60,13 @@ class Orchestrator:
                 continue
             frame = sigmod.evaluate_frame(df, self.cfg.signals)
             green, red = sigmod.fired_at(frame, ts)
+            gs, rs, gate = sigmod.snapshot_scores(green, red, self.cfg.scores)
             loc = df.index.get_loc(ts)
             prev_close = float(df["close"].iloc[loc - 1]) if loc > 0 else float(df.loc[ts, "close"])
             close = float(df.loc[ts, "close"])
             snaps[sym] = SymbolSnapshot(sym, m, green, red, close,
-                                        close / prev_close - 1.0, float(df.loc[ts, "volume"]))
+                                        close / prev_close - 1.0, float(df.loc[ts, "volume"]),
+                                        green_score=gs, red_score=rs, buy_gate=gate)
             self._last_price[sym] = close
         self.engine.evaluate_close(d, m, snaps)
         snap = self.engine.snapshot(self._last_price, fx)

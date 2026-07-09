@@ -90,14 +90,16 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
             snaps: dict[str, SymbolSnapshot] = {}
             for sym, df in todays.items():
                 green, red = sigmod.fired_at(frames[market][sym], ts)
+                gs, rs, gate = sigmod.snapshot_scores(green, red, config.scores)
                 loc = df.index.get_loc(ts)
                 prev_close = float(df["close"].iloc[loc - 1]) if loc > 0 else float(df.loc[ts, "close"])
                 close = float(df.loc[ts, "close"])
                 snaps[sym] = SymbolSnapshot(
                     sym, market, green, red, close,
-                    close / prev_close - 1.0, float(df.loc[ts, "volume"]))
+                    close / prev_close - 1.0, float(df.loc[ts, "volume"]),
+                    green_score=gs, red_score=rs, buy_gate=gate)
                 last_close[sym] = close
-                green_counts.append(len(green))
+                green_counts.append(gs)             # green_score 분포 기록
             engine.evaluate_close(d, market, snaps)
         eq = engine.snapshot(last_close, fx)
         equity_rows.append({"date": ts, **eq})
@@ -109,6 +111,7 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
         "market": t.market.value, "side": t.side.value, "quantity": t.quantity,
         "price": t.price, "fee": t.fee, "tax": t.tax, "reason": t.reason.value,
         "green_count": t.green_count, "red_count": t.red_count,
+        "green_score": t.green_score, "red_score": t.red_score,
         "fired": ";".join(t.fired), "realized_pnl": t.realized_pnl,
     } for st in engine.states.values() for t in st.portfolio.trades])
 
