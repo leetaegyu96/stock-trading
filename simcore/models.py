@@ -29,6 +29,7 @@ class TradeReason(str, Enum):
     TAKE_PROFIT = "TAKE_PROFIT"
     USER_WITHDRAWAL = "USER_WITHDRAWAL"
     DELISTED = "DELISTED"
+    TRAILING_STOP = "TRAILING_STOP"
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,8 @@ class Position:
     quantity: int
     avg_price: float  # 시장 통화 기준
     opened: Date
+    peak_price: float = 0.0
+    locked_stop_pct: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -66,6 +69,8 @@ class Trade:
     green_count: int = 0
     red_count: int = 0
     fired: tuple[str, ...] = ()
+    green_score: int = 0
+    red_score: int = 0
     realized_pnl: float = 0.0  # 시장 통화, 비용 차감 후
 
 
@@ -87,3 +92,6 @@ class SymbolSnapshot:
     close: float
     change_pct: float
     volume: float
+    green_score: int = 0
+    red_score: int = 0
+    buy_gate: bool = False

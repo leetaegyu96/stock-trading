@@ -20,3 +20,20 @@ def test_snapshot_carries_signal_results():
     s = SymbolSnapshot(symbol="AAPL", market=Market.US, green=("G1",), red=(),
                        close=190.0, change_pct=0.012, volume=1_000_000)
     assert len(s.green) == 1
+
+
+def test_snapshot_has_score_fields():
+    s = SymbolSnapshot("005930", Market.KR, ("G1",), (), 100.0, 0.01, 1000.0,
+                       green_score=18, red_score=0, buy_gate=True)
+    assert s.green_score == 18 and s.buy_gate is True
+
+
+def test_position_trailing_fields_default():
+    p = Position("005930", Market.KR, 10, 100.0, date(2026, 1, 2))
+    assert p.peak_price == 0.0 and p.locked_stop_pct == 0.0
+    p.peak_price = 120.0
+    assert p.peak_price == 120.0
+
+
+def test_trailing_stop_reason_exists():
+    assert TradeReason.TRAILING_STOP.value == "TRAILING_STOP"
