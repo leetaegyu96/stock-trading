@@ -198,7 +198,10 @@ def _cli() -> None:
     engine = db.make_engine(url)
     db.create_all(engine)
     sf = db.make_session_factory(engine)
-    fx_rate = float(bundle.fx.iloc[-1])
+    # dashboard.backend.app._FALLBACK_FX_RATE(1300.0)과 반드시 같아야 한다 — 라이브 카드는
+    # 그 시점의 실제 fx(bundle.fx.iloc[-1])가 아니라 이 고정값으로 총자산을 계산하므로,
+    # 여기서 다른 값을 쓰면 총자산(card_summary)과 자산곡선 마지막 값이 어긋난다(정합 위반).
+    fx_rate = 1300.0
     seed_replay_result_into_db(result, bundle, sf, fx_rate=fx_rate,
                                initial_capital_krw=cfg.initial_capital_krw)
     print("[seed_from_replay] 시딩 완료.")
