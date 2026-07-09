@@ -146,6 +146,58 @@
 .detail-table__symbol { font-weight: 700; margin-right: 7px; letter-spacing: 0; }
 .detail-table__signals { display: inline-flex; gap: 3px; flex-wrap: wrap; }
 
+/* 종목명(굵게) + 코드(작게/muted) 셀 */
+.detail-table__name { font-weight: 700; margin-right: 6px; letter-spacing: -0.01em; }
+.detail-table__code {
+  font-size: 11px; color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-right: 7px;
+}
+
+/* 신호 셀: 기본 한 줄 요약 + 펼침 상세 */
+.signal-cell-td { white-space: normal; max-width: 260px; }
+.signal-cell { display: flex; flex-direction: column; gap: 6px; }
+.signal-cell__summary {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 13px; color: var(--color-text);
+  flex-wrap: wrap;
+}
+.signal-cell__toggle {
+  border: none; background: transparent;
+  color: var(--color-text-muted);
+  font-family: inherit; font-size: 11.5px; font-weight: 600;
+  cursor: pointer; padding: 0; margin-left: 2px;
+  text-decoration: underline; text-decoration-color: var(--color-border-strong);
+}
+.signal-cell__toggle:hover { color: var(--color-text); }
+.signal-cell__detail {
+  display: flex; flex-direction: column; gap: 4px;
+  list-style: none; margin: 0; padding: 8px 10px;
+  background: var(--color-surface-2);
+  border-radius: 8px;
+}
+.signal-cell__detail-item {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; white-space: nowrap;
+}
+.signal-cell__detail-dot {
+  display: inline-block; width: 7px; height: 7px;
+  border-radius: 50%;
+}
+.signal-cell__detail-dot.sig--green { background: #0e9256; }
+.signal-cell__detail-dot.sig--red { background: var(--color-up); }
+.signal-cell__detail-dot.sig--unknown { background: var(--color-text-muted); }
+.signal-cell__detail-name { color: var(--color-text); font-weight: 600; }
+.signal-cell__stars {
+  color: #e0a713; letter-spacing: 1px; font-size: 12px;
+}
+.signal-cell__detail-code { font-size: 10.5px; margin-left: auto; }
+
+@media (prefers-color-scheme: dark) {
+  .signal-cell__detail-dot.sig--green { background: #3ccb7f; }
+}
+:root[data-theme="dark"] .signal-cell__detail-dot.sig--green { background: #3ccb7f; }
+
 /* 시장 태그 (KR/US) */
 .mkt {
   display: inline-block;
