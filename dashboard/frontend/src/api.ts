@@ -2,6 +2,7 @@
 // FastAPI가 정적 빌드를 서빙할 때(같은 오리진)와 `vite dev`(프록시 경유) 모두 동작한다.
 import type {
   CardSummary,
+  Dashboard,
   EquityPoint,
   Metrics,
   PositionOut,
@@ -81,6 +82,10 @@ export function postWithdraw(
     method: "POST",
     body: JSON.stringify({ amount_krw, liquidate }),
   });
+}
+
+export function getDashboard(): Promise<Dashboard> {
+  return request<Dashboard>("/api/dashboard");
 }
 
 export { ApiError };
