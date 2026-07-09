@@ -32,6 +32,16 @@ KIS는 **데이터 피드 전용**(주문하지 않음)이며 3캐릭터는 엔�
 설계: `docs/superpowers/specs/2026-07-08-simcore-live-kis-design.md`
 
 ## 대시보드
+
+한 번에 켜고 끄기 (프론트 빌드 + 백엔드를 uvicorn 하나로 서빙):
+
+    ./dashboard/dashboard.sh start     # 빌드 + 기동 → http://localhost:8000
+    ./dashboard/dashboard.sh stop      # 종료
+    ./dashboard/dashboard.sh status    # 실행 여부 / logs 로 로그 보기
+    # 포트 변경: PORT=9000 ./dashboard/dashboard.sh start
+
+수동으로 하려면:
+
     cd dashboard/frontend && npm install && npm run build
     uvicorn dashboard.backend.app:app        # http://localhost:8000
 
