@@ -1,7 +1,15 @@
-// 상세 페이지 거래내역 테이블: 일자·종목·매수/매도·수량·가격·사유·신호 배지·실현손익.
-// fired[]의 G*(청신호/매수 신호)/R*(적신호/매도 신호) 코드를 배지로 표시한다.
+// 거래내역 테이블: 매수/매도 칩, 사유 한글 라벨 칩(손절/익절 강조),
+// 켜진 청/적신호 배지, 실현손익(매수는 — 처리, 시장 통화 표기).
 import type { TradeOut } from "../types";
-import { formatKrw, shortDate, sideLabel, signClass, signalKind } from "./format";
+import {
+  formatPrice,
+  formatSignedPrice,
+  reasonInfo,
+  shortDate,
+  sideLabel,
+  signClass,
+  signalKind,
+} from "./format";
 
 export interface TradesTableProps {
   trades: TradeOut[];
@@ -9,11 +17,11 @@ export interface TradesTableProps {
 }
 
 function SignalBadges({ fired }: { fired: string[] }) {
-  if (fired.length === 0) return <span className="detail-table__no-signal">—</span>;
+  if (fired.length === 0) return <span className="muted">—</span>;
   return (
     <span className="detail-table__signals">
       {fired.map((code) => (
-        <span key={code} className={`badge badge--signal-${signalKind(code)}`}>
+        <span key={code} className={`sig sig--${signalKind(code)}`}>
           {code}
         </span>
       ))}
@@ -38,32 +46,39 @@ export function TradesTable({ trades, className }: TradesTableProps) {
             <th>일자</th>
             <th>종목</th>
             <th>구분</th>
-            <th>수량</th>
-            <th>가격</th>
+            <th className="ta-r">수량</th>
+            <th className="ta-r">체결가</th>
             <th>사유</th>
             <th>신호</th>
-            <th>실현손익</th>
+            <th className="ta-r">실현손익</th>
           </tr>
         </thead>
         <tbody>
           {trades.map((trade) => {
             const side = sideLabel(trade.side);
-            const sideClass = side === "매수" ? "up" : side === "매도" ? "down" : "neutral";
+            const isBuy = side === "매수";
+            const reason = reasonInfo(trade.reason);
             return (
               <tr key={`${trade.ts}:${trade.symbol}:${trade.side}`}>
-                <td>{shortDate(trade.date || trade.ts)}</td>
+                <td className="num muted">{shortDate(trade.date || trade.ts)}</td>
                 <td>
                   <span className="detail-table__symbol">{trade.symbol}</span>
-                  <span className="detail-table__market">{trade.market}</span>
+                  <span className={`mkt mkt--${trade.market.toLowerCase()}`}>{trade.market}</span>
                 </td>
-                <td className={sideClass}>{side}</td>
-                <td>{trade.quantity.toLocaleString("ko-KR")}</td>
-                <td>{formatKrw(trade.price)}</td>
-                <td className="detail-table__reason">{trade.reason}</td>
+                <td>
+                  <span className={`chip chip--${isBuy ? "up" : "down"}`}>{side}</span>
+                </td>
+                <td className="ta-r num">{trade.quantity.toLocaleString("ko-KR")}</td>
+                <td className="ta-r num">{formatPrice(trade.market, trade.price)}</td>
+                <td>
+                  <span className={`reason reason--${reason.kind}`}>{reason.label}</span>
+                </td>
                 <td>
                   <SignalBadges fired={trade.fired} />
                 </td>
-                <td className={signClass(trade.realized_pnl)}>{formatKrw(trade.realized_pnl)}</td>
+                <td className={`ta-r num strong ${isBuy ? "muted" : signClass(trade.realized_pnl)}`}>
+                  {isBuy ? "—" : formatSignedPrice(trade.market, trade.realized_pnl)}
+                </td>
               </tr>
             );
           })}

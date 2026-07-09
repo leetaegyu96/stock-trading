@@ -1,7 +1,5 @@
-// 캐릭터 상세 페이지 (설계 스펙 §6 "상세"): 자산곡선 차트 · 성과지표 · 보유종목 ·
-// 거래내역. 마운트 시 REST로 4종 데이터를 한 번에 불러오고, 백엔드에 캐릭터 단위
-// WS 스트림이 없으므로 메인 카드 브로드캐스트(useCardsSocket)에서 이 캐릭터의
-// 포지션 관련 값(보유종목수/총자산/현금)이 바뀌면 조용히 재조회한다.
+// 캐릭터 상세 페이지: 헤더(아바타·이름·입출금) → 성과지표 스트립 → 자산곡선 →
+// 보유종목 → 거래내역. 카드 브로드캐스트에서 이 캐릭터 값이 바뀌면 조용히 재조회.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError, getDetail, getEquity, getPositions, getTrades } from "../api";
@@ -35,7 +33,7 @@ export function Detail() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [flowMode, setFlowMode] = useState<FlowMode | null>(null);
-  const liveCards = useCardsSocket();
+  const { cards: liveCards } = useCardsSocket();
   const positionsSignatureRef = useRef<string | null>(null);
 
   const load = useCallback((targetName: string, showSpinner: boolean) => {
@@ -60,7 +58,6 @@ export function Detail() {
       });
   }, []);
 
-  // 초기 로드: 캐릭터가 바뀔 때마다 REST로 4종 데이터를 새로 불러온다.
   useEffect(() => {
     if (!name) {
       setLoading(false);
@@ -72,7 +69,7 @@ export function Detail() {
     void load(name, true);
   }, [name, load]);
 
-  // 실시간 갱신: 카드 스냅샷에서 이 캐릭터의 포지션 관련 값이 바뀌면 스피너 없이 재조회.
+  // 실시간: 카드 스냅샷에서 이 캐릭터의 포지션 관련 값이 바뀌면 스피너 없이 재조회.
   useEffect(() => {
     if (!name || liveCards.length === 0) return;
     const card = liveCards.find((c) => c.name === name);
@@ -89,29 +86,29 @@ export function Detail() {
 
   const liveCard = liveCards.find((c) => c.name === name);
   const mood = liveCard ? moodFromPnl(liveCard.today_pnl_pct * 100) : "neutral";
+  const meta = liveCard
+    ? `${liveCard.markets.join(" · ")} · ${liveCard.base_currency}`
+    : null;
 
   return (
-    <div className="main-page">
-      <p>
-        <Link to="/">← 메인으로</Link>
-      </p>
+    <div className="app-shell">
       <header className="detail-header">
-        <Avatar character={name || "?"} mood={mood} size={64} />
-        <h1 className="main-page__title">{name || "알 수 없음"}</h1>
+        <Link to="/" className="btn btn--ghost detail-header__back">
+          ← 대시보드
+        </Link>
+        <div className="detail-header__identity">
+          <Avatar character={name || "?"} mood={mood} size={48} />
+          <div>
+            <h1 className="detail-header__name">{name || "알 수 없음"}</h1>
+            {meta && <span className="detail-header__meta">{meta}</span>}
+          </div>
+        </div>
         {name && (
           <div className="detail-header__actions">
-            <button
-              type="button"
-              className="detail-header__flow-btn"
-              onClick={() => setFlowMode("deposit")}
-            >
+            <button type="button" className="btn btn--primary" onClick={() => setFlowMode("deposit")}>
               입금
             </button>
-            <button
-              type="button"
-              className="detail-header__flow-btn"
-              onClick={() => setFlowMode("withdraw")}
-            >
+            <button type="button" className="btn btn--outline" onClick={() => setFlowMode("withdraw")}>
               출금
             </button>
           </div>
@@ -128,38 +125,41 @@ export function Detail() {
       )}
 
       {!name && (
-        <div className="main-page__state main-page__state--error">
-          캐릭터 이름이 없습니다.
-        </div>
+        <div className="page-state page-state--error">캐릭터 이름이 없습니다.</div>
       )}
 
-      {name && loading && <div className="main-page__state">불러오는 중…</div>}
+      {name && loading && <div className="page-state">불러오는 중…</div>}
 
       {name && !loading && error && !data && (
-        <div className="main-page__state main-page__state--error">
+        <div className="page-state page-state--error">
           데이터를 불러오지 못했습니다: {error}
         </div>
       )}
 
       {name && !loading && data && (
         <div className="detail-sections">
+          <section className="detail-panel detail-panel--strip">
+            <MetricsPanel metrics={data.metrics} />
+          </section>
+
           <section className="detail-panel">
             <h2 className="detail-panel__title">자산곡선</h2>
             <EquityChart points={data.equity} />
           </section>
 
           <section className="detail-panel">
-            <h2 className="detail-panel__title">성과지표</h2>
-            <MetricsPanel metrics={data.metrics} />
-          </section>
-
-          <section className="detail-panel">
-            <h2 className="detail-panel__title">보유종목</h2>
+            <h2 className="detail-panel__title">
+              보유종목
+              <span className="detail-panel__count num">{data.positions.length}</span>
+            </h2>
             <PositionsTable positions={data.positions} />
           </section>
 
           <section className="detail-panel">
-            <h2 className="detail-panel__title">거래내역</h2>
+            <h2 className="detail-panel__title">
+              거래내역
+              <span className="detail-panel__count num">{data.trades.length}</span>
+            </h2>
             <TradesTable trades={data.trades} />
           </section>
         </div>
