@@ -73,7 +73,7 @@ class Engine:
     # ---- 장 마감: 신호 판정 → 다음 개장 주문 예약 ----
     def evaluate_close(self, d: Date, market: Market,
                        snaps: dict[str, SymbolSnapshot],
-                       market_bearish: bool = False) -> None:
+                       bearish_by_market: dict | None = None) -> None:
         r = self.config.rules
         for st in self.states.values():
             if market not in st.spec.markets:
@@ -111,8 +111,9 @@ class Engine:
                     st.pending_sells.append(PendingSell(
                         sym, market, TradeReason.SIGNAL_SELL, len(red), s.red_score,
                         tuple(s.red), partial=True))
-            # 매수 후보 (하락장 가드: guard on + 하락장이면 신규매수 차단)
-            if self.config.rules.bear_market_guard and market_bearish:
+            # 매수 후보 (하락장 가드 v2: 캐릭터의 모든 시장이 하락장이어야 신규매수 차단)
+            if (self.config.rules.bear_market_guard and bearish_by_market
+                    and all(bearish_by_market.get(m, False) for m in st.spec.markets)):
                 continue
             held = set(st.portfolio.positions) | {b.symbol for b in st.pending_buys}
             for sym, s in snaps.items():
