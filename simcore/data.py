@@ -105,8 +105,20 @@ def load_index(market: str, start: Date, end: Date, cache_dir: Path) -> pd.Serie
     if market == "KR":
         def fetch():
             from pykrx import stock
-            s = stock.get_index_ohlcv(f"{pad_start:%Y%m%d}", f"{end:%Y%m%d}", "1028")["종가"]
-            s.index = pd.to_datetime(s.index)
+            try:
+                s = stock.get_index_ohlcv(f"{pad_start:%Y%m%d}", f"{end:%Y%m%d}", "1028")["종가"]
+                if len(s):
+                    s.index = pd.to_datetime(s.index)
+                    return s.rename("close").to_frame()
+            except Exception as exc:  # KRX 로그인 실패 등 - yfinance 폴백
+                print(f"[data] KOSPI200 pykrx 실패 → yfinance ^KS200 폴백: {exc!r}")
+            import yfinance as yf
+            raw = yf.download("^KS200", start=pad_start, end=end + timedelta(days=1),
+                              auto_adjust=True, progress=False)
+            if isinstance(raw.columns, pd.MultiIndex):
+                raw.columns = raw.columns.get_level_values(0)
+            s = raw["Close"] if "Close" in raw.columns else raw["close"]
+            s.index = pd.to_datetime(s.index).tz_localize(None)
             return s.rename("close").to_frame()
         key = _key("IDX", "KOSPI200", pad_start, end)
     else:
