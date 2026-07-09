@@ -66,7 +66,8 @@ class Repository:
                 for sym, pos in st.portfolio.positions.items():
                     s.add(db.PositionRow(character=name, symbol=sym, market=pos.market.value,
                                          quantity=pos.quantity, avg_price=pos.avg_price,
-                                         opened_date=pos.opened))
+                                         opened_date=pos.opened, peak_price=pos.peak_price,
+                                         locked_stop_pct=pos.locked_stop_pct))
                 for b in st.pending_buys:
                     s.add(db.PendingOrder(character=name, side="BUY", symbol=b.symbol,
                                           market=b.market.value, green_count=b.green_count,
@@ -76,7 +77,7 @@ class Repository:
                 for ps in st.pending_sells:
                     s.add(db.PendingOrder(character=name, side="SELL", symbol=ps.symbol,
                                           market=ps.market.value, red_count=ps.red_count,
-                                          red_score=ps.red_score,
+                                          red_score=ps.red_score, partial=ps.partial,
                                           fired=list(ps.fired), reason=ps.reason.value,
                                           created_date=date.today()))
                 for sym, (mkt, rem) in st.cooldowns.items():
@@ -96,7 +97,8 @@ class Repository:
                 st = engine.states.get(p.character)
                 if st:
                     st.portfolio.positions[p.symbol] = Position(
-                        p.symbol, Market(p.market), p.quantity, p.avg_price, p.opened_date)
+                        p.symbol, Market(p.market), p.quantity, p.avg_price, p.opened_date,
+                        peak_price=p.peak_price, locked_stop_pct=p.locked_stop_pct)
             for o in s.execute(select(db.PendingOrder)).scalars():
                 st = engine.states.get(o.character)
                 if not st:
@@ -108,7 +110,7 @@ class Repository:
                 else:
                     st.pending_sells.append(PendingSell(o.symbol, Market(o.market),
                         TradeReason(o.reason), o.red_count, o.red_score,
-                        tuple(o.fired or ())))
+                        tuple(o.fired or ()), partial=o.partial))
             for c in s.execute(select(db.Cooldown)).scalars():
                 st = engine.states.get(c.character)
                 if st:
