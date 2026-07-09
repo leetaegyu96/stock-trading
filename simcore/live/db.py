@@ -1,7 +1,7 @@
 """SQLAlchemy ORM 스키마 (스펙 §5)."""
 from __future__ import annotations
 from datetime import date, datetime
-from sqlalchemy import (String, Float, Integer, Date, DateTime, ForeignKey,
+from sqlalchemy import (String, Float, Integer, Boolean, Date, DateTime, ForeignKey,
                         create_engine)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -32,6 +32,8 @@ class PositionRow(Base):
     quantity: Mapped[int] = mapped_column(Integer)
     avg_price: Mapped[float] = mapped_column(Float)
     opened_date: Mapped[date] = mapped_column(Date)
+    peak_price: Mapped[float] = mapped_column(Float, default=0.0)
+    locked_stop_pct: Mapped[float] = mapped_column(Float, default=0.0)
 
 
 class PendingOrder(Base):
@@ -43,10 +45,13 @@ class PendingOrder(Base):
     market: Mapped[str] = mapped_column(String)
     green_count: Mapped[int] = mapped_column(Integer, default=0)
     red_count: Mapped[int] = mapped_column(Integer, default=0)
+    green_score: Mapped[int] = mapped_column(Integer, default=0)
+    red_score: Mapped[int] = mapped_column(Integer, default=0)
     change_pct: Mapped[float] = mapped_column(Float, default=0.0)
     volume: Mapped[float] = mapped_column(Float, default=0.0)
     fired: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     reason: Mapped[str] = mapped_column(String, default="SIGNAL_SELL")
+    partial: Mapped[bool] = mapped_column(Boolean, default=False)
     created_date: Mapped[date] = mapped_column(Date)
 
 
@@ -90,6 +95,8 @@ class TradeRow(Base):
     reason: Mapped[str] = mapped_column(String)
     green_count: Mapped[int] = mapped_column(Integer, default=0)
     red_count: Mapped[int] = mapped_column(Integer, default=0)
+    green_score: Mapped[int] = mapped_column(Integer, default=0)
+    red_score: Mapped[int] = mapped_column(Integer, default=0)
     fired: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
 

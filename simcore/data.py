@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Callable
 import pandas as pd
 
-LOOKBACK_PAD_DAYS = 120  # 지표 워밍업(최소 61거래일)을 위한 달력일 여유
+LOOKBACK_PAD_DAYS = 180  # 지표 워밍업(일목 78거래일 ≈ 118달력일)을 위한 여유
 COLS = ["open", "high", "low", "close", "volume"]
 
 

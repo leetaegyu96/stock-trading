@@ -27,7 +27,8 @@ def main() -> None:
     ap.add_argument("--start", required=True)
     ap.add_argument("--end", required=True)
     ap.add_argument("--flows", default=None, help="입출금 CSV (date,character,amount_krw,liquidate)")
-    ap.add_argument("--buy-threshold", type=int, default=None)
+    ap.add_argument("--buy-score", type=int, default=None,
+                    help="매수 최소 총점(기본 18)")
     ap.add_argument("--kr-top", type=int, default=200, help="코스피200 중 앞 N종목")
     ap.add_argument("--us-top", type=int, default=100, help="S&P500 중 앞 N종목")
     ap.add_argument("--out", default="out")
@@ -36,8 +37,8 @@ def main() -> None:
 
     start, end = date.fromisoformat(args.start), date.fromisoformat(args.end)
     cfg = Config()
-    if args.buy_threshold is not None:
-        cfg = replace(cfg, rules=replace(cfg.rules, buy_threshold=args.buy_threshold))
+    if args.buy_score is not None:
+        cfg = replace(cfg, rules=replace(cfg.rules, buy_score_min=args.buy_score))
 
     cache = Path(args.cache)
     kr_syms = universe.kospi200(cache, start)[: args.kr_top]

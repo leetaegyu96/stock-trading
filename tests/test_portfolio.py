@@ -85,3 +85,38 @@ def test_invariant_violation_raises_even_without_asserts():
     p.cash[Currency.KRW] = -1.0
     with pytest.raises(RuntimeError):
         p.assert_invariants()
+
+
+def _pf():
+    pf = Portfolio("t", Currency.KRW, Config())
+    pf.deposit(date(2026, 1, 2), 100_000_000.0, 1300.0)
+    return pf
+
+
+def test_buy_initializes_trailing_state():
+    pf = _pf()
+    pf.buy(date(2026, 1, 2), "005930", Market.KR, 100, 1000.0,
+           TradeReason.SIGNAL_BUY, green_score=20)
+    pos = pf.positions["005930"]
+    assert pos.peak_price == 1000.0
+    assert pos.locked_stop_pct == Config().rules.stop_loss_pct
+    assert pf.trades[-1].green_score == 20
+
+
+def test_partial_sell_keeps_position_reduced():
+    pf = _pf()
+    pf.buy(date(2026, 1, 2), "005930", Market.KR, 100, 1000.0, TradeReason.SIGNAL_BUY)
+    cash_after_buy = pf.cash[Currency.KRW]
+    pf.sell(date(2026, 1, 3), "005930", 1100.0, TradeReason.SIGNAL_SELL, quantity=50)
+    assert "005930" in pf.positions
+    assert pf.positions["005930"].quantity == 50
+    assert pf.cash[Currency.KRW] > cash_after_buy         # 매도 대금 유입
+    assert pf.trades[-1].quantity == 50
+    assert pf.trades[-1].realized_pnl != 0.0
+
+
+def test_full_sell_pops_position():
+    pf = _pf()
+    pf.buy(date(2026, 1, 2), "005930", Market.KR, 100, 1000.0, TradeReason.SIGNAL_BUY)
+    pf.sell(date(2026, 1, 3), "005930", 1100.0, TradeReason.SIGNAL_SELL)
+    assert "005930" not in pf.positions

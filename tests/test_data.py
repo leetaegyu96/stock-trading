@@ -38,3 +38,8 @@ def test_empty_fetch_result_is_not_cached(tmp_path):
     assert df1.empty and df2.empty
     assert len(calls) == 2  # 빈 응답은 캐시되지 않아 재시도됨
     assert not (tmp_path / "KR_000000_20250101_20250131.parquet").exists()
+
+
+def test_lookback_pad_covers_ichimoku():
+    from simcore.data import LOOKBACK_PAD_DAYS
+    assert LOOKBACK_PAD_DAYS >= 120     # 일목 워밍업 안전 여유

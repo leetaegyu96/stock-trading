@@ -39,3 +39,69 @@ def test_stochastic_close_at_high_is_100():
     k, d = ind.stochastic(high, low, close)
     assert k.iloc[-1] == pytest.approx(100.0)
     assert d.iloc[-1] == pytest.approx(100.0)
+
+
+def _series(vals):
+    idx = pd.date_range("2024-01-01", periods=len(vals), freq="D")
+    return pd.Series(vals, index=idx, dtype=float)
+
+
+def test_atr_wilder_matches_manual():
+    high = _series([10, 11, 12, 11, 13])
+    low = _series([9, 9.5, 10, 10, 11])
+    close = _series([9.5, 10.5, 11.5, 10.5, 12.5])
+    out = ind.atr(high, low, close, period=2)
+    # 첫 TR=high-low=1; 이후 TR=max(h-l, |h-prevclose|, |l-prevclose|)
+    assert out.notna().sum() >= 3
+    assert (out.dropna() > 0).all()
+
+
+def test_adx_trending_up_has_di_plus_dominant():
+    n = 40
+    close = _series(np.linspace(10, 30, n))          # 꾸준한 상승
+    high = close + 0.5
+    low = close - 0.5
+    adx, di_p, di_m = ind.adx(high, low, close, period=14)
+    assert di_p.iloc[-1] > di_m.iloc[-1]             # 상승 → DI+ 우위
+    assert adx.iloc[-1] > 20
+
+
+def test_obv_accumulates_on_up_days():
+    close = _series([10, 11, 10, 12])
+    vol = _series([100, 200, 150, 300])
+    out = ind.obv(close, vol)
+    # +200 (상승), -150 (하락), +300 (상승) 누적
+    assert out.iloc[1] == 200
+    assert out.iloc[2] == 50
+    assert out.iloc[3] == 350
+
+
+def test_vwap_between_low_and_high():
+    high = _series([10, 11, 12, 13, 14])
+    low = _series([8, 9, 10, 11, 12])
+    close = _series([9, 10, 11, 12, 13])
+    vol = _series([100, 100, 100, 100, 100])
+    out = ind.vwap(high, low, close, vol, period=3)
+    tail = out.dropna()
+    assert (tail >= low.reindex(tail.index)).all()
+    assert (tail <= high.reindex(tail.index)).all()
+
+
+def test_parabolic_sar_flips_below_price_in_uptrend():
+    n = 30
+    close = _series(np.linspace(10, 25, n))
+    high = close + 0.3
+    low = close - 0.3
+    sar = ind.parabolic_sar(high, low)
+    assert sar.iloc[-1] < close.iloc[-1]             # 상승추세 → SAR 은 가격 아래
+
+
+def test_ichimoku_cloud_below_price_in_uptrend():
+    n = 90
+    close = _series(np.linspace(10, 40, n))
+    high = close + 0.5
+    low = close - 0.5
+    tenkan, kijun, span_a, span_b = ind.ichimoku(high, low, close)
+    top = pd.concat([span_a, span_b], axis=1).max(axis=1)
+    assert close.iloc[-1] > top.iloc[-1]             # 상승추세 → 구름 위
+    assert tenkan.iloc[-1] > kijun.iloc[-1]

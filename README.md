@@ -1,6 +1,6 @@
 # simcore — 규칙 기반 롱온리 모의투자 시뮬레이터 (엔진 코어)
 
-청신호/적신호 카운트 규칙(매수 7 / 매도 3)으로 3캐릭터(국내형/해외형/범용형)가
+청신호/적신호 점수제(매수 18점+게이트 / 매도 등급·트레일링 스탑)으로 3캐릭터(국내형/해외형/범용형)가
 각 1억 원으로 모의매매하는 엔진. 과거 데이터 리플레이로 검증한다.
 
 ## 설치
@@ -9,7 +9,7 @@
 
 ## 리플레이 실행
     .venv\Scripts\python -m simcore --start 2025-01-01 --end 2025-12-31
-    # 옵션: --buy-threshold 5  --kr-top 50 --us-top 50  --flows flows.csv  --out out
+    # 옵션: --buy-score 16  --kr-top 50 --us-top 50  --flows flows.csv  --out out
 
 입출금 CSV 형식: `date,character,amount_krw,liquidate` (liquidate 는 세미콜론 구분 종목코드, 출금 시 청산 지정)
 
@@ -32,6 +32,16 @@ KIS는 **데이터 피드 전용**(주문하지 않음)이며 3캐릭터는 엔�
 설계: `docs/superpowers/specs/2026-07-08-simcore-live-kis-design.md`
 
 ## 대시보드
+
+한 번에 켜고 끄기 (프론트 빌드 + 백엔드를 uvicorn 하나로 서빙):
+
+    ./dashboard/dashboard.sh start     # 빌드 + 기동 → http://localhost:8000
+    ./dashboard/dashboard.sh stop      # 종료
+    ./dashboard/dashboard.sh status    # 실행 여부 / logs 로 로그 보기
+    # 포트 변경: PORT=9000 ./dashboard/dashboard.sh start
+
+수동으로 하려면:
+
     cd dashboard/frontend && npm install && npm run build
     uvicorn dashboard.backend.app:app        # http://localhost:8000
 

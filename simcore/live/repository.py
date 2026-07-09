@@ -66,15 +66,18 @@ class Repository:
                 for sym, pos in st.portfolio.positions.items():
                     s.add(db.PositionRow(character=name, symbol=sym, market=pos.market.value,
                                          quantity=pos.quantity, avg_price=pos.avg_price,
-                                         opened_date=pos.opened))
+                                         opened_date=pos.opened, peak_price=pos.peak_price,
+                                         locked_stop_pct=pos.locked_stop_pct))
                 for b in st.pending_buys:
                     s.add(db.PendingOrder(character=name, side="BUY", symbol=b.symbol,
                                           market=b.market.value, green_count=b.green_count,
+                                          green_score=b.green_score,
                                           change_pct=b.change_pct, volume=b.volume,
                                           fired=list(b.fired), created_date=date.today()))
                 for ps in st.pending_sells:
                     s.add(db.PendingOrder(character=name, side="SELL", symbol=ps.symbol,
                                           market=ps.market.value, red_count=ps.red_count,
+                                          red_score=ps.red_score, partial=ps.partial,
                                           fired=list(ps.fired), reason=ps.reason.value,
                                           created_date=date.today()))
                 for sym, (mkt, rem) in st.cooldowns.items():
@@ -94,17 +97,20 @@ class Repository:
                 st = engine.states.get(p.character)
                 if st:
                     st.portfolio.positions[p.symbol] = Position(
-                        p.symbol, Market(p.market), p.quantity, p.avg_price, p.opened_date)
+                        p.symbol, Market(p.market), p.quantity, p.avg_price, p.opened_date,
+                        peak_price=p.peak_price, locked_stop_pct=p.locked_stop_pct)
             for o in s.execute(select(db.PendingOrder)).scalars():
                 st = engine.states.get(o.character)
                 if not st:
                     continue
                 if o.side == "BUY":
                     st.pending_buys.append(PendingBuy(o.symbol, Market(o.market),
-                        o.green_count, tuple(o.fired or ()), o.change_pct, o.volume))
+                        o.green_count, o.green_score, tuple(o.fired or ()),
+                        o.change_pct, o.volume))
                 else:
                     st.pending_sells.append(PendingSell(o.symbol, Market(o.market),
-                        TradeReason(o.reason), o.red_count, tuple(o.fired or ())))
+                        TradeReason(o.reason), o.red_count, o.red_score,
+                        tuple(o.fired or ()), partial=o.partial))
             for c in s.execute(select(db.Cooldown)).scalars():
                 st = engine.states.get(c.character)
                 if st:
@@ -141,7 +147,8 @@ class Repository:
                         symbol=t.symbol, market=t.market.value, side=t.side.value,
                         quantity=t.quantity, price=t.price, fee=t.fee, tax=t.tax,
                         reason=t.reason.value, green_count=t.green_count,
-                        red_count=t.red_count, fired=list(t.fired),
+                        red_count=t.red_count, green_score=t.green_score,
+                        red_score=t.red_score, fired=list(t.fired),
                         realized_pnl=t.realized_pnl))
                 self._trade_cursor[name] = len(st.portfolio.trades)
 

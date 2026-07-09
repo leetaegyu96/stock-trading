@@ -29,6 +29,7 @@ class TradeReason(str, Enum):
     TAKE_PROFIT = "TAKE_PROFIT"
     USER_WITHDRAWAL = "USER_WITHDRAWAL"
     DELISTED = "DELISTED"
+    TRAILING_STOP = "TRAILING_STOP"
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,8 @@ class Position:
     quantity: int
     avg_price: float  # 시장 통화 기준
     opened: Date
+    peak_price: float = 0.0
+    locked_stop_pct: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -66,6 +69,8 @@ class Trade:
     green_count: int = 0
     red_count: int = 0
     fired: tuple[str, ...] = ()
+    green_score: int = 0
+    red_score: int = 0
     realized_pnl: float = 0.0  # 시장 통화, 비용 차감 후
 
 
@@ -83,7 +88,11 @@ class SymbolSnapshot:
     symbol: str
     market: Market
     green: tuple[str, ...]
-    red: tuple[str, ...]  # 시장 데이터 기반 R1~R6, R8, R9 (R7/R10 은 엔진이 포지션 기준으로 추가)
+    red: tuple[str, ...]  # 시장 데이터 기반 적신호 코드. R7 손절/트레일링은 엔진이 포지션
+                          # 가격으로 별도 판정하며 이 튜플에 넣지 않는다(v2: R10/익절 폐지).
     close: float
     change_pct: float
     volume: float
+    green_score: int = 0
+    red_score: int = 0
+    buy_gate: bool = False
