@@ -48,8 +48,8 @@ def main() -> None:
     kr_syms = universe.kospi200(cache, start)[: args.kr_top]
     us_syms = universe.sp500(cache)[: args.us_top]
     print(f"[universe] KR {len(kr_syms)}종목, US {len(us_syms)}종목 로딩 중...")
-    kr_index = datamod.load_index("KR", start, end, cache) if kr_syms else None
-    us_index = datamod.load_index("US", start, end, cache) if us_syms else None
+    kr_index = datamod.load_index("KR", start, end, cache) if (args.bear_guard and kr_syms) else None
+    us_index = datamod.load_index("US", start, end, cache) if (args.bear_guard and us_syms) else None
     bundle = DataBundle(
         kr=datamod.load_kr_daily(kr_syms, start, end, cache),
         us=datamod.load_us_daily(us_syms, start, end, cache),
