@@ -40,6 +40,7 @@ class SignalParams:
     support_lookback: int = 20          # R18 지지선(최근 저점)
     gap_down_pct: float = -0.02         # R19 갭 하락 임계
     big_body_pct: float = 0.03          # R23 장대 음봉 몸통 비율
+    market_trend_period: int = 20
 
 
 @dataclass(frozen=True)

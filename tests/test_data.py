@@ -43,3 +43,72 @@ def test_empty_fetch_result_is_not_cached(tmp_path):
 def test_lookback_pad_covers_ichimoku():
     from simcore.data import LOOKBACK_PAD_DAYS
     assert LOOKBACK_PAD_DAYS >= 120     # 일목 워밍업 안전 여유
+
+
+def test_market_trend_period_default():
+    from simcore.config import SignalParams
+    assert SignalParams().market_trend_period == 20
+
+
+def test_load_index_kr_falls_back_to_yfinance_on_pykrx_failure(tmp_path, monkeypatch):
+    """KRX 로그인 실패 등으로 pykrx.get_index_ohlcv가 예외를 던지면
+    yfinance ^KS200 폴백으로 넘어가고 예외가 전파되지 않아야 한다."""
+    import datetime as dt
+    import simcore.data as datamod
+
+    class FakeStock:
+        @staticmethod
+        def get_index_ohlcv(*_args, **_kwargs):
+            raise KeyError("지수명")  # pykrx 내부 실패 재현
+
+    fake_pykrx = type("m", (), {"stock": FakeStock})
+    monkeypatch.setitem(__import__("sys").modules, "pykrx", fake_pykrx)
+
+    idx = pd.bdate_range("2025-07-14", periods=5)
+    fake_yf_df = pd.DataFrame({"Close": np.full(5, 300.0)}, index=idx)
+
+    class FakeYF:
+        @staticmethod
+        def download(*_args, **_kwargs):
+            return fake_yf_df
+
+    monkeypatch.setitem(__import__("sys").modules, "yfinance", FakeYF)
+
+    start = dt.date(2026, 1, 9)
+    end = dt.date(2026, 7, 9)
+    s = datamod.load_index("KR", start, end, tmp_path)
+
+    assert not s.empty
+    assert s.name == "close"
+    assert (s == 300.0).all()
+
+
+def test_load_index_kr_falls_back_when_pykrx_returns_empty(tmp_path, monkeypatch):
+    """예외를 던지지 않아도 빈 결과면 yfinance 폴백으로 넘어가야 한다."""
+    import datetime as dt
+    import simcore.data as datamod
+
+    class FakeStock:
+        @staticmethod
+        def get_index_ohlcv(*_args, **_kwargs):
+            return pd.DataFrame({"종가": pd.Series(dtype="float64")})
+
+    fake_pykrx = type("m", (), {"stock": FakeStock})
+    monkeypatch.setitem(__import__("sys").modules, "pykrx", fake_pykrx)
+
+    idx = pd.bdate_range("2025-07-14", periods=3)
+    fake_yf_df = pd.DataFrame({"Close": np.full(3, 250.0)}, index=idx)
+
+    class FakeYF:
+        @staticmethod
+        def download(*_args, **_kwargs):
+            return fake_yf_df
+
+    monkeypatch.setitem(__import__("sys").modules, "yfinance", FakeYF)
+
+    start = dt.date(2026, 1, 9)
+    end = dt.date(2026, 7, 9)
+    s = datamod.load_index("KR", start, end, tmp_path)
+
+    assert not s.empty
+    assert (s == 250.0).all()

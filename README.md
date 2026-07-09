@@ -10,6 +10,7 @@
 ## 리플레이 실행
     .venv\Scripts\python -m simcore --start 2025-01-01 --end 2025-12-31
     # 옵션: --buy-score 16  --kr-top 50 --us-top 50  --flows flows.csv  --out out
+    #      --bear-guard (하락장 가드: 지수<20일선 시장은 신규매수 차단, 기본 off)
 
 입출금 CSV 형식: `date,character,amount_krw,liquidate` (liquidate 는 세미콜론 구분 종목코드, 출금 시 청산 지정)
 

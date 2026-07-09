@@ -97,3 +97,40 @@ def load_fx(start: Date, end: Date, cache_dir: Path) -> pd.Series:
 
     df = _cached(cache_dir, _key("FX", "KRWUSD", pad_start, end), fetch)
     return df["fx"].ffill()
+
+
+def load_index(market: str, start: Date, end: Date, cache_dir: Path) -> pd.Series:
+    """시장 대표 지수 종가. KR=코스피200(pykrx 1028), US=S&P500(^GSPC)."""
+    pad_start = start - timedelta(days=LOOKBACK_PAD_DAYS)
+    if market == "KR":
+        def fetch():
+            from pykrx import stock
+            try:
+                s = stock.get_index_ohlcv(f"{pad_start:%Y%m%d}", f"{end:%Y%m%d}", "1028")["종가"]
+                if len(s):
+                    s.index = pd.to_datetime(s.index)
+                    return s.rename("close").to_frame()
+            except Exception as exc:  # KRX 로그인 실패 등 - yfinance 폴백
+                print(f"[data] KOSPI200 pykrx 실패 → yfinance ^KS200 폴백: {exc!r}")
+            import yfinance as yf
+            raw = yf.download("^KS200", start=pad_start, end=end + timedelta(days=1),
+                              auto_adjust=True, progress=False)
+            if isinstance(raw.columns, pd.MultiIndex):
+                raw.columns = raw.columns.get_level_values(0)
+            s = raw["Close"] if "Close" in raw.columns else raw["close"]
+            s.index = pd.to_datetime(s.index).tz_localize(None)
+            return s.rename("close").to_frame()
+        key = _key("IDX", "KOSPI200", pad_start, end)
+    else:
+        def fetch():
+            import yfinance as yf
+            raw = yf.download("^GSPC", start=pad_start, end=end + timedelta(days=1),
+                              auto_adjust=True, progress=False)
+            if isinstance(raw.columns, pd.MultiIndex):
+                raw.columns = raw.columns.get_level_values(0)
+            s = raw["Close"] if "Close" in raw.columns else raw["close"]
+            s.index = pd.to_datetime(s.index).tz_localize(None)
+            return s.rename("close").to_frame()
+        key = _key("IDX", "SP500", pad_start, end)
+    df = _cached(cache_dir, key, fetch)
+    return df["close"].astype(float).sort_index() if not df.empty else pd.Series(dtype="float64")
