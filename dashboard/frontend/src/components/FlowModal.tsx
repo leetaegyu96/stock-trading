@@ -160,7 +160,8 @@ export function FlowModal({ name, mode, positions, onClose }: FlowModalProps) {
                             onChange={() => toggleSymbol(pos.symbol)}
                             disabled={submitting}
                           />
-                          <span className="detail-table__symbol">{pos.symbol}</span>
+                          <span className="detail-table__name">{pos.name}</span>
+                          <span className="detail-table__code">{pos.symbol}</span>
                           <span className="detail-table__market">{pos.market}</span>
                         </label>
                       </li>

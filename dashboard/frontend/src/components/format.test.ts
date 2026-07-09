@@ -100,7 +100,14 @@ describe("shortDate", () => {
 });
 
 // ── UI 개편에서 추가된 포맷터 ──
-import { formatKrwCompact, formatPrice, formatSignedKrw, formatSignedPrice, reasonInfo } from "./format";
+import {
+  formatKrwCompact,
+  formatPrice,
+  formatSignedKrw,
+  formatSignedPrice,
+  reasonInfo,
+  starString,
+} from "./format";
 
 describe("formatKrwCompact", () => {
   it("formats 억 with two decimals", () => {
@@ -146,5 +153,28 @@ describe("reasonInfo", () => {
   });
   it("falls back to the raw value for unknown reasons", () => {
     expect(reasonInfo("SOMETHING")).toEqual({ label: "SOMETHING", kind: "unknown" });
+  });
+
+  it("gives trailing stop a beginner-friendly profit-protection label", () => {
+    expect(reasonInfo("TRAILING_STOP")).toEqual({
+      label: "트레일링 스탑(수익 보호)",
+      kind: "take",
+    });
+  });
+});
+
+describe("starString", () => {
+  it("renders filled stars up to the given count", () => {
+    expect(starString(3)).toBe("★★★☆☆");
+  });
+
+  it("renders all filled at max", () => {
+    expect(starString(5)).toBe("★★★★★");
+  });
+
+  it("clamps out-of-range values", () => {
+    expect(starString(0)).toBe("☆☆☆☆☆");
+    expect(starString(9)).toBe("★★★★★");
+    expect(starString(-2)).toBe("☆☆☆☆☆");
   });
 });

@@ -11,9 +11,11 @@ from __future__ import annotations
 from fastapi import WebSocket
 
 from dashboard.backend import queries, summary
+from dashboard.backend.constants import FALLBACK_FX_RATE
 from dashboard.backend.schemas import CardSummary
 
-_FALLBACK_FX_RATE = 1300.0
+# dashboard.backend.constants.FALLBACK_FX_RATE 와 동일해야 한다(seed_from_replay 도 공유).
+_FALLBACK_FX_RATE = FALLBACK_FX_RATE
 
 
 class ConnectionManager:

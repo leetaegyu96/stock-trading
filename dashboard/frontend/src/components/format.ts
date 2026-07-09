@@ -77,6 +77,7 @@ const REASON_MAP: Record<string, { label: string; kind: ReasonKind }> = {
   SIGNAL_SELL: { label: "신호 매도", kind: "sell" },
   STOP_LOSS: { label: "손절", kind: "stop" },
   TAKE_PROFIT: { label: "익절", kind: "take" },
+  TRAILING_STOP: { label: "트레일링 스탑(수익 보호)", kind: "take" },
   USER_WITHDRAWAL: { label: "출금 청산", kind: "flow" },
   DELISTED: { label: "상장폐지", kind: "flow" },
 };
@@ -91,6 +92,12 @@ export function formatPrice(market: string, value: number): string {
     return `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
   return `₩${Math.round(value).toLocaleString("ko-KR")}`;
+}
+
+/** 별점(1~5)을 채워진/빈 별 문자열로 렌더. 범위를 벗어난 값은 0~max로 clamp. */
+export function starString(stars: number, max = 5): string {
+  const filled = Math.max(0, Math.min(max, Math.round(stars)));
+  return "★".repeat(filled) + "☆".repeat(max - filled);
 }
 
 /** 부호 있는 시장 통화 표기 (실현손익용). */
