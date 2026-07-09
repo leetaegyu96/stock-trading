@@ -18,12 +18,6 @@ SIGNAL_NAMES: dict[str, str] = {
     "R18": "지지선 붕괴", "R19": "갭 하락", "R23": "장대 음봉", "R24": "거래량 없는 상승",
 }
 
-_CATEGORY_PHRASE = {
-    "추세": "상승추세", "돌파": "돌파", "거래량": "거래량", "모멘텀": "모멘텀",
-    "변동성": "변동성", "하락패턴": "하락신호",
-}
-
-
 def stars(code: str, scores: SignalScores) -> int:
     return int(scores.points.get(code, 0))
 

@@ -32,3 +32,7 @@ def test_detail_has_name_category_stars():
     sc = SignalScores()
     d = sd.detail(["G1"], sc)
     assert d and d[0]["code"] == "G1" and d[0]["name"] and d[0]["category"] == "추세" and d[0]["stars"] == 5
+
+
+def test_names_cover_all_scored_codes_exactly():
+    assert set(sd.SIGNAL_NAMES) == set(SignalScores().points)
