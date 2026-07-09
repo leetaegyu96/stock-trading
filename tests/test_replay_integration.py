@@ -114,3 +114,21 @@ def test_bear_guard_suppresses_buys_in_index_downtrend():
     n_on = 0 if res_on.trades.empty else (res_on.trades.side == "BUY").sum()
     n_off = 0 if res_off.trades.empty else (res_off.trades.side == "BUY").sum()
     assert n_on < n_off        # 가드가 하락장 매수를 억제
+
+def test_bear_guard_v2_universal_buys_when_only_one_market_bearish():
+    import numpy as np, pandas as pd
+    from datetime import date
+    from dataclasses import replace
+    from simcore.config import Config
+    from simcore.replay import DataBundle, run_replay
+    idx = pd.date_range("2025-06-01", periods=220, freq="B")
+    up = np.linspace(100, 400, 220)
+    mk = lambda: pd.DataFrame({"open": up, "high": up + 2, "low": up - 2, "close": up,
+                               "volume": np.linspace(1e3, 5e3, 220)}, index=idx)
+    bundle = DataBundle(kr={"AAA": mk()}, us={"BBB": mk()}, fx=pd.Series(1300.0, index=idx),
+                        kr_index=pd.Series(np.linspace(400, 100, 220), index=idx),   # KR 하락
+                        us_index=pd.Series(np.linspace(100, 400, 220), index=idx))   # US 상승
+    cfg_on = replace(Config(), rules=replace(Config().rules, bear_market_guard=True))
+    res = run_replay(cfg_on, bundle, date(2025, 9, 1), date(2026, 2, 1))
+    buys = res.trades[(res.trades.side == "BUY") & (res.trades.character == "범용형")] if not res.trades.empty else res.trades
+    assert len(buys) > 0        # 한쪽만 하락 → 범용형 매수 허용(v1이면 KR 매수 전면 차단이었음)

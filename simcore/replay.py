@@ -100,6 +100,7 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
         for f in flow_map.get(d, []):
             engine.apply_flow(d, f.character, f.amount_krw, fx,
                               open_prices=opens_today, liquidate=f.liquidate)
+        bearish = {Market.KR: _bearish(Market.KR, ts), Market.US: _bearish(Market.US, ts)}
         for market, data in md.items():
             todays = {sym: df for sym, df in data.items() if ts in df.index}
             if not todays:
@@ -124,7 +125,7 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
                     green_score=gs, red_score=rs, buy_gate=gate)
                 last_close[sym] = close
                 green_counts.append(gs)             # green_score 분포 기록
-            engine.evaluate_close(d, market, snaps, market_bearish=_bearish(market, ts))
+            engine.evaluate_close(d, market, snaps, bearish_by_market=bearish)
         eq = engine.snapshot(last_close, fx)
         equity_rows.append({"date": ts, **eq})
 
