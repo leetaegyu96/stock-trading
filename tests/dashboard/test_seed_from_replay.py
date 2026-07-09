@@ -20,6 +20,22 @@ def _bundle():
     return DataBundle(kr={"005930": df}, us={}, fx=pd.Series(1300.0, index=idx))
 
 
+def _bundle_with_us_and_drifting_fx():
+    """KR + US 종목을 모두 포함하고, fx 가 리플레이 구간 동안 1300→1400 으로 계속
+    변하는(상승 추세) 합성 데이터. 해외형·범용형이 실제로 USD(AAPL) 포지션을 들고
+    구간을 마치도록 만들어, Fix 1(마지막 EquityPoint 를 조회 fx 로 재평가)이 없으면
+    깨지는 케이스를 재현한다."""
+    idx = pd.date_range("2025-06-01", periods=220, freq="B")
+    up_kr = np.linspace(100, 500, 220)
+    df_kr = pd.DataFrame({"open": up_kr, "high": up_kr + 3, "low": up_kr - 3,
+                          "close": up_kr, "volume": np.linspace(1e6, 5e6, 220)}, index=idx)
+    up_us = np.linspace(50, 250, 220)
+    df_us = pd.DataFrame({"open": up_us, "high": up_us + 3, "low": up_us - 3,
+                          "close": up_us, "volume": np.linspace(1e6, 5e6, 220)}, index=idx)
+    fx = pd.Series(np.linspace(1300.0, 1400.0, 220), index=idx)  # 상수가 아님
+    return DataBundle(kr={"005930": df_kr}, us={"AAPL": df_us}, fx=fx)
+
+
 def test_seed_makes_card_total_match_equity_last():
     bundle = _bundle()
     result = run_replay(Config(), bundle, date(2025, 9, 1), date(2026, 2, 1))
@@ -38,6 +54,30 @@ def test_seed_makes_card_total_match_equity_last():
         assert abs(card.total_asset_krw - eq[-1][1]) < 1.0   # 동일 스냅샷 → 정합
         checked_any = True
     assert checked_any
+
+
+def test_seed_matches_exactly_with_drifting_fx_for_usd_holders():
+    """fx 가 상수가 아닐 때(리플레이 마지막날 fx != 조회 fx_rate)도 USD 를 보유하는
+    해외형/범용형까지 포함해 총자산 정합이 정확히 성립해야 한다(Fix 1 없이는 실패)."""
+    bundle = _bundle_with_us_and_drifting_fx()
+    result = run_replay(Config(), bundle, date(2025, 9, 1), date(2026, 2, 1))
+    engine = db.make_engine("sqlite://")
+    db.create_all(engine)
+    sf = db.make_session_factory(engine)
+    query_fx_rate = 1300.0  # 리플레이 마지막날 fx(≈1400)와 다른 값으로 조회
+    seed_replay_result_into_db(result, bundle, sf, fx_rate=query_fx_rate)
+
+    checked_usd_holder = False
+    for name in ["국내형", "해외형", "범용형"]:
+        eq = queries.equity_series(sf, name)
+        assert eq, f"{name} equity 가 비어 있음"
+        positions = queries.positions(sf, name)
+        lp = queries.last_prices(sf, positions)
+        card = summary.card_summary(sf, name, query_fx_rate, lp)
+        assert abs(card.total_asset_krw - eq[-1][1]) < 1.0
+        if any(p["market"] == "US" for p in positions):
+            checked_usd_holder = True
+    assert checked_usd_holder  # 이 케이스가 실제로 USD 보유 캐릭터를 검증했는지 확인
 
 
 def test_seed_requires_force_flag_when_run_as_cli(monkeypatch):

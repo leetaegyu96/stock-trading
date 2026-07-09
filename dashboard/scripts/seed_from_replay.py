@@ -43,15 +43,34 @@ def _fired_list(raw) -> list[str]:
     return [f for f in str(raw).split(";") if f]
 
 
+def _final_equity_krw(name: str, result: ReplayResult, fx_rate: float) -> float:
+    """dashboard.backend.summary.card_summary 가 계산하는 방식과 동일하게
+    최종 스냅샷(cash_by_char/positions_by_char/last_close)을 fx_rate 로 재평가한다.
+
+    replay 내부의 equity 마지막 값은 리플레이 마지막 거래일의 (그날그날 다른) fx 로
+    계산되어 있는데, 카드는 조회 시점의 fx_rate 로 USD 자산을 평가하므로, 이 둘을
+    맞추지 않으면 fx 가 날짜별로 변하는 경우(범용형/해외형처럼 USD 를 보유한 캐릭터)
+    total_asset_krw != equity 마지막 값이 되어 정합이 깨진다."""
+    cash = result.cash_by_char.get(name, {})
+    total = float(cash.get("KRW", 0.0)) + float(cash.get("USD", 0.0)) * fx_rate
+    for p in result.positions_by_char.get(name, []):
+        px = result.last_close.get(p["symbol"], p["avg_price"])
+        value = p["quantity"] * px
+        total += value * fx_rate if p["market"] == "US" else value
+    return total
+
+
 def seed_replay_result_into_db(result: ReplayResult, bundle: DataBundle, sf,
-                                fx_rate: float = 1300.0) -> None:
+                                fx_rate: float = 1300.0,
+                                initial_capital_krw: float = 100_000_000.0) -> None:
     """리플레이 결과(result)와 그 입력 데이터(bundle)를 세션 팩토리 sf 의 DB에 적재한다.
 
     positions_by_char/cash_by_char(최종 포지션·현금)와 daily_bars(같은 최종 스냅샷의
     마지막 종가)를 함께 써서, card_summary.total_asset_krw == equity 마지막 값이
-    성립하도록 한다.
+    성립하도록 한다. 마지막 EquityPoint 는 카드가 쓰는 것과 동일한 fx_rate 로
+    재평가한 값(_final_equity_krw)으로 덮어써서, fx 가 날짜별로 변해도(USD 보유
+    캐릭터 포함) 정합이 정확히 성립하도록 한다.
     """
-    cfg = Config()
     with sf() as s:
         # ---- 0. 기존 데이터 초기화 ----
         for t in _TABLES_TO_CLEAR:
@@ -72,7 +91,7 @@ def seed_replay_result_into_db(result: ReplayResult, bundle: DataBundle, sf,
         # ---- 2. 입출금: 초기입금(제외 대상, 첫 행) + flows_by_char 순입출금 ----
         for name in names:
             s.add(db.CapitalFlowRow(date=first_date, character=name,
-                                    amount_krw=cfg.initial_capital_krw, fx_rate=fx0))
+                                    amount_krw=initial_capital_krw, fx_rate=fx0))
             flow = result.flows_by_char.get(name)
             if flow is None:
                 continue
@@ -81,12 +100,17 @@ def seed_replay_result_into_db(result: ReplayResult, bundle: DataBundle, sf,
                                         amount_krw=float(amount), fx_rate=fx_rate))
 
         # ---- 3. 자산곡선 ----
+        # 마지막(최신) 포인트는 card_summary 와 동일한 fx_rate 로 재평가한 값으로
+        # 덮어써서 총자산 정합을 정확히 맞춘다(Fix 1) — 그 이전 포인트들은 리플레이
+        # 당시의 (날짜별로 다를 수 있는) fx 로 계산된 값을 그대로 둔다(스파크라인용).
         for name in names:
             col = result.equity[name]
+            final_krw = _final_equity_krw(name, result, fx_rate)
             for ts, equity_krw in col.items():
                 d = pd.Timestamp(ts).date()
+                value = final_krw if ts == last_ts else float(equity_krw)
                 s.add(db.EquityPoint(ts=datetime.combine(d, _EQUITY_TIME),
-                                     character=name, equity_krw=float(equity_krw)))
+                                     character=name, equity_krw=float(value)))
 
         # ---- 4. 포지션 (최종 스냅샷) ----
         for name, positions in result.positions_by_char.items():
@@ -175,7 +199,8 @@ def _cli() -> None:
     db.create_all(engine)
     sf = db.make_session_factory(engine)
     fx_rate = float(bundle.fx.iloc[-1])
-    seed_replay_result_into_db(result, bundle, sf, fx_rate=fx_rate)
+    seed_replay_result_into_db(result, bundle, sf, fx_rate=fx_rate,
+                               initial_capital_krw=cfg.initial_capital_krw)
     print("[seed_from_replay] 시딩 완료.")
 
 
