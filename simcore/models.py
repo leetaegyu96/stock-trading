@@ -88,7 +88,8 @@ class SymbolSnapshot:
     symbol: str
     market: Market
     green: tuple[str, ...]
-    red: tuple[str, ...]  # 시장 데이터 기반 R1~R6, R8, R9 (R7/R10 은 엔진이 포지션 기준으로 추가)
+    red: tuple[str, ...]  # 시장 데이터 기반 적신호 코드. R7 손절/트레일링은 엔진이 포지션
+                          # 가격으로 별도 판정하며 이 튜플에 넣지 않는다(v2: R10/익절 폐지).
     close: float
     change_pct: float
     volume: float

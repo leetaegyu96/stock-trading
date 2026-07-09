@@ -105,6 +105,7 @@ def test_stop_loss_at_minus_7pct():
     assert "AAA" not in eng.states["국내형"].portfolio.positions
     t = eng.states["국내형"].portfolio.trades[-1]
     assert t.reason == TradeReason.STOP_LOSS
+    assert "AAA" in eng.states["국내형"].cooldowns  # check_stops 경로도 쿨다운 등록(_sell 기본값)
 
 
 def test_trailing_locks_in_gain():
@@ -120,6 +121,23 @@ def test_trailing_locks_in_gain():
     eng.check_stops(date(2026, 1, 7), Market.KR, {"AAA": down}, 1300.0)
     assert "AAA" not in eng.states["국내형"].portfolio.positions
     assert eng.states["국내형"].portfolio.trades[-1].reason == TradeReason.TRAILING_STOP
+    assert "AAA" in eng.states["국내형"].cooldowns  # 트레일링 매도도 쿨다운 등록
+
+
+def test_trailing_top_locks_peak_trail_percentage():
+    eng = Engine(Config()); eng.start(date(2026, 1, 2), 1300.0)
+    _buy_one(eng, price=100.0)
+    # 고가 +50% (peak_gain 0.50 >= trailing_top 0.40) → 최고가 대비 trail_pct(7%) 트레일 적용
+    # 150*(1-0.07)/100 - 1 = 0.395 > 티어 매칭값(0.30) 이므로 트레일 값이 채택되어야 함
+    up = DailyBar("AAA", date(2026, 1, 6), 100.0, 150.0, 100.0, 149.0, 1000.0)
+    eng.check_stops(date(2026, 1, 6), Market.KR, {"AAA": up}, 1300.0)
+    pos = eng.states["국내형"].portfolio.positions["AAA"]
+    assert pos.locked_stop_pct >= 0.39
+    # 다음날 저가 135 (135/100-1=0.35 < 0.395) → 트레일선 하회 → 매도
+    down = DailyBar("AAA", date(2026, 1, 7), 145.0, 145.0, 135.0, 136.0, 1000.0)
+    eng.check_stops(date(2026, 1, 7), Market.KR, {"AAA": down}, 1300.0)
+    assert "AAA" not in eng.states["국내형"].portfolio.positions
+    assert eng.states["국내형"].portfolio.trades[-1].reason == TradeReason.TRAILING_STOP
 
 
 def test_forced_sell_r5_and_r23():
@@ -131,3 +149,38 @@ def test_forced_sell_r5_and_r23():
     eng.evaluate_close(date(2026, 1, 6), Market.KR, {"AAA": s})
     eng.fill_open(date(2026, 1, 7), Market.KR, {"AAA": 100.0}, 1300.0)
     assert "AAA" not in eng.states["국내형"].portfolio.positions
+
+
+def test_r5_alone_without_r23_is_not_forced():
+    # R5+R23 "동시" 조건은 부분집합(subset) 판정이어야 함 — R5 하나만으로는 강제매도가 아님
+    eng = Engine(Config()); eng.start(date(2026, 1, 2), 1300.0)
+    _buy_one(eng)
+    s = SymbolSnapshot("AAA", Market.KR, (), ("R5",), 100.0, -0.01, 1000.0,
+                       green_score=0, red_score=4, buy_gate=False)  # 4 < sell_partial_min(9)
+    eng.evaluate_close(date(2026, 1, 6), Market.KR, {"AAA": s})
+    assert eng.states["국내형"].pending_sells == []
+    assert "AAA" in eng.states["국내형"].portfolio.positions
+
+
+def test_low_red_score_no_forced_condition_is_pure_hold():
+    eng = Engine(Config()); eng.start(date(2026, 1, 2), 1300.0)
+    _buy_one(eng)
+    s = SymbolSnapshot("AAA", Market.KR, (), ("R1",), 100.0, -0.01, 1000.0,
+                       green_score=0, red_score=5, buy_gate=False)  # 5 < sell_partial_min(9)
+    eng.evaluate_close(date(2026, 1, 6), Market.KR, {"AAA": s})
+    assert eng.states["국내형"].pending_sells == []
+
+
+def test_partial_sell_rounding_up_to_full_close_still_sets_cooldown():
+    # 부분매도 목표 수량(quantity*partial_sell_fraction 반올림)이 잔량 전체와 같아지는 경계
+    # 상황(예: quantity==1)에서도, 실제로 포지션이 전량 청산됐다면 쿨다운이 걸려야 한다.
+    eng = Engine(Config()); eng.start(date(2026, 1, 2), 1300.0)
+    _buy_one(eng)
+    pos = eng.states["국내형"].portfolio.positions["AAA"]
+    pos.quantity = 1
+    s = SymbolSnapshot("AAA", Market.KR, (), ("R1", "R2"), 100.0, -0.01, 1000.0,
+                       green_score=0, red_score=10, buy_gate=False)  # 부분매도 구간(9~10)
+    eng.evaluate_close(date(2026, 1, 6), Market.KR, {"AAA": s})
+    eng.fill_open(date(2026, 1, 7), Market.KR, {"AAA": 100.0}, 1300.0)
+    assert "AAA" not in eng.states["국내형"].portfolio.positions  # 반올림으로 전량 청산됨
+    assert "AAA" in eng.states["국내형"].cooldowns                 # 그래도 쿨다운은 걸려야 함

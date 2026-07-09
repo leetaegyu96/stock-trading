@@ -141,8 +141,11 @@ class Engine:
                 qty = None
                 if ps.partial:
                     qty = max(1, int(pos.quantity * r.partial_sell_fraction))
+                # 부분매도 수량이 반올림으로 잔량 전체를 청산하는 경우(예: quantity==1)에도
+                # 쿨다운이 정확히 걸려야 하므로, 등급이 아니라 _sell 의 "실제 청산 여부" 가드에
+                # 위임한다 (cooldown=True 는 포지션이 남아 있으면 자동으로 무시됨).
                 self._sell(st, d, ps.symbol, price, ps.reason, fx_rate,
-                           quantity=qty, cooldown=not ps.partial,
+                           quantity=qty, cooldown=True,
                            red_count=ps.red_count, red_score=ps.red_score, fired=ps.fired)
             st.pending_sells = carried
             # 2) 매수: 우선순위 = green_score → 등락률 → 거래량
