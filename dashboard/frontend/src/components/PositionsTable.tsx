@@ -38,7 +38,8 @@ export function PositionsTable({ positions, className }: PositionsTableProps) {
             return (
               <tr key={`${pos.market}:${pos.symbol}`}>
                 <td>
-                  <span className="detail-table__symbol">{pos.symbol}</span>
+                  <span className="detail-table__name">{pos.name}</span>
+                  <span className="detail-table__code">{pos.symbol}</span>
                   <span className={`mkt mkt--${pos.market.toLowerCase()}`}>{pos.market}</span>
                   {pos.stale && <span className="badge badge--stale">지연</span>}
                 </td>

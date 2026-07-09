@@ -106,6 +106,28 @@ def card_summary(sf, name: str, fx_rate: float, last_prices: dict[str, float]) -
     )
 
 
+def character_portfolios(sf, fx_rate, last_prices_by_char) -> list[dict]:
+    """캐릭터별 오늘손익·보유수·보유 베스트/워스트(pnl_pct 기준) 요약."""
+    out = []
+    for name in [s.name for s in DEFAULT_CHARACTERS]:
+        eq = _equity_series(sf, name)
+        positions = queries.positions(sf, name)
+        lp = last_prices_by_char.get(name, {})
+        # 보유 베스트/워스트: 각 종목 현재가 vs 평단
+        ranked = sorted(
+            ({"symbol": p["symbol"], "name": p["name"],
+              "pnl_pct": (lp.get(p["symbol"], p["avg_price"]) / p["avg_price"] - 1.0)}
+             for p in positions), key=lambda x: x["pnl_pct"])
+        out.append({
+            "name": name,
+            "today_pnl_pct": _today_pnl_pct(eq),
+            "n_positions": len(positions),
+            "best": ranked[-1] if ranked else None,
+            "worst": ranked[0] if ranked else None,
+        })
+    return out
+
+
 def _win_rate(trades: list[dict]) -> float:
     sells = [t for t in trades if t["side"] == "SELL"]
     if not sells:

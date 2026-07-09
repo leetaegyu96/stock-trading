@@ -148,17 +148,9 @@ body {
   gap: 16px;
   margin-bottom: 24px;
 }
-.topbar__brand { display: flex; align-items: baseline; gap: 8px; margin-right: auto; }
-.topbar__title { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
-.topbar__tag {
-  font-size: 11px; font-weight: 700; color: var(--color-text-muted);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 5px; padding: 1px 6px;
-  transform: translateY(-1px);
-}
-.topbar__stat { display: flex; flex-direction: column; align-items: flex-end; gap: 0; }
-.topbar__stat-label { font-size: 11px; color: var(--color-text-muted); }
-.topbar__stat-value { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; }
+.topbar__stat { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; margin-right: auto; }
+.topbar__stat-label { font-size: 12px; color: var(--color-text-muted); }
+.topbar__stat-value { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
 .topbar__live {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 12px; color: var(--color-text-muted);
@@ -229,3 +221,62 @@ body {
   padding: 64px 0; text-align: center;
 }
 .page-state--error { color: var(--color-danger); }
+
+/* ── 메인 레이아웃(좌: 캐릭터 카드열 · 우: 일일 현황판) ── */
+.main-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.card-col { display: flex; flex-direction: column; gap: 16px; }
+.board { display: flex; flex-direction: column; gap: 16px; }
+.board__empty { color: var(--color-text-muted); font-size: 13px; padding: 8px 0; margin: 0; }
+
+@media (max-width: 860px) {
+  .main-layout { grid-template-columns: 1fr; }
+}
+
+/* ── 오늘의 시장(movers) ── */
+.movers { display: flex; flex-direction: column; gap: 16px; }
+.movers__market + .movers__market { border-top: 1px solid var(--color-border); padding-top: 14px; }
+.movers__market-title { font-size: 13px; font-weight: 700; color: var(--color-text-sub); margin: 0 0 8px; }
+.movers__cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.movers__group-title { font-size: 12px; font-weight: 600; color: var(--color-text-muted); margin: 0 0 8px; }
+.movers__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.movers__item { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.movers__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.movers__empty { color: var(--color-text-muted); font-size: 12.5px; margin: 0; }
+.movers__note { font-size: 11.5px; color: var(--color-text-muted); margin: 4px 0 0; }
+
+@media (max-width: 520px) {
+  .movers__cols { grid-template-columns: 1fr; }
+}
+
+/* ── 내 캐릭터 요약(보유 미리보기) ── */
+.holdings-preview { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.holdings-preview__item + .holdings-preview__item { border-top: 1px solid var(--color-border); padding-top: 14px; }
+.holdings-preview__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.holdings-preview__name { font-weight: 700; font-size: 14px; margin-right: auto; }
+.holdings-preview__count { font-size: 12px; color: var(--color-text-sub); }
+.holdings-preview__ranks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.holdings-preview__rank { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; min-width: 0; }
+.holdings-preview__rank-label { font-size: 11px; color: var(--color-text-muted); }
+.holdings-preview__rank-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.holdings-preview__rank-pct { font-weight: 700; }
+
+@media (max-width: 520px) {
+  .holdings-preview__ranks { grid-template-columns: 1fr; }
+}
+
+/* ── 최근 거래 ── */
+.recent-trades { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.recent-trades__item {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 13px; padding-bottom: 10px; border-bottom: 1px solid var(--color-border);
+}
+.recent-trades__item:last-child { border-bottom: none; padding-bottom: 0; }
+.recent-trades__char { font-weight: 700; color: var(--color-text-sub); }
+.recent-trades__name { font-weight: 600; margin-right: auto; }
+.recent-trades__pnl { font-weight: 700; }
+.recent-trades__date { font-size: 11.5px; }

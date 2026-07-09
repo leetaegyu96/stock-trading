@@ -34,6 +34,9 @@ class ReplayResult:
     flows_by_char: dict[str, pd.Series]
     green_hist: pd.Series
     summary: dict
+    positions_by_char: dict = field(default_factory=dict)
+    cash_by_char: dict = field(default_factory=dict)
+    last_close: dict = field(default_factory=dict)
 
 
 def _market_data(bundle: DataBundle) -> dict[Market, dict[str, pd.DataFrame]]:
@@ -130,4 +133,17 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
             "n_trades": int(len(char_trades)),
         }
     green_hist = pd.Series(green_counts).value_counts().sort_index()
-    return ReplayResult(trades, equity, flows_by_char, green_hist, summary)
+
+    positions_by_char = {}
+    cash_by_char = {}
+    for name, st in engine.states.items():
+        positions_by_char[name] = [
+            {"symbol": p.symbol, "market": p.market.value, "quantity": p.quantity,
+             "avg_price": p.avg_price, "opened": p.opened,
+             "peak_price": p.peak_price, "locked_stop_pct": p.locked_stop_pct}
+            for p in st.portfolio.positions.values()
+        ]
+        cash_by_char[name] = {cur.value: amt for cur, amt in st.portfolio.cash.items()}
+    return ReplayResult(trades, equity, flows_by_char, green_hist, summary,
+                        positions_by_char=positions_by_char,
+                        cash_by_char=cash_by_char, last_close=dict(last_close))

@@ -74,3 +74,22 @@ def test_snapshot_carries_scores(tmp_path):
     buys = res.trades[res.trades.side == "BUY"] if not res.trades.empty else res.trades
     assert not buys.empty
     assert (buys["green_score"] >= 18).all()
+
+def test_replay_result_exposes_final_state():
+    import numpy as np, pandas as pd
+    from datetime import date
+    from simcore.config import Config
+    from simcore.replay import DataBundle, run_replay
+    idx = pd.date_range("2025-06-01", periods=200, freq="B")
+    up = np.linspace(100, 400, 200)
+    df = pd.DataFrame({"open": up, "high": up + 2, "low": up - 2,
+                       "close": up, "volume": np.linspace(1000, 5000, 200)}, index=idx)
+    res = run_replay(Config(), DataBundle(kr={"AAA": df}, us={},
+                     fx=pd.Series(1300.0, index=idx)), date(2025, 9, 1), date(2026, 2, 1))
+    assert set(res.positions_by_char) == {"국내형", "해외형", "범용형"}
+    assert isinstance(res.cash_by_char["국내형"], dict)
+    assert "AAA" in res.last_close
+    # 보유가 있으면 트레일링 상태 필드 포함
+    for plist in res.positions_by_char.values():
+        for p in plist:
+            assert {"symbol","market","quantity","avg_price","peak_price","locked_stop_pct"} <= set(p)

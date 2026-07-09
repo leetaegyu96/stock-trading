@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from simcore.live import db
 from simcore.live.repository import Repository
+from simcore.names import display_name
 
 
 def list_characters(sf) -> list[dict]:
@@ -27,6 +28,7 @@ def positions(sf, name: str) -> list[dict]:
         return [
             {
                 "symbol": r.symbol,
+                "name": display_name(r.symbol, r.market),
                 "market": r.market,
                 "quantity": r.quantity,
                 "avg_price": r.avg_price,
@@ -50,6 +52,7 @@ def trades(sf, name: str, limit: int = 200) -> list[dict]:
                 "ts": r.ts,
                 "date": r.date,
                 "symbol": r.symbol,
+                "name": display_name(r.symbol, r.market),
                 "market": r.market,
                 "side": r.side,
                 "quantity": r.quantity,
@@ -59,6 +62,8 @@ def trades(sf, name: str, limit: int = 200) -> list[dict]:
                 "reason": r.reason,
                 "green_count": r.green_count,
                 "red_count": r.red_count,
+                "green_score": r.green_score,
+                "red_score": r.red_score,
                 "fired": list(r.fired or []),
                 "realized_pnl": r.realized_pnl,
             }
@@ -104,6 +109,41 @@ def last_prices(sf, positions: list[dict]) -> dict[str, float]:
         if not bars.empty:
             prices[pos["symbol"]] = float(bars["close"].iloc[-1])
     return prices
+
+
+def universe_movers(sf, top: int = 5) -> dict:
+    """daily_bars 최근 2봉으로 시장별 등락률 상/하위 top."""
+    with sf() as s:
+        rows = s.execute(select(db.DailyBarRow)
+                         .order_by(db.DailyBarRow.symbol, db.DailyBarRow.date)).scalars().all()
+    by_sym: dict[tuple, list] = {}
+    for r in rows:
+        by_sym.setdefault((r.market, r.symbol), []).append(r)
+    changes: dict[str, list] = {"KR": [], "US": []}
+    for (market, symbol), bars in by_sym.items():
+        if len(bars) < 2:
+            continue
+        prev, last = bars[-2].close, bars[-1].close
+        if prev:
+            changes.setdefault(market, []).append(
+                {"symbol": symbol, "market": market, "close": last,
+                 "change_pct": last / prev - 1.0})
+    out = {}
+    for market, lst in changes.items():
+        lst.sort(key=lambda x: x["change_pct"])
+        out[market] = {"down": lst[:top], "up": list(reversed(lst[-top:]))}
+    return out
+
+
+def recent_trades(sf, limit: int = 12) -> list[dict]:
+    """전체 캐릭터 통합 최신 체결 N건."""
+    with sf() as s:
+        rows = s.execute(select(db.TradeRow)
+                         .order_by(db.TradeRow.ts.desc(), db.TradeRow.id.desc())
+                         .limit(limit)).scalars().all()
+        return [{"character": r.character, "symbol": r.symbol, "market": r.market,
+                 "side": r.side, "reason": r.reason, "realized_pnl": r.realized_pnl,
+                 "date": r.date} for r in rows]
 
 
 def cash(sf, name: str) -> dict[str, float]:

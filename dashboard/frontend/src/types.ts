@@ -25,6 +25,7 @@ export interface Metrics {
 
 export interface PositionOut {
   symbol: string;
+  name: string;
   market: string;
   quantity: number;
   avg_price: number;
@@ -35,10 +36,18 @@ export interface PositionOut {
   stale: boolean | null;
 }
 
+export interface SignalDetail {
+  code: string;
+  name: string;
+  category: string;
+  stars: number;
+}
+
 export interface TradeOut {
   ts: string;
   date: string;
   symbol: string;
+  name: string;
   market: string;
   side: string;
   quantity: number;
@@ -48,7 +57,11 @@ export interface TradeOut {
   reason: string;
   green_count: number;
   red_count: number;
+  green_score: number;
+  red_score: number;
   fired: string[];
+  signal_summary: string;
+  signal_detail: SignalDetail[];
   realized_pnl: number;
 }
 
@@ -61,4 +74,43 @@ export interface FlowOut {
 export interface EquityPoint {
   ts: string;
   equity_krw: number;
+}
+
+export interface Mover {
+  symbol: string;
+  name: string;
+  market: string;
+  change_pct: number;
+  close: number;
+}
+
+export interface HoldingRank {
+  symbol: string;
+  name: string;
+  pnl_pct: number;
+}
+
+export interface CharPortfolio {
+  name: string;
+  today_pnl_pct: number;
+  n_positions: number;
+  best: HoldingRank | null;
+  worst: HoldingRank | null;
+}
+
+export interface RecentTrade {
+  character: string;
+  symbol: string;
+  name: string;
+  market: string;
+  side: string;
+  reason: string;
+  realized_pnl: number;
+  date: string;
+}
+
+export interface Dashboard {
+  movers: Record<string, { up: Mover[]; down: Mover[] }>;
+  characters: CharPortfolio[];
+  recent_trades: RecentTrade[];
 }

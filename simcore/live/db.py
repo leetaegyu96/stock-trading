@@ -5,6 +5,11 @@ from sqlalchemy import (String, Float, Integer, Boolean, Date, DateTime, Foreign
                         create_engine)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+from sqlalchemy.types import JSON
+
+# 운영 DB(Postgres)는 네이티브 ARRAY, 테스트용 sqlite(:memory:)는 JSON으로 저장.
+# with_variant 는 Postgres 동작을 그대로 유지하면서 sqlite 호환성만 추가한다.
+_StringArray = ARRAY(String).with_variant(JSON(), "sqlite")
 
 
 class Base(DeclarativeBase):
@@ -49,7 +54,7 @@ class PendingOrder(Base):
     red_score: Mapped[int] = mapped_column(Integer, default=0)
     change_pct: Mapped[float] = mapped_column(Float, default=0.0)
     volume: Mapped[float] = mapped_column(Float, default=0.0)
-    fired: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    fired: Mapped[list[str]] = mapped_column(_StringArray, default=list)
     reason: Mapped[str] = mapped_column(String, default="SIGNAL_SELL")
     partial: Mapped[bool] = mapped_column(Boolean, default=False)
     created_date: Mapped[date] = mapped_column(Date)
@@ -97,7 +102,7 @@ class TradeRow(Base):
     red_count: Mapped[int] = mapped_column(Integer, default=0)
     green_score: Mapped[int] = mapped_column(Integer, default=0)
     red_score: Mapped[int] = mapped_column(Integer, default=0)
-    fired: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    fired: Mapped[list[str]] = mapped_column(_StringArray, default=list)
     realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
 
 
@@ -115,7 +120,7 @@ class FlowRequest(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     character: Mapped[str] = mapped_column(String)
     amount_krw: Mapped[float] = mapped_column(Float)
-    liquidate: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    liquidate: Mapped[list[str]] = mapped_column(_StringArray, default=list)
     status: Mapped[str] = mapped_column(String, default="pending")
     requested_at: Mapped[datetime] = mapped_column(DateTime)
     applied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
