@@ -70,11 +70,13 @@ class Repository:
                 for b in st.pending_buys:
                     s.add(db.PendingOrder(character=name, side="BUY", symbol=b.symbol,
                                           market=b.market.value, green_count=b.green_count,
+                                          green_score=b.green_score,
                                           change_pct=b.change_pct, volume=b.volume,
                                           fired=list(b.fired), created_date=date.today()))
                 for ps in st.pending_sells:
                     s.add(db.PendingOrder(character=name, side="SELL", symbol=ps.symbol,
                                           market=ps.market.value, red_count=ps.red_count,
+                                          red_score=ps.red_score,
                                           fired=list(ps.fired), reason=ps.reason.value,
                                           created_date=date.today()))
                 for sym, (mkt, rem) in st.cooldowns.items():
@@ -101,10 +103,12 @@ class Repository:
                     continue
                 if o.side == "BUY":
                     st.pending_buys.append(PendingBuy(o.symbol, Market(o.market),
-                        o.green_count, tuple(o.fired or ()), o.change_pct, o.volume))
+                        o.green_count, o.green_score, tuple(o.fired or ()),
+                        o.change_pct, o.volume))
                 else:
                     st.pending_sells.append(PendingSell(o.symbol, Market(o.market),
-                        TradeReason(o.reason), o.red_count, tuple(o.fired or ())))
+                        TradeReason(o.reason), o.red_count, o.red_score,
+                        tuple(o.fired or ())))
             for c in s.execute(select(db.Cooldown)).scalars():
                 st = engine.states.get(c.character)
                 if st:
@@ -141,7 +145,8 @@ class Repository:
                         symbol=t.symbol, market=t.market.value, side=t.side.value,
                         quantity=t.quantity, price=t.price, fee=t.fee, tax=t.tax,
                         reason=t.reason.value, green_count=t.green_count,
-                        red_count=t.red_count, fired=list(t.fired),
+                        red_count=t.red_count, green_score=t.green_score,
+                        red_score=t.red_score, fired=list(t.fired),
                         realized_pnl=t.realized_pnl))
                 self._trade_cursor[name] = len(st.portfolio.trades)
 

@@ -43,6 +43,8 @@ class PendingOrder(Base):
     market: Mapped[str] = mapped_column(String)
     green_count: Mapped[int] = mapped_column(Integer, default=0)
     red_count: Mapped[int] = mapped_column(Integer, default=0)
+    green_score: Mapped[int] = mapped_column(Integer, default=0)
+    red_score: Mapped[int] = mapped_column(Integer, default=0)
     change_pct: Mapped[float] = mapped_column(Float, default=0.0)
     volume: Mapped[float] = mapped_column(Float, default=0.0)
     fired: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
@@ -90,6 +92,8 @@ class TradeRow(Base):
     reason: Mapped[str] = mapped_column(String)
     green_count: Mapped[int] = mapped_column(Integer, default=0)
     red_count: Mapped[int] = mapped_column(Integer, default=0)
+    green_score: Mapped[int] = mapped_column(Integer, default=0)
+    red_score: Mapped[int] = mapped_column(Integer, default=0)
     fired: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
 

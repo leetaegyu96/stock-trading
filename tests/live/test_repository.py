@@ -47,10 +47,10 @@ def test_persist_rehydrate_pending_orders_roundtrip(session):
     eng = Engine(Config())
     eng.start(date(2026, 7, 6), 1300.0)
     st = eng.states["국내형"]
-    pb = PendingBuy(symbol="000660", market=Market.KR, green_count=8,
+    pb = PendingBuy(symbol="000660", market=Market.KR, green_count=8, green_score=20,
                      fired=("R1", "R2", "R3"), change_pct=3.5, volume=123456.0)
     ps = PendingSell(symbol="005930", market=Market.KR, reason=TradeReason.SIGNAL_SELL,
-                      red_count=4, fired=("R4", "R5"))
+                      red_count=4, red_score=12, fired=("R4", "R5"))
     st.pending_buys.append(pb)
     st.pending_sells.append(ps)
     repo.persist_state(eng)
@@ -64,6 +64,7 @@ def test_persist_rehydrate_pending_orders_roundtrip(session):
     assert rb.symbol == pb.symbol
     assert rb.market == pb.market
     assert rb.green_count == pb.green_count
+    assert rb.green_score == pb.green_score
     assert tuple(rb.fired) == pb.fired
     assert rb.change_pct == pb.change_pct
     assert rb.volume == pb.volume
@@ -74,6 +75,7 @@ def test_persist_rehydrate_pending_orders_roundtrip(session):
     assert rs.market == ps.market
     assert rs.reason == ps.reason
     assert rs.red_count == ps.red_count
+    assert rs.red_score == ps.red_score
     assert tuple(rs.fired) == ps.fired
 
 

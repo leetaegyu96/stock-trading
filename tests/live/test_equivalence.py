@@ -23,9 +23,10 @@ from simcore.live.db import make_engine, make_session_factory
 from simcore.live import calendar as cal
 
 
-def _rise_fall(base0: float, peak: float, n: int = 140) -> pd.DataFrame:
-    """상승→하락 결정론 시계열. 상승기엔 매수 신호(G1·G2·G4·G7), 하락기엔
-    매도 신호(R1·R2·R4)가 켜지도록 워밍업(60거래일) 이후 충분한 추세를 준다."""
+def _rise_fall(base0: float, peak: float, n: int = 200) -> pd.DataFrame:
+    """상승→하락 결정론 시계열. 상승기엔 매수 신호(G1·G2·G4·G7·G13), 하락기엔
+    매도 신호(R1·R2·R4)가 켜지도록 v2 워밍업(일목 기준 77거래일) 이후 충분한
+    추세 구간을 남긴다(n=200 → 상승 100거래일 중 warmup 이후 23거래일 유효)."""
     half = n // 2
     up = np.linspace(base0, peak, half)
     down = np.linspace(peak, base0 * 1.2, n - half)
@@ -42,10 +43,17 @@ def test_live_orchestrator_equals_replay(session):
     idx = kr["005930"].index
     fx = pd.Series([1300.0] * len(idx), index=idx)
     bundle = DataBundle(kr=kr, us={}, fx=fx)
-    # 손익절 비활성화 → 순수 신호 경로만. 매수 임계값 4(상승기 G1·G2·G4·G7)로 거래 유도.
+    # 손익절/트레일링 비활성화 → 순수 신호 경로만. 매수 점수 임계값을 낮춰(상승기
+    # G1·G2·G4·G7·G13 조합으로 게이트 통과) 거래를 유도한다.
+    # v2: 이 테스트 루프는 on_tick(→check_stops)을 호출하지 않으므로 라이브 쪽은
+    # 트레일링/손절이 원천적으로 발동하지 않는다. 리플레이 쪽에서도 동치가 되려면
+    # check_stops 가 절대 트리거되지 않도록 stop_loss_pct 를 극단값으로 낮추고
+    # trailing_tiers/trailing_top 도 비활성화해야 한다(v1의 take_profit_pct 폐지에
+    # 대응하는 v2 등가 처리).
     base = Config()
-    cfg = replace(base, rules=replace(base.rules, buy_threshold=4,
-                                      stop_loss_pct=-0.99, take_profit_pct=9.99))
+    cfg = replace(base, rules=replace(base.rules, buy_score_min=1,
+                                      stop_loss_pct=-0.99,
+                                      trailing_tiers=(), trailing_top=999.0))
     start, end = idx[0].date(), idx[-1].date()
 
     # (A) 리플레이
