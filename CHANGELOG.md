@@ -4,6 +4,20 @@
 
 상세 패치노트는 `docs/patch-notes/vX.Y.Z.md` 참조.
 
+## v1.5.0 — 2026-07-09
+
+서브프로젝트 6: 시장지수 추세 필터(하락장 가드) — opt-in 전략 튜닝. 기본 OFF, 기존 동작 무변경.
+
+### Added
+- 하락장 가드(`bear_market_guard`, 기본 False): 지수(코스피200/S&P500) 20일선 아래면 해당 시장 신규매수 차단(보유·매도·손절 유지). `--bear-guard`로 활성.
+- `data.load_index`(KR 1028 + yfinance ^KS200 폴백/US ^GSPC), `DataBundle` 지수 필드, `run_replay` 시장별 하락장 판정, `market_trend_period=20`.
+
+### Fixed
+- `load_index` KRX 자격증명 부재 시 크래시 → ^KS200 폴백. 지수 로드를 `--bear-guard` 시로 한정.
+
+### 검증 (6개월 A/B)
+- 해외형 개선(TWR +16→+27·MDD -11→-6.5), 국내형 중립, 범용형 악화(-12→-17) — 정직히 기록, 기본 OFF opt-in. pytest 198, 최종 리뷰(opus) 통과.
+
 ## v1.4.0 — 2026-07-09
 
 서브프로젝트 5: 대시보드 UI 개편 + 데이터 리셋 (초보 친화 일일 현황판). 순수 엔진 무변경.

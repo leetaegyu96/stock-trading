@@ -93,3 +93,24 @@ def test_replay_result_exposes_final_state():
     for plist in res.positions_by_char.values():
         for p in plist:
             assert {"symbol","market","quantity","avg_price","peak_price","locked_stop_pct"} <= set(p)
+
+def test_bear_guard_suppresses_buys_in_index_downtrend():
+    import numpy as np, pandas as pd
+    from datetime import date
+    from dataclasses import replace
+    from simcore.config import Config
+    from simcore.replay import DataBundle, run_replay
+    idx = pd.date_range("2025-06-01", periods=220, freq="B")
+    up = np.linspace(100, 400, 220)
+    df = pd.DataFrame({"open": up, "high": up + 2, "low": up - 2, "close": up,
+                       "volume": np.linspace(1e3, 5e3, 220)}, index=idx)
+    # 종목은 상승, 그러나 지수는 하락 추세 → 가드 on이면 매수 억제
+    down_index = pd.Series(np.linspace(400, 100, 220), index=idx)
+    bundle = DataBundle(kr={"AAA": df}, us={}, fx=pd.Series(1300.0, index=idx),
+                        kr_index=down_index)
+    cfg_on = replace(Config(), rules=replace(Config().rules, bear_market_guard=True))
+    res_on = run_replay(cfg_on, bundle, date(2025, 9, 1), date(2026, 2, 1))
+    res_off = run_replay(Config(), bundle, date(2025, 9, 1), date(2026, 2, 1))
+    n_on = 0 if res_on.trades.empty else (res_on.trades.side == "BUY").sum()
+    n_off = 0 if res_off.trades.empty else (res_off.trades.side == "BUY").sum()
+    assert n_on < n_off        # 가드가 하락장 매수를 억제

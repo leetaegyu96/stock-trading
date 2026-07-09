@@ -142,3 +142,45 @@ def test_buy_priority_by_score():
     eng.fill_open(date(2026, 1, 5), Market.KR, {"LOW": 100.0, "HIGH": 100.0}, 1300.0)
     # 슬롯 5개라 둘 다 매수되지만, 우선순위 정렬상 HIGH 가 먼저
     assert "HIGH" in eng.states["국내형"].portfolio.positions
+
+
+def _buy_snap(sym="AAA"):
+    return SymbolSnapshot(sym, Market.KR, ("G1", "G7", "G5", "G4"), (), 100.0, 0.01, 1000.0,
+                          green_score=19, red_score=0, buy_gate=True)
+
+
+def test_bear_guard_blocks_new_buys_when_enabled():
+    cfg = replace(Config(), rules=replace(Config().rules, bear_market_guard=True))
+    eng = Engine(cfg); eng.start(__import__("datetime").date(2026, 1, 2), 1300.0)
+    from datetime import date
+    eng.evaluate_close(date(2026, 1, 2), Market.KR, {"AAA": _buy_snap()}, market_bearish=True)
+    assert not eng.states["국내형"].pending_buys        # 하락장 → 매수 차단
+
+
+def test_bear_guard_off_allows_buys_in_downtrend():
+    from datetime import date
+    eng = Engine(Config()); eng.start(date(2026, 1, 2), 1300.0)   # guard off(기본)
+    eng.evaluate_close(date(2026, 1, 2), Market.KR, {"AAA": _buy_snap()}, market_bearish=True)
+    assert any(b.symbol == "AAA" for b in eng.states["국내형"].pending_buys)
+
+
+def test_bear_guard_enabled_but_not_bearish_allows_buys():
+    cfg = replace(Config(), rules=replace(Config().rules, bear_market_guard=True))
+    from datetime import date
+    eng = Engine(cfg); eng.start(date(2026, 1, 2), 1300.0)
+    eng.evaluate_close(date(2026, 1, 2), Market.KR, {"AAA": _buy_snap()}, market_bearish=False)
+    assert any(b.symbol == "AAA" for b in eng.states["국내형"].pending_buys)
+
+
+def test_bear_guard_still_allows_sells_in_downtrend():
+    cfg = replace(Config(), rules=replace(Config().rules, bear_market_guard=True))
+    from datetime import date
+    eng = Engine(cfg); eng.start(date(2026, 1, 2), 1300.0)
+    # 보유 만들기
+    eng.evaluate_close(date(2026, 1, 2), Market.KR, {"AAA": _buy_snap()})  # 평시 매수예약
+    eng.fill_open(date(2026, 1, 5), Market.KR, {"AAA": 100.0}, 1300.0)
+    # 하락장 + 강한 적신호 → 매도는 정상 예약
+    s = SymbolSnapshot("AAA", Market.KR, (), ("R1", "R4", "R11"), 100.0, -0.01, 1000.0,
+                       green_score=0, red_score=15, buy_gate=False)
+    eng.evaluate_close(date(2026, 1, 6), Market.KR, {"AAA": s}, market_bearish=True)
+    assert any(ps.symbol == "AAA" for ps in eng.states["국내형"].pending_sells)

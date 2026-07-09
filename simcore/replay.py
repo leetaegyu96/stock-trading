@@ -17,6 +17,8 @@ class DataBundle:
     kr: dict[str, pd.DataFrame]
     us: dict[str, pd.DataFrame]
     fx: pd.Series  # KRW per USD
+    kr_index: pd.Series | None = None
+    us_index: pd.Series | None = None
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,25 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
     frames = {m: {sym: sigmod.evaluate_frame(df, config.signals)
                   for sym, df in data.items()}
               for m, data in md.items()}
+    # 1-2) 시장 지수 20일선 → 시장별 하락장(가드) 판정
+    period = config.signals.market_trend_period
+    index_by_market = {Market.KR: bundle.kr_index, Market.US: bundle.us_index}
+    sma_by_market = {m: (s.rolling(period).mean() if s is not None else None)
+                     for m, s in index_by_market.items()}
+
+    def _bearish(market: Market, ts) -> bool:
+        s = index_by_market.get(market)
+        sma = sma_by_market.get(market)
+        if s is None or sma is None:
+            return False
+        try:
+            close = float(s.asof(ts))
+            avg = float(sma.asof(ts))
+        except (KeyError, ValueError):
+            return False
+        if pd.isna(close) or pd.isna(avg):
+            return False
+        return close < avg
     # 2) 시뮬 날짜 = 두 시장 거래일 합집합 (start~end)
     all_dates = sorted({d for data in md.values() for df in data.values()
                         for d in df.index if start <= d.date() <= end})
@@ -103,7 +124,7 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
                     green_score=gs, red_score=rs, buy_gate=gate)
                 last_close[sym] = close
                 green_counts.append(gs)             # green_score 분포 기록
-            engine.evaluate_close(d, market, snaps)
+            engine.evaluate_close(d, market, snaps, market_bearish=_bearish(market, ts))
         eq = engine.snapshot(last_close, fx)
         equity_rows.append({"date": ts, **eq})
 
