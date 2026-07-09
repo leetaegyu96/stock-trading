@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from simcore.live import db
 from simcore.live.repository import Repository
+from simcore.names import display_name
 
 
 def list_characters(sf) -> list[dict]:
@@ -27,6 +28,7 @@ def positions(sf, name: str) -> list[dict]:
         return [
             {
                 "symbol": r.symbol,
+                "name": display_name(r.symbol, r.market),
                 "market": r.market,
                 "quantity": r.quantity,
                 "avg_price": r.avg_price,
@@ -50,6 +52,7 @@ def trades(sf, name: str, limit: int = 200) -> list[dict]:
                 "ts": r.ts,
                 "date": r.date,
                 "symbol": r.symbol,
+                "name": display_name(r.symbol, r.market),
                 "market": r.market,
                 "side": r.side,
                 "quantity": r.quantity,
@@ -59,6 +62,8 @@ def trades(sf, name: str, limit: int = 200) -> list[dict]:
                 "reason": r.reason,
                 "green_count": r.green_count,
                 "red_count": r.red_count,
+                "green_score": r.green_score,
+                "red_score": r.red_score,
                 "fired": list(r.fired or []),
                 "realized_pnl": r.realized_pnl,
             }

@@ -32,6 +32,7 @@ class Metrics(BaseModel):
 
 class PositionOut(BaseModel):
     symbol: str
+    name: str
     market: str
     quantity: int
     avg_price: float
@@ -46,6 +47,7 @@ class TradeOut(BaseModel):
     ts: datetime
     date: date
     symbol: str
+    name: str
     market: str
     side: str
     quantity: int
@@ -55,7 +57,11 @@ class TradeOut(BaseModel):
     reason: str
     green_count: int
     red_count: int
+    green_score: int = 0
+    red_score: int = 0
     fired: list[str]
+    signal_summary: str = ""
+    signal_detail: list[dict] = []
     realized_pnl: float
 
 

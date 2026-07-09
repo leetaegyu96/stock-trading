@@ -10,10 +10,12 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, PlainTextResponse
 
+from simcore.config import Config
 from simcore.live.kis_client import KisClient
 from simcore.live.ratelimit import RateLimiter
 from simcore.live.repository import DbTokenStore, Repository
 from simcore.live.settings import load_settings
+from simcore import signal_display as sd
 
 from dashboard.backend import db, flows, queries, summary
 from dashboard.backend.broadcaster import Broadcaster, ConnectionManager
@@ -34,6 +36,7 @@ _WS_POLL_INTERVAL_SEC = float(os.environ.get("WS_POLL_INTERVAL_SEC", "5.0"))
 
 manager = ConnectionManager()
 broadcaster = Broadcaster(manager, fx_rate=_FALLBACK_FX_RATE)
+_SCORES = Config().scores
 
 
 async def _broadcast_loop(interval: float) -> None:
@@ -143,7 +146,15 @@ def character_positions(name: str, sf=Depends(get_sf), kis=Depends(get_kis)) -> 
 
 @app.get("/api/characters/{name}/trades", response_model=list[TradeOut])
 def character_trades(name: str, limit: int = 200, sf=Depends(get_sf)) -> list[TradeOut]:
-    return [TradeOut(**t) for t in queries.trades(sf, name, limit=limit)]
+    out = []
+    for t in queries.trades(sf, name, limit=limit):
+        score = t["green_score"] if t["side"] == "BUY" else t["red_score"]
+        out.append(TradeOut(
+            **t,
+            signal_summary=sd.summarize(t["fired"], score, t["side"], _SCORES),
+            signal_detail=sd.detail(t["fired"], _SCORES),
+        ))
+    return out
 
 
 @app.get("/api/characters/{name}/flows", response_model=list[FlowOut])

@@ -306,6 +306,38 @@ def test_character_trades_returns_rows_and_respects_limit(sf):
 
 
 @needs_db
+def test_trades_include_name_and_signal_summary(sf):
+    with sf() as s:
+        s.merge(db.CharacterRow(name="국내형", base_currency="KRW"))
+        s.add(db.TradeRow(
+            ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+            character="국내형", symbol="005930", market=Market.KR.value, side="BUY",
+            quantity=1, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+            green_count=2, red_count=0, fired=["G1", "G2"], realized_pnl=0.0,
+            green_score=20, red_score=0,
+        ))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r = TestClient(app).get("/api/characters/국내형/trades")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r.status_code == 200
+    rows = r.json()
+    assert rows, "거래가 있어야 함"
+    t = rows[0]
+    assert "name" in t and "signal_summary" in t and "signal_detail" in t
+    assert "green_score" in t and "red_score" in t
+    assert t["name"] == "삼성전자"
+    assert t["green_score"] == 20
+    assert t["red_score"] == 0
+    assert t["signal_summary"] != ""
+    assert t["signal_detail"]
+
+
+@needs_db
 def test_character_flows_returns_rows(sf):
     with sf() as s:
         _seed_full(s)
