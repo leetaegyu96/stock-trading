@@ -92,6 +92,10 @@ class Portfolio:
         fee, tax = costmod.trade_costs(pos.market, Side.SELL, gross, self.config.costs)
         self.cash[cur] += gross - fee - tax
         pnl = (price - pos.avg_price) * qty - fee - tax
+        # 반올림(max(1, qty*fraction))으로 부분매도 수량이 잔량 전체를 청산하는 경우
+        # (예: quantity==1) "부분 매도" 라벨이 남으면 설명·수량이 불일치하므로 승격한다.
+        if decision_type == DecisionType.PARTIAL_SELL and qty >= pos.quantity:
+            decision_type = DecisionType.FULL_SELL
         if qty >= pos.quantity:
             self.positions.pop(symbol)
         else:
