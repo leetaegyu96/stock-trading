@@ -42,3 +42,25 @@ def test_twr_ignores_flow_dates_missing_from_equity():
     eq = pd.Series([100.0, 110.0], index=idx)
     flows = pd.Series([50.0], index=pd.to_datetime(["2025-02-01"]))  # equity 에 없는 날짜
     assert time_weighted_return(eq, flows) == pytest.approx(0.10)
+
+def test_risk_metrics_basic():
+    import numpy as np, pandas as pd
+    from simcore.metrics import risk_metrics
+    idx = pd.date_range("2025-01-01", periods=252, freq="B")
+    eq = pd.Series(np.linspace(100, 130, 252), index=idx)   # 우상향
+    trades = pd.DataFrame({"side": ["SELL","SELL","SELL"], "realized_pnl": [10.0, -4.0, 6.0]})
+    m = risk_metrics(eq, trades)
+    assert m["cagr"] > 0 and m["calmar"] > 0
+    assert m["profit_factor"] == pytest.approx(16.0/4.0)         # 이익합16/손실합4
+    assert m["win_loss_ratio"] == pytest.approx((16/2)/4.0)      # 평균이익8/평균손실4
+    assert m["max_consecutive_losses"] == 1
+    assert m["expectancy"] == pytest.approx((10-4+6)/3)
+
+def test_risk_metrics_empty_and_all_loss():
+    import pandas as pd
+    from simcore.metrics import risk_metrics
+    eq = pd.Series([100.0, 90.0], index=pd.date_range("2025-01-01", periods=2))
+    m = risk_metrics(eq, pd.DataFrame({"side":["SELL"], "realized_pnl":[-5.0]}))
+    assert m["profit_factor"] == 0.0 and m["avg_win"] == 0.0     # 이익 없음
+    m2 = risk_metrics(eq, None)                                   # 거래정보 없음
+    assert m2["profit_factor"] == 0.0 and m2["expectancy"] == 0.0
