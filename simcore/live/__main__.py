@@ -7,9 +7,10 @@
 from __future__ import annotations
 import argparse
 import time
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
+from simcore import data as datamod
 from simcore.config import Config
 from simcore.engine import Engine
 from simcore.live.settings import load_settings, LiveSettings
@@ -29,12 +30,19 @@ def _fx_provider(repo: Repository):
     실패 시 마지막 알려진 환율(run_state.last_fx_rate) 폴백."""
     def fx(d: date) -> float:
         try:
-            from simcore import data as datamod
             s = datamod.load_fx(d, d, cache_dir=Path("data/cache"))
             return float(s.iloc[-1])
         except Exception:
             return repo.get_run_state("KR").last_fx_rate or 1300.0
     return fx
+
+
+def _index_provider(cache: Path):
+    """가드용 시장 지수 로더. load_index 내부 폴백(pykrx→yfinance)·캐시 재사용.
+    start 를 넉넉히 당겨(180일) LOOKBACK_PAD 와 합쳐 최장 SMA(120일) 워밍업을 보장."""
+    def load(market: str, upto: date):
+        return datamod.load_index(market, upto - timedelta(days=180), upto, cache)
+    return load
 
 
 def build_app(settings: LiveSettings):
@@ -45,7 +53,8 @@ def build_app(settings: LiveSettings):
     kis = KisClient(settings, DbTokenStore(sf),
                     RateLimiter(settings.kis_rate_limit_per_sec))
     eng = Engine(Config())
-    orch = Orchestrator(eng, kis, repo, Config(), fx_provider=_fx_provider(repo))
+    orch = Orchestrator(eng, kis, repo, Config(), fx_provider=_fx_provider(repo),
+                        index_provider=_index_provider(Path("data/cache")))
     return eng, kis, repo, orch
 
 

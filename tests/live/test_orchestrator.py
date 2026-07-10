@@ -119,3 +119,75 @@ def test_on_open_applies_pending_flow(session):
     assert eng.states["국내형"].portfolio.cash[Currency.KRW] == krw_before + 5_000_000.0
     with sf() as s:
         assert s.query(db.CapitalFlowRow).count() == 1  # 원장 기록됨
+
+
+def _guard_cfg():
+    from dataclasses import replace
+    return replace(Config(), rules=replace(
+        Config().rules, bear_guard_characters=frozenset({"국내형", "해외형", "범용형"})))
+
+
+def test_bearish_by_market_computes_from_provider():
+    """provider 지수(KR 하락/US 상승)로 시장별 하락장 dict 계산 — DB 불필요(순수 계산)."""
+    from simcore.models import Market
+    import numpy as np
+    eng = Engine(_guard_cfg())
+    eng.start(date(2026, 1, 1), 1300.0)
+    idx = pd.bdate_range("2026-01-01", periods=80)
+    down = pd.Series(np.linspace(200, 100, 80), index=idx)
+    up = pd.Series(np.linspace(100, 200, 80), index=idx)
+    orch = Orchestrator(eng, None, None, _guard_cfg(), fx_provider=lambda d: 1300.0,
+                        index_provider=lambda market, upto: down if market == "KR" else up)
+    out = orch._bearish_by_market(idx[-1].date())
+    assert out == {Market.KR: True, Market.US: False}
+
+
+def test_bearish_by_market_none_when_guard_off_and_skips_provider():
+    """가드 대상 캐릭터가 없으면 None 반환 + provider 호출 자체를 스킵."""
+    calls = []
+    eng = Engine(Config())          # 기본: bear_guard_characters=frozenset()
+    eng.start(date(2026, 1, 1), 1300.0)
+    orch = Orchestrator(eng, None, None, Config(), fx_provider=lambda d: 1300.0,
+                        index_provider=lambda market, upto: calls.append(market))
+    assert orch._bearish_by_market(date(2026, 6, 1)) is None
+    assert calls == []
+
+
+def test_bearish_by_market_provider_failure_falls_back_false():
+    """지수 로드 예외 → 해당 시장 False (가드 미발동, 라이브 안전 폴백)."""
+    from simcore.models import Market
+    eng = Engine(_guard_cfg())
+    eng.start(date(2026, 1, 1), 1300.0)
+
+    def boom(market, upto):
+        raise RuntimeError("network down")
+    orch = Orchestrator(eng, None, None, _guard_cfg(), fx_provider=lambda d: 1300.0,
+                        index_provider=boom)
+    assert orch._bearish_by_market(date(2026, 6, 1)) == {Market.KR: False, Market.US: False}
+
+
+@needs_db
+def test_on_close_passes_bearish_dict_to_engine(session, monkeypatch):
+    """on_close 가 evaluate_close 에 bearish_by_market 을 실제로 전달하는지 (배선 검증)."""
+    from simcore.models import Market
+    import numpy as np
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    cfg = _guard_cfg()
+    eng = Engine(cfg)
+    eng.start(date(2026, 1, 1), 1300.0)
+    idx = pd.bdate_range("2026-01-01", periods=80)
+    down = pd.Series(np.linspace(200, 100, 80), index=idx)
+    up = pd.Series(np.linspace(100, 200, 80), index=idx)
+    orch = Orchestrator(eng, FakeKis({("KR", "005930"): _uptrend()}), repo, cfg,
+                        fx_provider=lambda d: 1300.0,
+                        index_provider=lambda market, upto: down if market == "KR" else up)
+    captured = {}
+    orig = eng.evaluate_close
+
+    def spy(d, m, snaps, bearish_by_market=None):
+        captured["bear"] = bearish_by_market
+        return orig(d, m, snaps, bearish_by_market=bearish_by_market)
+    monkeypatch.setattr(eng, "evaluate_close", spy)
+    orch.on_close(_uptrend().index[-1].date(), "KR", ["005930"])
+    assert captured["bear"] == {Market.KR: True, Market.US: False}

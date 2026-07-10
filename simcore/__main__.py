@@ -9,6 +9,7 @@ import pandas as pd
 from simcore.config import Config
 from simcore import data as datamod, universe, metrics
 from simcore.replay import DataBundle, FlowEvent, run_replay
+from simcore.engine import DEFAULT_CHARACTERS
 from simcore.report import write_outputs
 
 
@@ -29,8 +30,11 @@ def main() -> None:
     ap.add_argument("--flows", default=None, help="입출금 CSV (date,character,amount_krw,liquidate)")
     ap.add_argument("--buy-score", type=int, default=None,
                     help="매수 최소 총점(기본 18)")
-    ap.add_argument("--bear-guard", action="store_true",
-                    help="하락장 가드(지수<20일선 시 신규매수 차단)")
+    grp = ap.add_mutually_exclusive_group()
+    grp.add_argument("--bear-guard", action="store_true",
+                     help="하락장 가드 전 캐릭터 강제 on (기본: config bear_guard_characters)")
+    grp.add_argument("--no-bear-guard", action="store_true",
+                     help="하락장 가드 전체 강제 off")
     ap.add_argument("--kr-top", type=int, default=200, help="코스피200 중 앞 N종목")
     ap.add_argument("--us-top", type=int, default=100, help="S&P500 중 앞 N종목")
     ap.add_argument("--out", default="out")
@@ -42,14 +46,18 @@ def main() -> None:
     if args.buy_score is not None:
         cfg = replace(cfg, rules=replace(cfg.rules, buy_score_min=args.buy_score))
     if args.bear_guard:
-        cfg = replace(cfg, rules=replace(cfg.rules, bear_market_guard=True))
+        cfg = replace(cfg, rules=replace(cfg.rules,
+                      bear_guard_characters=frozenset(c.name for c in DEFAULT_CHARACTERS)))
+    elif args.no_bear_guard:
+        cfg = replace(cfg, rules=replace(cfg.rules, bear_guard_characters=frozenset()))
 
     cache = Path(args.cache)
     kr_syms = universe.kospi200(cache, start)[: args.kr_top]
     us_syms = universe.sp500(cache)[: args.us_top]
     print(f"[universe] KR {len(kr_syms)}종목, US {len(us_syms)}종목 로딩 중...")
-    kr_index = datamod.load_index("KR", start, end, cache) if (args.bear_guard and kr_syms) else None
-    us_index = datamod.load_index("US", start, end, cache) if (args.bear_guard and us_syms) else None
+    guard_on = bool(cfg.rules.bear_guard_characters)
+    kr_index = datamod.load_index("KR", start, end, cache) if (guard_on and kr_syms) else None
+    us_index = datamod.load_index("US", start, end, cache) if (guard_on and us_syms) else None
     bundle = DataBundle(
         kr=datamod.load_kr_daily(kr_syms, start, end, cache),
         us=datamod.load_us_daily(us_syms, start, end, cache),

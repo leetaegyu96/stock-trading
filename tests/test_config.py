@@ -20,7 +20,7 @@ def test_defaults_match_trading_rules():
     assert c.rules.trailing_top == 0.40
     assert c.rules.max_positions == 5
     assert c.rules.cooldown_days == 2
-    assert c.rules.bear_market_guard is False
+    assert c.rules.bear_guard_characters == frozenset()
     assert c.costs.kr_commission == 0.00015
     assert c.costs.kr_tax == 0.0015
     assert c.costs.us_commission == 0.0009

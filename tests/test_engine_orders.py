@@ -144,13 +144,16 @@ def test_buy_priority_by_score():
     assert "HIGH" in eng.states["국내형"].portfolio.positions
 
 
+ALL_GUARD = frozenset({"국내형", "해외형", "범용형"})
+
+
 def _buy_snap(sym="AAA"):
     return SymbolSnapshot(sym, Market.KR, ("G1", "G7", "G5", "G4"), (), 100.0, 0.01, 1000.0,
                           green_score=19, red_score=0, buy_gate=True)
 
 
 def test_bear_guard_blocks_new_buys_when_enabled():
-    cfg = replace(Config(), rules=replace(Config().rules, bear_market_guard=True))
+    cfg = replace(Config(), rules=replace(Config().rules, bear_guard_characters=ALL_GUARD))
     eng = Engine(cfg); eng.start(__import__("datetime").date(2026, 1, 2), 1300.0)
     from datetime import date
     eng.evaluate_close(date(2026, 1, 2), Market.KR, {"AAA": _buy_snap()},
@@ -167,7 +170,7 @@ def test_bear_guard_off_allows_buys_in_downtrend():
 
 
 def test_bear_guard_enabled_but_not_bearish_allows_buys():
-    cfg = replace(Config(), rules=replace(Config().rules, bear_market_guard=True))
+    cfg = replace(Config(), rules=replace(Config().rules, bear_guard_characters=ALL_GUARD))
     from datetime import date
     eng = Engine(cfg); eng.start(date(2026, 1, 2), 1300.0)
     eng.evaluate_close(date(2026, 1, 2), Market.KR, {"AAA": _buy_snap()},
@@ -176,7 +179,7 @@ def test_bear_guard_enabled_but_not_bearish_allows_buys():
 
 
 def test_bear_guard_still_allows_sells_in_downtrend():
-    cfg = replace(Config(), rules=replace(Config().rules, bear_market_guard=True))
+    cfg = replace(Config(), rules=replace(Config().rules, bear_guard_characters=ALL_GUARD))
     from datetime import date
     eng = Engine(cfg); eng.start(date(2026, 1, 2), 1300.0)
     # 보유 만들기
@@ -193,7 +196,7 @@ def test_bear_guard_still_allows_sells_in_downtrend():
 def test_bear_guard_v2_multimarket_one_bearish_allows_buys():
     # 범용형: KR만 하락 → US·KR 모두 신규매수 허용(all() 미충족)
     from datetime import date
-    cfg = replace(Config(), rules=replace(Config().rules, bear_market_guard=True))
+    cfg = replace(Config(), rules=replace(Config().rules, bear_guard_characters=ALL_GUARD))
     eng = Engine(cfg); eng.start(date(2026, 1, 2), 1300.0)
     eng.evaluate_close(date(2026, 1, 2), Market.KR, {"AAA": _buy_snap()},
                        bearish_by_market={Market.KR: True, Market.US: False})
@@ -203,9 +206,22 @@ def test_bear_guard_v2_multimarket_one_bearish_allows_buys():
 
 def test_bear_guard_v2_multimarket_both_bearish_blocks():
     from datetime import date
-    cfg = replace(Config(), rules=replace(Config().rules, bear_market_guard=True))
+    cfg = replace(Config(), rules=replace(Config().rules, bear_guard_characters=ALL_GUARD))
     eng = Engine(cfg); eng.start(date(2026, 1, 2), 1300.0)
     eng.evaluate_close(date(2026, 1, 2), Market.KR, {"AAA": _buy_snap()},
                        bearish_by_market={Market.KR: True, Market.US: True})
     assert not eng.states["범용형"].pending_buys
     assert not eng.states["국내형"].pending_buys
+
+
+def test_bear_guard_only_listed_characters_blocked():
+    # 집합에 든 캐릭터만 차단. 국내형(KR)만 가드 대상 → KR 마감에서 실제 차단 분기 검증.
+    # 범용형(KR+US)은 집합 밖이라 양시장 하락에도 매수 허용.
+    from datetime import date
+    cfg = replace(Config(), rules=replace(Config().rules,
+                  bear_guard_characters=frozenset({"국내형"})))
+    eng = Engine(cfg); eng.start(date(2026, 1, 2), 1300.0)
+    eng.evaluate_close(date(2026, 1, 2), Market.KR, {"AAA": _buy_snap()},
+                       bearish_by_market={Market.KR: True, Market.US: True})
+    assert not eng.states["국내형"].pending_buys                              # 대상+전시장하락 → 차단
+    assert any(b.symbol == "AAA" for b in eng.states["범용형"].pending_buys)  # 집합 밖 → 허용

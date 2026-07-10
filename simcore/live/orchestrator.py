@@ -7,15 +7,19 @@ from simcore.config import Config
 from simcore.engine import Engine
 from simcore.models import CapitalFlow, DailyBar, Market, SymbolSnapshot
 from simcore import signals as sigmod
+from simcore import data as datamod
 
 
 class Orchestrator:
-    def __init__(self, engine: Engine, kis, repo, cfg: Config, fx_provider):
+    def __init__(self, engine: Engine, kis, repo, cfg: Config, fx_provider,
+                 index_provider=None):
         self.engine = engine
         self.kis = kis
         self.repo = repo
         self.cfg = cfg
         self.fx = fx_provider
+        # (market:str, upto:date) -> pd.Series | None. None 이면 가드용 지수 미사용(가드 무발동).
+        self.index_provider = index_provider
         # 보유 종목의 최근가 캐시(호출 간 유지) — run_replay 의 run-lifetime last_close 와 동일 역할.
         # 이게 없으면 이번 사이클 universe 에 없는 보유 종목(예: 범용형의 반대 시장 leg)이
         # equity 평가 시 평단가(원가)로 폴백되어 equity_curve/TWR 가 오염된다.
@@ -68,7 +72,8 @@ class Orchestrator:
                                         close / prev_close - 1.0, float(df.loc[ts, "volume"]),
                                         green_score=gs, red_score=rs, buy_gate=gate)
             self._last_price[sym] = close
-        self.engine.evaluate_close(d, m, snaps)
+        self.engine.evaluate_close(d, m, snaps,
+                                   bearish_by_market=self._bearish_by_market(d))
         snap = self.engine.snapshot(self._last_price, fx)
         # 상태 delta + 이력 append + equity + run_state 갱신을 한 트랜잭션으로 (스펙 §144).
         with self.repo.transaction() as s:
@@ -76,6 +81,26 @@ class Orchestrator:
             self.repo.append_new_trades(self.engine, session=s)
             self.repo.record_equity(datetime.now(), snap, session=s)
             self.repo.mark_close(market, d, fx, session=s)
+
+    def _bearish_by_market(self, d: date) -> dict | None:
+        """가드 대상 캐릭터가 있을 때만 양 시장 지수로 하락장 dict 계산 (리플레이와 동일 판정식).
+        provider 없음/대상 없음 → None(가드 무발동). 시장별 로드 실패 → 그 시장 False."""
+        if not self.cfg.rules.bear_guard_characters or self.index_provider is None:
+            return None
+        indices = {}
+        # 주의: 라이브는 KR 마감 이벤트 시점에 US 지수도 조회 → US는 당일 미마감이라 asof(d)가
+        # 전일 US 세션을 반환할 수 있음. 리플레이는 같은 시뮬 날짜로 양시장을 동시 판정하므로,
+        # 범용형(양시장 동시 하락 필요)을 라이브에서 켤 경우 경계일에 라이브↔리플레이 판정이
+        # 어긋날 수 있다(단일시장형은 무관). 범용형 라이브 활성화 전 점검 필요.
+        for mk in (Market.KR, Market.US):
+            try:
+                indices[mk] = self.index_provider(mk.value, d)
+            except Exception as exc:
+                print(f"[live] {mk.value} 지수 로드 실패(가드 False 폴백): {exc}")
+                indices[mk] = None
+        periods = {Market.KR: self.cfg.signals.market_trend_period_kr,
+                   Market.US: self.cfg.signals.market_trend_period_us}
+        return datamod.make_bearish_fn(indices, periods)(pd.Timestamp(d))
 
     def on_open(self, d: date, market: str, universe: list[str]) -> None:
         rs = self.repo.get_run_state(market)

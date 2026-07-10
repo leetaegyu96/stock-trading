@@ -4,6 +4,19 @@
 
 상세 패치노트는 `docs/patch-notes/vX.Y.Z.md` 참조.
 
+## v1.7.0 — 2026-07-10
+
+하락장 가드 튜닝 — 캐릭터별 스위치 + 시장별 MA 기간으로 파라미터화. 12개월 검증에서 후보들이 MDD 기준 미달(6개월 과적합) → **기본값 전체 OFF 확정**(v1.6.0 동작 동일). 인프라·스윕 도구는 opt-in용으로 유지.
+
+### Changed
+- `bear_market_guard`(bool) → `bear_guard_characters`(frozenset), `market_trend_period` → `market_trend_period_kr/us`(시장별). CLI `--bear-guard`/`--no-bear-guard` 상호배타. trading-rules §6-1·README 갱신.
+
+### Added
+- `data.make_bearish_fn` 판정 공용 헬퍼(리플레이·라이브 공유), 라이브 `Orchestrator(index_provider)` 가드 배선, `simcore/sweep.py` 그리드 스윕+검증 CLI.
+
+### 검증
+- 스윕 16+1회 + 12개월 검증. 국내형은 어느 기간에서도 손해(−8.5%p 문제 근본 해소=가드 미적용). 해외형·범용형 12개월 MDD 악화로 off 강등. pytest 215. 상세: `docs/patch-notes/v1.7.0.md`.
+
 ## v1.6.0 — 2026-07-09
 
 하락장 가드 v2 — 범용형 과발동 해소. 판정을 "캐릭터의 모든 시장이 하락장일 때만 차단"으로 변경(단일시장 캐릭터 동작 동일, 범용형은 양시장 동시 하락 시만). 기본 OFF 불변.
