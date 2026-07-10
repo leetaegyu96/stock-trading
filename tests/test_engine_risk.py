@@ -140,6 +140,29 @@ def test_trailing_top_locks_peak_trail_percentage():
     assert eng.states["국내형"].portfolio.trades[-1].reason == TradeReason.TRAILING_STOP
 
 
+def test_stop_and_trailing_record_forced_r7_r10():
+    from simcore.models import DecisionType
+    # STOP_LOSS(잠금 손절선이 기본 -7%인 상태) → FORCED_SELL/"R7"
+    eng = Engine(Config()); eng.start(date(2026, 1, 2), 1300.0)
+    _buy_one(eng, price=100.0)
+    bar = DailyBar("AAA", date(2026, 1, 6), 100.0, 100.0, 92.0, 93.0, 1000.0)
+    eng.check_stops(date(2026, 1, 6), Market.KR, {"AAA": bar}, 1300.0)
+    t = eng.states["국내형"].portfolio.trades[-1]
+    assert t.reason == TradeReason.STOP_LOSS
+    assert t.decision_type == DecisionType.FORCED_SELL and t.trigger_rule == "R7"
+
+    # TRAILING_STOP(잠금선이 상향된 상태에서 하회) → FORCED_SELL/"R10"
+    eng2 = Engine(Config()); eng2.start(date(2026, 1, 2), 1300.0)
+    _buy_one(eng2, price=100.0)
+    up = DailyBar("AAA", date(2026, 1, 6), 100.0, 125.0, 100.0, 124.0, 1000.0)
+    eng2.check_stops(date(2026, 1, 6), Market.KR, {"AAA": up}, 1300.0)
+    down = DailyBar("AAA", date(2026, 1, 7), 120.0, 120.0, 108.0, 109.0, 1000.0)
+    eng2.check_stops(date(2026, 1, 7), Market.KR, {"AAA": down}, 1300.0)
+    t2 = eng2.states["국내형"].portfolio.trades[-1]
+    assert t2.reason == TradeReason.TRAILING_STOP
+    assert t2.decision_type == DecisionType.FORCED_SELL and t2.trigger_rule == "R10"
+
+
 def test_forced_sell_r5_and_r23():
     eng = Engine(Config()); eng.start(date(2026, 1, 2), 1300.0)
     _buy_one(eng)
