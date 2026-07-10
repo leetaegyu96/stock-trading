@@ -53,7 +53,7 @@
 
 ## 6. 실험 (스윕 + 검증)
 
-- `scripts/sweep_bear_guard.py`(커밋, 재현 가능): `run_replay` 인프로세스 반복.
+- `simcore/sweep.py`(커밋, `python -m simcore.sweep` — 패키지 모듈 CLI 관행): `run_replay` 인프로세스 반복.
   - 그리드: KR×US 기간 **{20, 40, 60, 120}² = 16회**(전 캐릭터 가드 on) + OFF 기준 1회.
     데이터 로드·캐시는 1회 재사용.
   - 출력: 캐릭터별 TWR·MDD·거래수 markdown 표 + 채택 규칙 자동 적용 결과.
