@@ -200,7 +200,8 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
         for c in engine.last_candidates.get(name, []):
             signal_status.append({
                 "date": last_day, "character": name, "symbol": c.symbol,
-                "kind": "후보", "green_score": c.green_score, "red_score": c.red_score,
+                "market": c.market.value, "kind": "후보",
+                "green_score": c.green_score, "red_score": c.red_score,
                 "buy_gate": c.buy_gate, "status": c.status,
                 "block_reason": c.block_reason, "stop_px": None, "trail_px": None,
                 "close": last_close.get(c.symbol),
@@ -214,7 +215,8 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
                         if peak_gain >= config.rules.trailing_top else None)
             signal_status.append({
                 "date": last_day, "character": name, "symbol": sym,
-                "kind": "보유", "green_score": 0, "red_score": red_score,
+                "market": pos.market.value, "kind": "보유",
+                "green_score": 0, "red_score": red_score,
                 "buy_gate": False, "status": "", "block_reason": "",
                 "stop_px": stop_px, "trail_px": trail_px,
                 "close": last_close.get(sym),

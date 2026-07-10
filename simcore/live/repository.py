@@ -227,27 +227,43 @@ class Repository:
             s.add(db.CapitalFlowRow(date=flow.date, character=flow.character,
                 amount_krw=flow.amount_krw, fx_rate=flow.fx_rate))
 
-    def replace_signal_status(self, rows: list[dict], session=None) -> None:
-        """전량 교체 — 최신 마감분만 유지한다(감사 Phase B, 스펙 §5)."""
+    def replace_signal_status(self, rows: list[dict], session=None,
+                               market: str | None = None) -> None:
+        """전량 교체 — 최신 마감분만 유지한다(감사 Phase B, 스펙 §5).
+
+        market=None(기본) — 전체 테이블을 지우고 rows 로 교체한다(리플레이 시딩:
+        한 번에 모든 시장·캐릭터의 마지막 마감 상태를 새로 쓴다).
+        market="KR"/"US" — 그 시장의 행만 지우고 rows 로 교체한다. 다른 시장의
+        행은 그대로 보존된다(라이브 on_close 는 시장 하나씩 마감하므로, 전량삭제를
+        쓰면 방금 마감한 시장이 다른 시장의 최신 상태까지 지워버린다 — Task 3 해결)."""
         with self._session(session) as s:
-            s.execute(delete(db.SignalStatusRow))
+            if market is None:
+                s.execute(delete(db.SignalStatusRow))
+            else:
+                s.execute(delete(db.SignalStatusRow)
+                         .where(db.SignalStatusRow.market == market))
             for r in rows:
                 s.add(db.SignalStatusRow(
                     date=r["date"], character=r["character"], symbol=r["symbol"],
-                    kind=r["kind"], green_score=r.get("green_score", 0),
+                    market=r.get("market", ""), kind=r["kind"],
+                    green_score=r.get("green_score", 0),
                     red_score=r.get("red_score", 0), buy_gate=r.get("buy_gate", False),
                     status=r.get("status", ""), block_reason=r.get("block_reason", ""),
                     stop_px=r.get("stop_px"), trail_px=r.get("trail_px"),
                     close=r.get("close")))
 
-    def signal_status(self) -> list[dict]:
-        """전체 후보·보유 상태 행(호출자가 character/kind 등을 필터한다)."""
+    def signal_status(self, character: str | None = None) -> list[dict]:
+        """후보·보유 상태 행. character 주어지면 SQL where 로 그 캐릭터만 필터한다
+        (None 이면 전체 — 호출자가 kind 등 나머지는 직접 필터한다)."""
         with self.sf() as s:
-            rows = s.execute(select(db.SignalStatusRow)
-                             .order_by(db.SignalStatusRow.id)).scalars().all()
+            q = select(db.SignalStatusRow).order_by(db.SignalStatusRow.id)
+            if character is not None:
+                q = q.where(db.SignalStatusRow.character == character)
+            rows = s.execute(q).scalars().all()
             return [{
                 "date": r.date, "character": r.character, "symbol": r.symbol,
-                "kind": r.kind, "green_score": r.green_score, "red_score": r.red_score,
+                "market": r.market, "kind": r.kind, "green_score": r.green_score,
+                "red_score": r.red_score,
                 "buy_gate": r.buy_gate, "status": r.status, "block_reason": r.block_reason,
                 "stop_px": r.stop_px, "trail_px": r.trail_px, "close": r.close,
             } for r in rows]

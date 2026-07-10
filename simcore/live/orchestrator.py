@@ -75,12 +75,52 @@ class Orchestrator:
         self.engine.evaluate_close(d, m, snaps,
                                    bearish_by_market=self._bearish_by_market(d))
         snap = self.engine.snapshot(self._last_price, fx)
+        rows = self._signal_status_rows(d, m, snaps)
         # 상태 delta + 이력 append + equity + run_state 갱신을 한 트랜잭션으로 (스펙 §144).
         with self.repo.transaction() as s:
             self.repo.persist_state(self.engine, session=s)
             self.repo.append_new_trades(self.engine, session=s)
             self.repo.record_equity(datetime.now(), snap, session=s)
             self.repo.mark_close(market, d, fx, session=s)
+            # market 스코프 교체 — 이 시장 마감분만 지우고 다시 쓴다. 전량삭제(market=None)를
+            # 쓰면 KR 마감이 US 의 최신 상태까지 지워버린다(감사 Phase B, Task 3).
+            self.repo.replace_signal_status(rows, session=s, market=market)
+
+    def _signal_status_rows(self, d: date, m: Market,
+                            snaps: dict[str, SymbolSnapshot]) -> list[dict]:
+        """이번 마감(시장 m)의 후보(engine.last_candidates)+보유 상태를 signal_status
+        행으로 구성한다(관찰 전용, 스펙 §5 — run_replay 말미 로직과 동일 계산식)."""
+        rows: list[dict] = []
+        for name, st in self.engine.states.items():
+            for c in self.engine.last_candidates.get(name, []):
+                if c.market != m:
+                    continue
+                rows.append({
+                    "date": d, "character": name, "symbol": c.symbol,
+                    "market": m.value, "kind": "후보",
+                    "green_score": c.green_score, "red_score": c.red_score,
+                    "buy_gate": c.buy_gate, "status": c.status,
+                    "block_reason": c.block_reason, "stop_px": None, "trail_px": None,
+                    "close": self._last_price.get(c.symbol),
+                })
+            for sym, pos in st.portfolio.positions.items():
+                if pos.market != m:
+                    continue
+                snap = snaps.get(sym)
+                red_score = snap.red_score if snap is not None else 0
+                stop_px = pos.avg_price * (1 + pos.locked_stop_pct)
+                peak_gain = pos.peak_price / pos.avg_price - 1.0
+                trail_px = (pos.peak_price * (1 - self.cfg.rules.trail_pct)
+                            if peak_gain >= self.cfg.rules.trailing_top else None)
+                rows.append({
+                    "date": d, "character": name, "symbol": sym,
+                    "market": m.value, "kind": "보유",
+                    "green_score": 0, "red_score": red_score,
+                    "buy_gate": False, "status": "", "block_reason": "",
+                    "stop_px": stop_px, "trail_px": trail_px,
+                    "close": self._last_price.get(sym),
+                })
+        return rows
 
     def _bearish_by_market(self, d: date) -> dict | None:
         """가드 대상 캐릭터가 있을 때만 양 시장 지수로 하락장 dict 계산 (리플레이와 동일 판정식).

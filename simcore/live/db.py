@@ -170,6 +170,9 @@ class SignalStatusRow(Base):
     date: Mapped[date] = mapped_column(Date)
     character: Mapped[str] = mapped_column(String)
     symbol: Mapped[str] = mapped_column(String)
+    # 라이브 on_close 는 시장 하나씩 마감하므로, replace 시 그 시장 분만 지우고 나머지
+    # 시장은 보존해야 한다(전량교체 시맨틱을 market 단위로 좁히기 위한 컬럼).
+    market: Mapped[str] = mapped_column(String, default="")
     kind: Mapped[str] = mapped_column(String)          # "후보" | "보유"
     green_score: Mapped[int] = mapped_column(Integer, default=0)
     red_score: Mapped[int] = mapped_column(Integer, default=0)

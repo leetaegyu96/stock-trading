@@ -83,6 +83,66 @@ def test_on_close_idempotent_no_duplicate_equity(session):
 
 
 @needs_db
+def test_on_close_persists_candidate_signal_status_scoped_to_market(session):
+    """Task 3: on_close 는 그 시장의 후보(engine.last_candidates)를 signal_status 에
+    기록해야 하고, 다른 시장의 on_close 가 그 행을 지우면 안 된다(market 스코프 교체)."""
+    from simcore.live import db
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    eng = Engine(Config())
+    eng.start(date(2026, 1, 1), 1300.0)
+    kr_bars, us_bars = _uptrend(), _uptrend()
+    kis = FakeKis({("KR", "005930"): kr_bars, ("US", "AAPL"): us_bars})
+    orch = Orchestrator(eng, kis, repo, Config(), fx_provider=lambda d: 1300.0)
+
+    kr_last = kr_bars.index[-1].date()
+    orch.on_close(kr_last, "KR", ["005930"])
+
+    kr_rows = repo.signal_status()
+    assert kr_rows  # 후보 상태가 기록됨(005930 은 미보유 → 후보 평가 대상)
+    assert all(r["market"] == "KR" for r in kr_rows)
+    assert any(r["symbol"] == "005930" and r["kind"] == "후보" for r in kr_rows)
+    with sf() as s:
+        assert s.query(db.SignalStatusRow).count() == len(kr_rows)
+
+    us_last = us_bars.index[-1].date()
+    orch.on_close(us_last, "US", ["AAPL"])
+
+    rows = repo.signal_status()
+    markets = {r["market"] for r in rows}
+    assert markets == {"KR", "US"}  # US 마감이 KR 행을 지우지 않음
+    assert any(r["symbol"] == "005930" for r in rows)
+    assert any(r["symbol"] == "AAPL" for r in rows)
+
+
+@needs_db
+def test_on_close_persists_holding_signal_status_with_stop_px(session):
+    """Task 3: 보유 종목은 kind=보유 로 기록되고, stop_px=avg_price*(1+locked_stop_pct),
+    close=self._last_price[symbol] 이어야 한다(스펙 §5 — run_replay 말미와 동일 계산)."""
+    from simcore.models import Market, TradeReason
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    eng = Engine(Config())
+    eng.start(date(2026, 1, 1), 1300.0)
+    st = eng.states["국내형"]
+    st.portfolio.buy(date(2026, 1, 2), "005930", Market.KR, 10, 100.0, TradeReason.SIGNAL_BUY)
+    kr_bars = _uptrend()
+    kis = FakeKis({("KR", "005930"): kr_bars})
+    orch = Orchestrator(eng, kis, repo, Config(), fx_provider=lambda d: 1300.0)
+    kr_last = kr_bars.index[-1].date()
+    orch.on_close(kr_last, "KR", ["005930"])
+
+    pos = st.portfolio.positions["005930"]
+    rows = repo.signal_status()
+    held = next(r for r in rows if r["symbol"] == "005930" and r["kind"] == "보유")
+    assert held["market"] == "KR"
+    assert held["stop_px"] == pytest.approx(pos.avg_price * (1 + pos.locked_stop_pct))
+    assert held["close"] == pytest.approx(orch._last_price["005930"])
+    # 기존 on_close 동작(회귀): 실제로 마감·멱등 처리는 그대로다.
+    assert repo.get_run_state("KR").last_close_date == kr_last
+
+
+@needs_db
 def test_on_tick_triggers_stop_loss(session):
     """보유 종목 현재가가 손절선 아래면 on_tick 이 즉시 청산 (유사봉 o=h=l=c)."""
     from simcore.models import Market, TradeReason

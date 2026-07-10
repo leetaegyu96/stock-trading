@@ -224,16 +224,17 @@ def test_append_new_trades_survives_restart(session):
 
 @needs_db
 def test_replace_signal_status_replaces_all_and_keeps_only_latest(session):
-    """전량 교체: 두 번째 replace 호출 후에는 첫 배치의 행이 남아있지 않고
-    두 번째 배치만 조회되어야 한다(최신 마감만 유지)."""
+    """전량 교체(market=None): 두 번째 replace 호출 후에는 첫 배치의 행이 남아있지
+    않고 두 번째 배치만 조회되어야 한다(최신 마감만 유지). signal_status(character=)
+    필터도 SQL where 로 동작해야 한다(Task 5 캐릭터별 조회가 이 필터에 의존)."""
     import os
     sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
     repo = Repository(sf)
     batch1 = [
         {"date": date(2026, 7, 6), "character": "국내형", "symbol": "005930",
-         "kind": "후보", "green_score": 20, "red_score": 0, "buy_gate": True,
-         "status": "예약", "block_reason": "", "stop_px": None, "trail_px": None,
-         "close": 70000.0},
+         "market": "KR", "kind": "후보", "green_score": 20, "red_score": 0,
+         "buy_gate": True, "status": "예약", "block_reason": "", "stop_px": None,
+         "trail_px": None, "close": 70000.0},
     ]
     repo.replace_signal_status(batch1)
     with sf() as s:
@@ -241,12 +242,12 @@ def test_replace_signal_status_replaces_all_and_keeps_only_latest(session):
 
     batch2 = [
         {"date": date(2026, 7, 7), "character": "국내형", "symbol": "000660",
-         "kind": "보유", "green_score": 0, "red_score": 5, "buy_gate": False,
-         "status": "", "block_reason": "", "stop_px": 65000.0, "trail_px": None,
-         "close": 68000.0},
+         "market": "KR", "kind": "보유", "green_score": 0, "red_score": 5,
+         "buy_gate": False, "status": "", "block_reason": "", "stop_px": 65000.0,
+         "trail_px": None, "close": 68000.0},
         {"date": date(2026, 7, 7), "character": "해외형", "symbol": "AAPL",
-         "kind": "후보", "green_score": 15, "red_score": 2, "buy_gate": False,
-         "status": "차단", "block_reason": "점수부족", "stop_px": None,
+         "market": "US", "kind": "후보", "green_score": 15, "red_score": 2,
+         "buy_gate": False, "status": "차단", "block_reason": "점수부족", "stop_px": None,
          "trail_px": None, "close": 190.5},
     ]
     repo.replace_signal_status(batch2)
@@ -261,6 +262,7 @@ def test_replace_signal_status_replaces_all_and_keeps_only_latest(session):
     held = by_symbol["000660"]
     assert held["date"] == date(2026, 7, 7)
     assert held["character"] == "국내형"
+    assert held["market"] == "KR"
     assert held["kind"] == "보유"
     assert held["red_score"] == 5
     assert held["buy_gate"] is False
@@ -268,8 +270,57 @@ def test_replace_signal_status_replaces_all_and_keeps_only_latest(session):
     assert held["trail_px"] is None  # nullable 필드 온전히 보존
 
     cand = by_symbol["AAPL"]
+    assert cand["market"] == "US"
     assert cand["kind"] == "후보"
     assert cand["status"] == "차단"
     assert cand["block_reason"] == "점수부족"
     assert cand["stop_px"] is None
     assert cand["close"] == pytest.approx(190.5)
+
+    # character 필터(pre-fix): "해외형"만 요청하면 "국내형" 행은 섞이지 않는다.
+    only_foreign = repo.signal_status(character="해외형")
+    assert len(only_foreign) == 1
+    assert only_foreign[0]["symbol"] == "AAPL"
+    assert only_foreign[0]["character"] == "해외형"
+
+
+@needs_db
+def test_replace_signal_status_market_scoped_preserves_other_markets(session):
+    """market 인자를 주면 그 시장 행만 지우고 다시 쓴다 — 다른 시장 최신 마감 상태는
+    그대로 보존되어야 한다(라이브 on_close 는 시장 하나씩 마감하므로 필수, Task 3)."""
+    import os
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+
+    kr_batch = [
+        {"date": date(2026, 7, 6), "character": "국내형", "symbol": "005930",
+         "market": "KR", "kind": "보유", "green_score": 0, "red_score": 3,
+         "buy_gate": False, "status": "", "block_reason": "", "stop_px": 65000.0,
+         "trail_px": None, "close": 70000.0},
+    ]
+    repo.replace_signal_status(kr_batch, market="KR")
+
+    us_batch = [
+        {"date": date(2026, 7, 6), "character": "해외형", "symbol": "AAPL",
+         "market": "US", "kind": "보유", "green_score": 0, "red_score": 1,
+         "buy_gate": False, "status": "", "block_reason": "", "stop_px": 180.0,
+         "trail_px": None, "close": 190.0},
+    ]
+    repo.replace_signal_status(us_batch, market="US")
+
+    rows = repo.signal_status()
+    by_symbol = {r["symbol"]: r for r in rows}
+    assert set(by_symbol) == {"005930", "AAPL"}  # US 시딩이 KR 행을 지우지 않음
+
+    # KR 을 다음 마감으로 다시 갈아치워도 US 행은 그대로 남는다.
+    kr_batch2 = [
+        {"date": date(2026, 7, 7), "character": "국내형", "symbol": "000660",
+         "market": "KR", "kind": "보유", "green_score": 0, "red_score": 0,
+         "buy_gate": False, "status": "", "block_reason": "", "stop_px": 50000.0,
+         "trail_px": None, "close": 52000.0},
+    ]
+    repo.replace_signal_status(kr_batch2, market="KR")
+    rows = repo.signal_status()
+    by_symbol = {r["symbol"]: r for r in rows}
+    assert set(by_symbol) == {"000660", "AAPL"}
+    assert by_symbol["AAPL"]["market"] == "US"
