@@ -7,7 +7,7 @@ from datetime import date as Date
 from simcore.config import Config
 from simcore import costs as costmod
 from simcore.models import (
-    Currency, DailyBar, Market, MARKET_CURRENCY, SymbolSnapshot, TradeReason,
+    Currency, DailyBar, DecisionType, Market, MARKET_CURRENCY, SymbolSnapshot, TradeReason,
 )
 from simcore.portfolio import Portfolio
 
@@ -35,6 +35,8 @@ class PendingBuy:
     fired: tuple[str, ...]
     change_pct: float
     volume: float
+    decision_type: "DecisionType | None" = None   # 결정 시점 확정
+    trigger_rule: str = ""
 
 
 @dataclass
@@ -46,6 +48,8 @@ class PendingSell:
     red_score: int
     fired: tuple[str, ...]
     partial: bool = False
+    decision_type: "DecisionType | None" = None   # 결정 시점 확정
+    trigger_rule: str = ""
 
 
 @dataclass
@@ -100,17 +104,26 @@ class Engine:
                           or "R18" in red               # 지지선 붕괴
                           or ({"R5", "R23"} <= red))     # 거래량 급증 음봉 + 장대 음봉
                 if forced:
+                    if s.close <= stop_px:
+                        trig = "R7"
+                    elif "R18" in red:
+                        trig = "R18"
+                    else:
+                        trig = "R5+R23"
                     st.pending_sells.append(PendingSell(
                         sym, market, TradeReason.SIGNAL_SELL, len(red), s.red_score,
-                        tuple(s.red), partial=False))
+                        tuple(s.red), partial=False,
+                        decision_type=DecisionType.FORCED_SELL, trigger_rule=trig))
                 elif s.red_score >= r.sell_full_min:
                     st.pending_sells.append(PendingSell(
                         sym, market, TradeReason.SIGNAL_SELL, len(red), s.red_score,
-                        tuple(s.red), partial=False))
+                        tuple(s.red), partial=False,
+                        decision_type=DecisionType.FULL_SELL, trigger_rule="+".join(s.red)))
                 elif s.red_score >= r.sell_partial_min:
                     st.pending_sells.append(PendingSell(
                         sym, market, TradeReason.SIGNAL_SELL, len(red), s.red_score,
-                        tuple(s.red), partial=True))
+                        tuple(s.red), partial=True,
+                        decision_type=DecisionType.PARTIAL_SELL, trigger_rule="+".join(s.red)))
             # 매수 후보 (하락장 가드: 집합에 든 캐릭터만, 그 캐릭터의 전 시장 하락 시 차단)
             if (st.spec.name in r.bear_guard_characters and bearish_by_market
                     and all(bearish_by_market.get(m, False) for m in st.spec.markets)):
@@ -122,7 +135,9 @@ class Engine:
                     continue
                 st.pending_buys.append(PendingBuy(
                     sym, market, len(s.green), s.green_score, s.green,
-                    s.change_pct, s.volume))
+                    s.change_pct, s.volume,
+                    decision_type=DecisionType.BUY,
+                    trigger_rule=f"게이트+{s.green_score}점"))
 
     # ---- 개장: 예약 주문 체결 ----
     def fill_open(self, d: Date, market: Market, opens: dict[str, float],
@@ -150,7 +165,9 @@ class Engine:
                 # 위임한다 (cooldown=True 는 포지션이 남아 있으면 자동으로 무시됨).
                 self._sell(st, d, ps.symbol, price, ps.reason, fx_rate,
                            quantity=qty, cooldown=True,
-                           red_count=ps.red_count, red_score=ps.red_score, fired=ps.fired)
+                           red_count=ps.red_count, red_score=ps.red_score, fired=ps.fired,
+                           decision_type=ps.decision_type or DecisionType.FULL_SELL,
+                           trigger_rule=ps.trigger_rule)
             st.pending_sells = carried
             # 2) 매수: 우선순위 = green_score → 등락률 → 거래량
             buys = sorted((b for b in st.pending_buys if b.market == market),
@@ -184,17 +201,21 @@ class Engine:
         if cross_currency:
             pf.convert_to_usd(qty * fill_price * (1 + fee_rate), fx_rate)
         pf.buy(d, b.symbol, b.market, qty, fill_price, TradeReason.SIGNAL_BUY,
-               green_count=b.green_count, green_score=b.green_score, fired=b.fired)
+               green_count=b.green_count, green_score=b.green_score, fired=b.fired,
+               decision_type=b.decision_type or DecisionType.BUY, trigger_rule=b.trigger_rule)
 
     def _sell(self, st: CharacterState, d: Date, symbol: str, price: float,
               reason: TradeReason, fx_rate: float, quantity: int | None = None,
               cooldown: bool = True, red_count: int = 0, red_score: int = 0,
-              fired: tuple[str, ...] = ()) -> None:
+              fired: tuple[str, ...] = (),
+              decision_type: DecisionType = DecisionType.FULL_SELL,
+              trigger_rule: str = "") -> None:
         pos = st.portfolio.positions[symbol]
         market = pos.market
         fill_price = price * (1 - self.config.costs.slippage)
         st.portfolio.sell(d, symbol, fill_price, reason, quantity=quantity,
-                          red_count=red_count, red_score=red_score, fired=fired)
+                          red_count=red_count, red_score=red_score, fired=fired,
+                          decision_type=decision_type, trigger_rule=trigger_rule)
         if cooldown and symbol not in st.portfolio.positions:
             st.cooldowns[symbol] = [market, self.config.rules.cooldown_days]
         if st.spec.base_currency == Currency.KRW and market == Market.US:
@@ -229,7 +250,9 @@ class Engine:
                     reason = (TradeReason.TRAILING_STOP
                               if pos.locked_stop_pct > self.config.rules.stop_loss_pct
                               else TradeReason.STOP_LOSS)
-                    self._sell(st, d, sym, stop_px, reason, fx_rate)
+                    trig = "R10" if reason == TradeReason.TRAILING_STOP else "R7"
+                    self._sell(st, d, sym, stop_px, reason, fx_rate,
+                               decision_type=DecisionType.FORCED_SELL, trigger_rule=trig)
                     continue
                 self._update_trailing(pos, b.high)                   # 미발동 시 peak 갱신
 

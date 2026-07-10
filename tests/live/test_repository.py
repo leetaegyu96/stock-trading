@@ -88,6 +88,69 @@ def test_persist_rehydrate_pending_orders_roundtrip(session):
 
 
 @needs_db
+def test_pending_sell_decision_type_survives_rehydrate_then_fills_without_crash(session):
+    """감사 CRITICAL: 대기 매도(FORCED_SELL)의 decision_type/trigger_rule이 재시작
+    (persist_state → 새 엔진 → rehydrate) 후에도 보존되어야 한다. 보존되지 않으면
+    fill_open → append_new_trades 에서 decision_type=None.value → AttributeError로
+    라이브 데몬이 크래시한다."""
+    import os
+    from simcore.models import DecisionType, Market as M
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    eng = Engine(Config())
+    eng.start(date(2026, 7, 6), 1300.0)
+    st = eng.states["국내형"]
+    st.portfolio.buy(date(2026, 7, 6), "005930", M.KR, 10, 70000.0, TradeReason.SIGNAL_BUY)
+    ps = PendingSell(symbol="005930", market=M.KR, reason=TradeReason.SIGNAL_SELL,
+                      red_count=2, red_score=8, fired=("R5", "R23"), partial=False,
+                      decision_type=DecisionType.FORCED_SELL, trigger_rule="R5+R23")
+    st.pending_sells.append(ps)
+    repo.persist_state(eng)
+
+    # 재시작 시뮬레이션: 새 엔진 + rehydrate
+    eng2 = Engine(Config())
+    eng2.start(date(2026, 7, 6), 1300.0)
+    assert repo.rehydrate(eng2) is True
+    st2 = eng2.states["국내형"]
+    assert len(st2.pending_sells) == 1
+    rs = st2.pending_sells[0]
+    assert rs.decision_type == DecisionType.FORCED_SELL
+    assert rs.trigger_rule == "R5+R23"
+
+    # 체결 + 이력 기록에서 크래시하지 않아야 한다 (P0-1: FORCED_SELL 라벨 보존)
+    eng2.fill_open(date(2026, 7, 7), M.KR, {"005930": 60000.0}, fx_rate=1300.0)
+    repo.append_new_trades(eng2)
+
+    with sf() as s:
+        row = s.query(TradeRow).filter_by(character="국내형", symbol="005930",
+                                           side="SELL").one()
+        assert row.decision_type == "FORCED_SELL"
+        assert row.trigger_rule == "R5+R23"
+
+
+@needs_db
+def test_append_new_trades_persists_decision_type_and_trigger_rule(session):
+    """Task 6: Trade.decision_type/trigger_rule(Task 1·2)이 TradeRow에 저장·복원되어야
+    한다 — 대시보드(Task 7/8)가 이 두 컬럼을 소비한다."""
+    import os
+    from simcore.models import DecisionType
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    eng = Engine(Config())
+    eng.start(date(2026, 7, 6), 1300.0)
+    st = eng.states["국내형"]
+    st.portfolio.buy(date(2026, 7, 6), "005930", Market.KR, 10, 70000.0,
+                      TradeReason.SIGNAL_BUY, decision_type=DecisionType.FORCED_SELL,
+                      trigger_rule="R7")
+    repo.append_new_trades(eng)
+
+    with sf() as s:
+        row = s.query(TradeRow).filter_by(character="국내형", symbol="005930").one()
+        assert row.decision_type == "FORCED_SELL"
+        assert row.trigger_rule == "R7"
+
+
+@needs_db
 def test_run_state_idempotency_and_flow_queue(session):
     import os
     from simcore.live.repository import Repository

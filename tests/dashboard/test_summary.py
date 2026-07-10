@@ -64,6 +64,55 @@ def test_detail_metrics_matches_hand_computed(sf):
     assert m.n_trades == 5
     assert m.win_rate == pytest.approx(0.6)
 
+    # 위험조정 지표(Task 4 risk_metrics) — 유한값이어야 함(NaN/inf 금지).
+    import math
+    for field in ("cagr", "volatility", "sharpe", "sortino", "calmar",
+                  "profit_factor", "avg_win", "avg_loss", "win_loss_ratio", "expectancy"):
+        v = getattr(m, field)
+        assert math.isfinite(v), f"{field}={v} 는 유한값이어야 함"
+    assert isinstance(m.max_consecutive_losses, int)
+    assert isinstance(m.recovery_days, int)
+
+    # 벤치마크 시딩 안 됨 → available=False, delta=None (숨기지 않고 경고 가능해야 함).
+    assert m.benchmark_available is False
+    assert m.benchmark_delta is None
+    assert m.benchmark_return is None
+
+
+@needs_db
+def test_detail_metrics_benchmark_available_when_seeded(sf):
+    with sf() as s:
+        _seed(s)
+        s.add(db.BenchmarkRow(character="테스트형", benchmark_return=0.05,
+                               benchmark_name="KOSPI200", ts=datetime(2026, 1, 5, 15, 40)))
+        s.commit()
+
+    m = summary.detail_metrics(sf, "테스트형")
+    assert m.benchmark_available is True
+    assert m.benchmark_return == pytest.approx(0.05)
+    assert m.benchmark_name == "KOSPI200"
+    assert m.benchmark_delta == pytest.approx(m.twr - 0.05)
+
+
+@needs_db
+def test_card_summary_benchmark_available_reflects_seed(sf):
+    with sf() as s:
+        _seed(s)
+        s.commit()
+
+    c_no_bmk = summary.card_summary(sf, "테스트형", fx_rate=1300.0, last_prices={"AAPL": 160.0})
+    assert c_no_bmk.benchmark_available is False
+    assert c_no_bmk.benchmark_delta is None
+
+    with sf() as s:
+        s.add(db.BenchmarkRow(character="테스트형", benchmark_return=0.05,
+                               benchmark_name="KOSPI200", ts=datetime(2026, 1, 5, 15, 40)))
+        s.commit()
+
+    c_bmk = summary.card_summary(sf, "테스트형", fx_rate=1300.0, last_prices={"AAPL": 160.0})
+    assert c_bmk.benchmark_available is True
+    assert c_bmk.benchmark_delta == pytest.approx(c_bmk.twr - 0.05)
+
 
 @needs_db
 def test_card_summary_matches_hand_computed(sf):

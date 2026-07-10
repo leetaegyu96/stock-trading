@@ -214,6 +214,56 @@ def test_bear_guard_v2_multimarket_both_bearish_blocks():
     assert not eng.states["국내형"].pending_buys
 
 
+def test_forced_sell_r5r23_records_forced_decision():
+    from simcore.models import DecisionType
+    e = make_engine()
+    e.evaluate_close(D1, Market.KR, {"A": snap("A", green=("G1","G4","G7"), green_score=18, gate=True)})
+    e.fill_open(D2, Market.KR, {"A": 100.0}, fx_rate=1300.0)
+    # R5+R23 강제(점수 8이어도) — red_score 낮게
+    e.evaluate_close(D2, Market.KR, {"A": snap("A", red=("R5","R23"), red_score=8)})
+    e.fill_open(D3, Market.KR, {"A": 95.0}, fx_rate=1300.0)
+    t = [x for x in e.states["국내형"].portfolio.trades if x.side.value=="SELL"][-1]
+    assert t.decision_type == DecisionType.FORCED_SELL and t.trigger_rule == "R5+R23"
+
+def test_graded_full_and_partial_and_buy_decision():
+    from simcore.models import DecisionType
+    e = make_engine()
+    e.evaluate_close(D1, Market.KR, {"A": snap("A", green=("G1","G4","G7"), green_score=19, gate=True)})
+    e.fill_open(D2, Market.KR, {"A": 100.0}, fx_rate=1300.0)
+    buy = [x for x in e.states["국내형"].portfolio.trades if x.side.value=="BUY"][-1]
+    assert buy.decision_type == DecisionType.BUY and "19" in buy.trigger_rule
+    e.evaluate_close(D2, Market.KR, {"A": snap("A", red=("R1","R4","R11"), red_score=15)})
+    e.fill_open(D3, Market.KR, {"A": 99.0}, fx_rate=1300.0)
+    t = [x for x in e.states["국내형"].portfolio.trades if x.side.value=="SELL"][-1]
+    assert t.decision_type == DecisionType.FULL_SELL
+
+
+def test_partial_sell_promotes_to_full_when_rounding_liquidates_whole_position():
+    """1주 잔량에서 등급 판정이 PARTIAL_SELL(부분매도)이어도, 반올림 수량
+    (max(1, int(1*0.5))==1)이 잔량 전체를 청산하면 라벨이 FULL_SELL로 승격되어야
+    한다 — 그렇지 않으면 "부분 매도" 문구가 남아 수량·설명이 불일치한다."""
+    from simcore.models import DecisionType
+    e = make_engine(max_positions=1)
+    # 고가 종목 1주만 매수되도록 가격을 잡는다 (예산 1억 / 1슬롯).
+    e.evaluate_close(D1, Market.KR, {"A": snap("A", green=("G1", "G4", "G7"),
+                                                green_score=19, gate=True)})
+    e.fill_open(D2, Market.KR, {"A": 90_000_000.0}, fx_rate=1300.0)
+    st = e.states["국내형"]
+    assert st.portfolio.positions["A"].quantity == 1
+
+    # red_score=9 → sell_partial_min(9)<=9<11(sell_full_min) → PARTIAL_SELL 판정.
+    # close 를 매수가 근처로 둬야 트레일링 스탑(R7 강제매도)로 오분류되지 않는다.
+    e.evaluate_close(D2, Market.KR, {"A": snap("A", red=("R1", "R4"), red_score=9,
+                                                close=91_000_000.0)})
+    assert st.pending_sells[0].partial is True
+    e.fill_open(D3, Market.KR, {"A": 91_000_000.0}, fx_rate=1300.0)
+
+    assert "A" not in st.portfolio.positions           # 전량 청산됨
+    t = [x for x in st.portfolio.trades if x.side.value == "SELL"][-1]
+    assert t.quantity == 1
+    assert t.decision_type == DecisionType.FULL_SELL   # 라벨 승격
+
+
 def test_bear_guard_only_listed_characters_blocked():
     # 집합에 든 캐릭터만 차단. 국내형(KR)만 가드 대상 → KR 마감에서 실제 차단 분기 검증.
     # 범용형(KR+US)은 집합 밖이라 양시장 하락에도 매수 허용.

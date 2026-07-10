@@ -9,7 +9,7 @@ import pandas as pd
 from sqlalchemy import delete, select
 
 from simcore.engine import Engine, PendingBuy, PendingSell
-from simcore.models import (Currency, Market, Position, TradeReason)
+from simcore.models import (Currency, DecisionType, Market, Position, TradeReason)
 from simcore.live import db
 
 
@@ -73,13 +73,19 @@ class Repository:
                                           market=b.market.value, green_count=b.green_count,
                                           green_score=b.green_score,
                                           change_pct=b.change_pct, volume=b.volume,
-                                          fired=list(b.fired), created_date=date.today()))
+                                          fired=list(b.fired), created_date=date.today(),
+                                          decision_type=(b.decision_type.value
+                                                         if b.decision_type else ""),
+                                          trigger_rule=b.trigger_rule))
                 for ps in st.pending_sells:
                     s.add(db.PendingOrder(character=name, side="SELL", symbol=ps.symbol,
                                           market=ps.market.value, red_count=ps.red_count,
                                           red_score=ps.red_score, partial=ps.partial,
                                           fired=list(ps.fired), reason=ps.reason.value,
-                                          created_date=date.today()))
+                                          created_date=date.today(),
+                                          decision_type=(ps.decision_type.value
+                                                         if ps.decision_type else ""),
+                                          trigger_rule=ps.trigger_rule))
                 for sym, (mkt, rem) in st.cooldowns.items():
                     s.add(db.Cooldown(character=name, symbol=sym, market=mkt.value,
                                       remaining_days=rem))
@@ -106,11 +112,15 @@ class Repository:
                 if o.side == "BUY":
                     st.pending_buys.append(PendingBuy(o.symbol, Market(o.market),
                         o.green_count, o.green_score, tuple(o.fired or ()),
-                        o.change_pct, o.volume))
+                        o.change_pct, o.volume,
+                        decision_type=DecisionType(o.decision_type) if o.decision_type else None,
+                        trigger_rule=o.trigger_rule or ""))
                 else:
                     st.pending_sells.append(PendingSell(o.symbol, Market(o.market),
                         TradeReason(o.reason), o.red_count, o.red_score,
-                        tuple(o.fired or ()), partial=o.partial))
+                        tuple(o.fired or ()), partial=o.partial,
+                        decision_type=DecisionType(o.decision_type) if o.decision_type else None,
+                        trigger_rule=o.trigger_rule or ""))
             for c in s.execute(select(db.Cooldown)).scalars():
                 st = engine.states.get(c.character)
                 if st:
@@ -149,7 +159,8 @@ class Repository:
                         reason=t.reason.value, green_count=t.green_count,
                         red_count=t.red_count, green_score=t.green_score,
                         red_score=t.red_score, fired=list(t.fired),
-                        realized_pnl=t.realized_pnl))
+                        realized_pnl=t.realized_pnl,
+                        decision_type=t.decision_type.value, trigger_rule=t.trigger_rule))
                 self._trade_cursor[name] = len(st.portfolio.trades)
 
     def record_equity(self, ts, snap: dict, session=None) -> None:

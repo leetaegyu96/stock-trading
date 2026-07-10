@@ -12,6 +12,7 @@ class CardSummary(BaseModel):
     base_currency: str
     markets: list[str]
     benchmark_delta: float | None = None
+    benchmark_available: bool = False
     total_asset_krw: float
     twr: float
     pnl_krw: float
@@ -22,12 +23,32 @@ class CardSummary(BaseModel):
 
 
 class Metrics(BaseModel):
-    """캐릭터 상세 성과 지표."""
+    """캐릭터 상세 성과 지표(기본) + 위험조정 지표 + 벤치마크 대비.
+
+    benchmark_* 는 seed_from_replay 가 미리 적재한 BenchmarkRow 스냅샷 기반이다.
+    시딩 안 됐으면(benchmark_available=False) return/delta 는 None — 화면이 이를
+    '집계 실패'로 경고해야 하며, 조용히 숨기면 안 된다(P0-3)."""
     twr: float
     mdd: float
     n_trades: int
     win_rate: float
     pnl_krw: float
+    cagr: float = 0.0
+    volatility: float = 0.0
+    sharpe: float = 0.0
+    sortino: float = 0.0
+    calmar: float = 0.0
+    profit_factor: float = 0.0
+    avg_win: float = 0.0
+    avg_loss: float = 0.0
+    win_loss_ratio: float = 0.0
+    expectancy: float = 0.0
+    max_consecutive_losses: int = 0
+    recovery_days: int = 0
+    benchmark_return: float | None = None
+    benchmark_delta: float | None = None
+    benchmark_name: str = ""
+    benchmark_available: bool = False
 
 
 class PositionOut(BaseModel):
@@ -63,6 +84,15 @@ class TradeOut(BaseModel):
     signal_summary: str = ""
     signal_detail: list[dict] = []
     realized_pnl: float
+    decision_type: str = "BUY"
+    trigger_rule: str = ""
+
+
+class MarketStatusOut(BaseModel):
+    """시장별 데이터 기준(run_state) — as-of 표시용(P0)."""
+    market: str
+    last_close_date: str | None = None
+    last_open_date: str | None = None
 
 
 class FlowOut(BaseModel):
