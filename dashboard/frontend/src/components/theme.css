@@ -135,6 +135,44 @@ body {
 .chip--down { background: var(--tint-down); color: var(--color-down); }
 .chip--neutral { background: var(--tint-neutral); color: var(--color-text-muted); }
 
+/* 결정유형 칩(부분/전량/강제매도) — pnl 색(상승=빨강/하락=파랑)과는 별개 축이라
+ * 혼동을 피하려 호박색 계열로 강도만 표시한다. 강제매도만 위험 신호로 강조. */
+.chip--partial { background: var(--tint-neutral); color: var(--color-text-sub); }
+.chip--full { background: rgba(224, 167, 19, 0.16); color: #a9720c; }
+.chip--forced { background: var(--tint-up); color: var(--color-up); font-weight: 800; }
+@media (prefers-color-scheme: dark) {
+  .chip--full { background: rgba(224, 167, 19, 0.22); color: #e0a713; }
+}
+:root[data-theme="dark"] .chip--full { background: rgba(224, 167, 19, 0.22); color: #e0a713; }
+
+/* ── 운영모드 바(PAPER) ── 모든 화면 상단에 고정 표시(audit §4/§5). */
+.mode-bar-shell {
+  max-width: 1264px;
+  margin: 0 auto;
+  padding: 16px 32px 0;
+}
+.mode-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  font-size: 12px; color: var(--color-text-muted);
+  padding: 8px 14px; margin-bottom: 12px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-ctl);
+}
+.mode-bar__badge {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.04em;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--tint-down); color: var(--color-down);
+}
+.mode-bar__desc { color: var(--color-text-sub); }
+.mode-bar__conn { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; }
+.mode-bar__conn::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-text-muted);
+}
+.mode-bar__conn--on::before { background: #12b76a; box-shadow: 0 0 0 3px rgba(18, 183, 106, 0.18); }
+.mode-bar__asof { font-variant-numeric: tabular-nums; }
+
 /* ── 앱 셸 ── */
 .app-shell {
   max-width: 1264px;
@@ -214,6 +252,13 @@ body {
   padding-top: 12px;
 }
 .char-card__foot .num { font-weight: 600; }
+.char-card__benchmark-warn {
+  color: #a9720c; font-weight: 700; font-size: 11.5px;
+}
+@media (prefers-color-scheme: dark) {
+  .char-card__benchmark-warn { color: #e0a713; }
+}
+:root[data-theme="dark"] .char-card__benchmark-warn { color: #e0a713; }
 
 /* ── 상태 표시 ── */
 .page-state {

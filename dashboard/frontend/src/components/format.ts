@@ -109,3 +109,47 @@ export function formatSignedPrice(market: string, value: number): string {
   }
   return `${sign}₩${Math.round(abs).toLocaleString("ko-KR")}`;
 }
+
+// ── 기술적 신호 표시(P0-2): "청/적신호" 대신 사용자 표기는 항상 이 문구로 통일한다.
+// 뉴스·공시·수급 등 외부 축은 Phase A에서 계산되지 않으므로, 신호가 보이는 곳에는
+// 늘 이 두 고지(라벨 + 미반영 고지)가 함께 붙어야 한다(조용히 생략 금지).
+export const SIGNAL_AXIS_LABEL = "기술적 매수/매도 신호";
+export const NEWS_FLOW_DISCLAIMER = "뉴스·공시·수급은 현재 판단에 반영되지 않음";
+export const TECH_AXIS_ONLY_BADGE = "기술적 축만 계산됨";
+
+/** 계산되지 않은(스텁) 신호 축의 표시 라벨. 0점으로 위장하지 않는다. */
+export const UNCOMPUTED_AXIS_LABEL = "미수집/판단 불가";
+
+// ── 결정 기반 표시(P0-1): TradeOut.decision_type → 칩 라벨/색 구분.
+// signal_summary는 이미 백엔드가 decision_type을 반영해 만든 문구이므로 프론트는
+// red_score 등으로 이를 다시 계산하지 않고 그대로 렌더한다 — 이 칩은 부가 표시일 뿐이다.
+export type DecisionKind = "buy" | "partial" | "full" | "forced" | "unknown";
+
+export interface DecisionInfo {
+  label: string;
+  kind: DecisionKind;
+}
+
+const DECISION_MAP: Record<string, DecisionInfo> = {
+  BUY: { label: "매수", kind: "buy" },
+  PARTIAL_SELL: { label: "부분매도", kind: "partial" },
+  FULL_SELL: { label: "전량매도", kind: "full" },
+  FORCED_SELL: { label: "강제매도", kind: "forced" },
+};
+
+export function decisionInfo(decisionType: string): DecisionInfo {
+  return DECISION_MAP[decisionType.toUpperCase()] ?? { label: decisionType, kind: "unknown" };
+}
+
+// ── 성과 표시(P0-3): MDD는 항상 "최대 낙폭 X%" 문구(낙폭 크기, 부호 없음)로 표기.
+export function mddLabel(mdd: number): string {
+  return `최대 낙폭 ${Math.abs(mdd * 100).toFixed(2)}%`;
+}
+
+// ── 벤치마크 우선(P0-3): 집계 실패(benchmark_available=false)를 조용히 숨기지 않고
+// 반드시 경고로 드러낸다. "검증됨"이라는 표현은 어디에도 쓰지 않는다.
+export const BENCHMARK_UNAVAILABLE_LABEL = "벤치마크 미수집";
+
+export function benchmarkDeltaLabel(delta: number): string {
+  return `초과수익 ${signedPct(delta * 100)}p`;
+}
