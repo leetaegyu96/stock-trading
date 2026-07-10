@@ -77,6 +77,38 @@ def test_seed_writes_benchmark_row_per_character():
     assert checked_any
 
 
+def test_seed_writes_nonnull_benchmark_return_with_indices_and_guard_off():
+    """지수 로딩은 하락장 가드(bear_guard_characters) 스위치와 분리되어야 한다.
+    가드가 꺼져 있어도(Config() 기본값 = 빈 set) bundle 에 kr_index 가 있으면
+    summary.benchmark_return 이 계산되고, 시딩된 BenchmarkRow 에도 그 값이 그대로
+    반영되어야 한다(P0-3: 전략 vs 벤치마크가 항상 나와야 함)."""
+    bundle = _bundle_with_us_and_drifting_fx()  # KR+US 종목 모두 포함 → 세 캐릭터 모두 검증 가능
+    idx = bundle.kr["005930"].index
+    kr_index = pd.Series(np.linspace(2000, 2400, len(idx)), index=idx)  # 상승 지수
+    us_index = pd.Series(np.linspace(4000, 4800, len(idx)), index=idx)  # 상승 지수
+    bundle = DataBundle(kr=bundle.kr, us=bundle.us, fx=bundle.fx,
+                        kr_index=kr_index, us_index=us_index)
+
+    cfg = Config()
+    assert not cfg.rules.bear_guard_characters  # 가드 off 임을 확인
+
+    result = run_replay(cfg, bundle, date(2025, 9, 1), date(2026, 2, 1))
+    engine = db.make_engine("sqlite://")
+    db.create_all(engine)
+    sf = db.make_session_factory(engine)
+    seed_replay_result_into_db(result, bundle, sf, fx_rate=1300.0)
+
+    checked_any = False
+    for name in result.summary:
+        assert result.summary[name]["benchmark_return"] is not None
+        row = queries.benchmark(sf, name)
+        assert row is not None
+        assert row["benchmark_return"] is not None
+        assert row["benchmark_return"] == result.summary[name]["benchmark_return"]
+        checked_any = True
+    assert checked_any
+
+
 def test_seed_matches_exactly_with_drifting_fx_for_usd_holders():
     """fx 가 상수가 아닐 때(리플레이 마지막날 fx != 조회 fx_rate)도 USD 를 보유하는
     해외형/범용형까지 포함해 총자산 정합이 정확히 성립해야 한다(Fix 1 없이는 실패)."""
@@ -184,6 +216,9 @@ def test_cli_seeds_with_shared_fallback_fx_rate(monkeypatch):
     monkeypatch.setattr(datamod, "load_kr_daily", lambda *a, **k: bundle.kr)
     monkeypatch.setattr(datamod, "load_us_daily", lambda *a, **k: bundle.us)
     monkeypatch.setattr(datamod, "load_fx", lambda *a, **k: bundle.fx)
+    # 지수 로딩은 가드 스위치와 무관하게 항상 호출되므로(벤치마크 상시 계산),
+    # 네트워크 호출 없이 결정적으로 동작하도록 목(mock) 처리한다.
+    monkeypatch.setattr(datamod, "load_index", lambda *a, **k: None)
 
     captured = {}
     real_seed = mod.seed_replay_result_into_db
