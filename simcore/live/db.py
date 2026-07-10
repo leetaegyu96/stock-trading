@@ -58,6 +58,10 @@ class PendingOrder(Base):
     reason: Mapped[str] = mapped_column(String, default="SIGNAL_SELL")
     partial: Mapped[bool] = mapped_column(Boolean, default=False)
     created_date: Mapped[date] = mapped_column(Date)
+    # 결정 시점 확정 필드(Task1/2) — 재시작 후에도 보존해야 함. 비어있으면(레거시/미확정)
+    # rehydrate 시 None 으로 복원되고, engine._sell/_buy 의 방어적 fallback이 적용된다.
+    decision_type: Mapped[str] = mapped_column(String, default="")
+    trigger_rule: Mapped[str] = mapped_column(String, default="")
 
 
 class Cooldown(Base):

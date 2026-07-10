@@ -166,7 +166,8 @@ class Engine:
                 self._sell(st, d, ps.symbol, price, ps.reason, fx_rate,
                            quantity=qty, cooldown=True,
                            red_count=ps.red_count, red_score=ps.red_score, fired=ps.fired,
-                           decision_type=ps.decision_type, trigger_rule=ps.trigger_rule)
+                           decision_type=ps.decision_type or DecisionType.FULL_SELL,
+                           trigger_rule=ps.trigger_rule)
             st.pending_sells = carried
             # 2) 매수: 우선순위 = green_score → 등락률 → 거래량
             buys = sorted((b for b in st.pending_buys if b.market == market),
