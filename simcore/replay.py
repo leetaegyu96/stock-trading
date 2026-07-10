@@ -53,9 +53,10 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
                   for sym, df in data.items()}
               for m, data in md.items()}
     # 1-2) 시장 지수 20일선 → 시장별 하락장(가드) 판정
-    period = config.signals.market_trend_period
+    periods = {Market.KR: config.signals.market_trend_period_kr,
+               Market.US: config.signals.market_trend_period_us}
     index_by_market = {Market.KR: bundle.kr_index, Market.US: bundle.us_index}
-    sma_by_market = {m: (s.rolling(period).mean() if s is not None else None)
+    sma_by_market = {m: (s.rolling(periods[m]).mean() if s is not None else None)
                      for m, s in index_by_market.items()}
 
     def _bearish(market: Market, ts) -> bool:

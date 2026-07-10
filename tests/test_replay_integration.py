@@ -108,7 +108,8 @@ def test_bear_guard_suppresses_buys_in_index_downtrend():
     down_index = pd.Series(np.linspace(400, 100, 220), index=idx)
     bundle = DataBundle(kr={"AAA": df}, us={}, fx=pd.Series(1300.0, index=idx),
                         kr_index=down_index)
-    cfg_on = replace(Config(), rules=replace(Config().rules, bear_market_guard=True))
+    cfg_on = replace(Config(), rules=replace(Config().rules,
+                     bear_guard_characters=frozenset({"국내형", "해외형", "범용형"})))
     res_on = run_replay(cfg_on, bundle, date(2025, 9, 1), date(2026, 2, 1))
     res_off = run_replay(Config(), bundle, date(2025, 9, 1), date(2026, 2, 1))
     n_on = 0 if res_on.trades.empty else (res_on.trades.side == "BUY").sum()
@@ -128,7 +129,8 @@ def test_bear_guard_v2_universal_buys_when_only_one_market_bearish():
     bundle = DataBundle(kr={"AAA": mk()}, us={"BBB": mk()}, fx=pd.Series(1300.0, index=idx),
                         kr_index=pd.Series(np.linspace(400, 100, 220), index=idx),   # KR 하락
                         us_index=pd.Series(np.linspace(100, 400, 220), index=idx))   # US 상승
-    cfg_on = replace(Config(), rules=replace(Config().rules, bear_market_guard=True))
+    cfg_on = replace(Config(), rules=replace(Config().rules,
+                     bear_guard_characters=frozenset({"국내형", "해외형", "범용형"})))
     res = run_replay(cfg_on, bundle, date(2025, 9, 1), date(2026, 2, 1))
     buys = res.trades[(res.trades.side == "BUY") & (res.trades.character == "범용형")] if not res.trades.empty else res.trades
     assert len(buys) > 0        # 한쪽만 하락 → 범용형 매수 허용(v1이면 KR 매수 전면 차단이었음)

@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from simcore.config import SignalParams
 from simcore.data import _cached, load_fx
 
 def fake_fetch():
@@ -45,9 +46,9 @@ def test_lookback_pad_covers_ichimoku():
     assert LOOKBACK_PAD_DAYS >= 120     # 일목 워밍업 안전 여유
 
 
-def test_market_trend_period_default():
-    from simcore.config import SignalParams
-    assert SignalParams().market_trend_period == 20
+def test_market_trend_period_defaults():
+    assert SignalParams().market_trend_period_kr == 20
+    assert SignalParams().market_trend_period_us == 20
 
 
 def test_load_index_kr_falls_back_to_yfinance_on_pykrx_failure(tmp_path, monkeypatch):
