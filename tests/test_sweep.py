@@ -43,4 +43,25 @@ def test_pick_universal_respects_fixed_periods():
     assert (got["kr"], got["us"], got["mdd"]) == (60, 20, -0.18)
     # 고정 기간이 None 이면 그 축은 자유 탐색
     got_free = pick_universal(OFF, runs, kr_p=None, us_p=None)
-    assert (got_free["kr"], got_free["us"]) == (60, 20)   # -0.22 는 MDD 악화(-0.26 대비 개선이지만 -0.18 이 최소)
+    assert (got_free["kr"], got_free["us"]) == (60, 20)   # -0.22 도 개선이지만 -0.18(60,20)이 |MDD| 최소
+
+
+def test_pick_single_tiebreak_prefers_higher_twr():
+    # 두 후보의 |MDD| 동률(0.10) → TWR 큰 쪽(0.386, period 60) 선정
+    runs = [
+        {"kr": 60, "us": 20, "summary": {"국내형": s(0.386, -0.10)}},
+        {"kr": 120, "us": 20, "summary": {"국내형": s(0.384, -0.10)}},
+    ]
+    got = pick_single("국내형", OFF, runs, "kr")
+    assert got["period"] == 60 and got["twr"] == 0.386
+
+
+def test_pick_universal_mixed_fixed_and_free_axis():
+    # kr 고정 60, us 자유(None) → kr==60 인 행만, 그 중 개선+|MDD|최소
+    runs = [
+        {"kr": 60, "us": 20, "summary": {"범용형": s(-0.10, -0.20)}},
+        {"kr": 60, "us": 40, "summary": {"범용형": s(-0.09, -0.16)}},  # kr==60, |MDD| 최소 → 선정
+        {"kr": 120, "us": 40, "summary": {"범용형": s(-0.08, -0.14)}}, # kr≠60 → 제외
+    ]
+    got = pick_universal(OFF, runs, kr_p=60, us_p=None)
+    assert (got["kr"], got["us"], got["mdd"]) == (60, 40, -0.16)
