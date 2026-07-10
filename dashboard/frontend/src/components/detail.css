@@ -111,6 +111,12 @@
   margin: 0; font-size: 11.5px; color: var(--color-text-muted);
   flex-basis: 100%;
 }
+/* 미계산 축(뉴스·공시·수급·거시) 라벨(P0-2) — 0점으로 위장하지 않고 명시적으로 표시.
+ * 색 토큰은 --color-* 변수를 그대로 써서 light/dark 테마를 자동으로 따른다. */
+.signal-notice__axis {
+  margin: 0; font-size: 11.5px; color: var(--color-text-muted);
+  flex-basis: 100%;
+}
 
 /* ── 자산곡선 차트 ── */
 .equity-chart__head {

@@ -88,6 +88,13 @@ class TradeOut(BaseModel):
     trigger_rule: str = ""
 
 
+class MarketStatusOut(BaseModel):
+    """시장별 데이터 기준(run_state) — as-of 표시용(P0)."""
+    market: str
+    last_close_date: str | None = None
+    last_open_date: str | None = None
+
+
 class FlowOut(BaseModel):
     date: date
     amount_krw: float

@@ -6,6 +6,7 @@ import {
   NEWS_FLOW_DISCLAIMER,
   SIGNAL_AXIS_LABEL,
   TECH_AXIS_ONLY_BADGE,
+  UNCOMPUTED_AXIS_LABEL,
   decisionInfo,
   formatPrice,
   formatSignedPrice,
@@ -72,13 +73,18 @@ function DecisionChip({ decisionType }: { decisionType: string }) {
 }
 
 /** 신호 표시 상단 고지: 라벨을 "청/적신호"가 아닌 "기술적 매수/매도 신호"로 통일하고,
- * Phase A엔 기술적 축만 계산된다는 점 + 뉴스·공시·수급 미반영을 항상 함께 보여준다(P0-2). */
+ * Phase A엔 기술적 축만 계산된다는 점 + 뉴스·공시·수급 미반영을 항상 함께 보여준다(P0-2).
+ * 미계산 축은 0점으로 위장하지 않고 UNCOMPUTED_AXIS_LABEL("미수집/판단 불가")로
+ * 명시적으로 표시한다 — 조용히 생략하지 않는다. */
 function SignalNotice() {
   return (
     <div className="signal-notice">
       <span className="signal-notice__title">{SIGNAL_AXIS_LABEL}</span>
       <span className="signal-notice__badge">{TECH_AXIS_ONLY_BADGE}</span>
       <p className="signal-notice__disclaimer">{NEWS_FLOW_DISCLAIMER}</p>
+      <p className="signal-notice__axis">
+        뉴스 · 공시 · 수급 · 거시: {UNCOMPUTED_AXIS_LABEL}
+      </p>
     </div>
   );
 }

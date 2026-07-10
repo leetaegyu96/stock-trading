@@ -29,6 +29,7 @@ from dashboard.backend.schemas import (
     DashboardOut,
     EquityPoint,
     FlowOut,
+    MarketStatusOut,
     Metrics,
     PositionOut,
     TradeOut,
@@ -116,6 +117,12 @@ def health() -> dict[str, str]:
 @app.get("/api/characters", response_model=list[CardSummary])
 def list_character_cards(sf=Depends(get_sf)) -> list[CardSummary]:
     return broadcaster.snapshot(sf)
+
+
+@app.get("/api/status", response_model=list[MarketStatusOut])
+def market_status(sf=Depends(get_sf)) -> list[MarketStatusOut]:
+    """시장별 데이터 기준(run_state) — as-of 표시용(P0)."""
+    return [MarketStatusOut(**row) for row in queries.market_status(sf)]
 
 
 @app.get("/api/dashboard", response_model=DashboardOut)

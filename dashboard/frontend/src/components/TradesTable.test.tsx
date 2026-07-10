@@ -47,6 +47,11 @@ describe("TradesTable signal labelling (P0-2)", () => {
     const html = renderToStaticMarkup(<TradesTable trades={[makeTrade({})]} />);
     expect(html).toContain("기술적 축만 계산됨");
   });
+
+  it("renders the uncomputed-axis label for news/disclosure/flow/macro (P0-2)", () => {
+    const html = renderToStaticMarkup(<TradesTable trades={[makeTrade({})]} />);
+    expect(html).toContain("미수집/판단 불가");
+  });
 });
 
 describe("TradesTable decision-based display (P0-1)", () => {

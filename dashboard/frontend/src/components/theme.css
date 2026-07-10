@@ -172,6 +172,8 @@ body {
 }
 .mode-bar__conn--on::before { background: #12b76a; box-shadow: 0 0 0 3px rgba(18, 183, 106, 0.18); }
 .mode-bar__asof { font-variant-numeric: tabular-nums; }
+/* 시장별 데이터 기준(P0) — 전역 as-of와 별개로 시장별 실제 데이터 최신성을 보여준다. */
+.mode-bar__market-status { font-variant-numeric: tabular-nums; color: var(--color-text-muted); }
 
 /* ── 앱 셸 ── */
 .app-shell {

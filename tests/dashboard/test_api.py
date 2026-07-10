@@ -435,6 +435,29 @@ def test_dashboard_endpoint_shape(sf):
 
 
 @needs_db
+def test_market_status_endpoint_returns_per_market_dates(sf):
+    with sf() as s:
+        s.add(db.RunState(market="KR", last_open_date=date(2026, 7, 10),
+                           last_close_date=date(2026, 7, 10), last_fx_rate=1.0))
+        s.add(db.RunState(market="US", last_open_date=date(2026, 7, 9),
+                           last_close_date=date(2026, 7, 9), last_fx_rate=1300.0))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r = TestClient(app).get("/api/status")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r.status_code == 200
+    rows = r.json()
+    by_market = {row["market"]: row for row in rows}
+    assert set(by_market) == {"KR", "US"}
+    assert by_market["KR"]["last_close_date"] == "2026-07-10"
+    assert by_market["US"]["last_close_date"] == "2026-07-09"
+
+
+@needs_db
 def test_character_flows_returns_rows(sf):
     with sf() as s:
         _seed_full(s)

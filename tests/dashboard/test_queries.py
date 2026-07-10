@@ -158,6 +158,33 @@ def test_equity_series_roundtrip(sf):
 
 
 @needs_db
+def test_market_status_roundtrip(sf):
+    with sf() as s:
+        s.add(db.RunState(market="KR", last_open_date=date(2026, 7, 10),
+                           last_close_date=date(2026, 7, 10), last_fx_rate=1.0))
+        s.add(db.RunState(market="US", last_open_date=date(2026, 7, 9),
+                           last_close_date=date(2026, 7, 9), last_fx_rate=1300.0))
+        s.commit()
+
+    rows = q.market_status(sf)
+    by_market = {r["market"]: r for r in rows}
+    assert set(by_market) == {"KR", "US"}
+    assert by_market["KR"]["last_close_date"] == "2026-07-10"
+    assert by_market["US"]["last_close_date"] == "2026-07-09"
+    assert by_market["KR"]["last_open_date"] == "2026-07-10"
+
+
+@needs_db
+def test_market_status_handles_null_dates(sf):
+    with sf() as s:
+        s.add(db.RunState(market="KR", last_open_date=None, last_close_date=None, last_fx_rate=0.0))
+        s.commit()
+
+    rows = q.market_status(sf)
+    assert rows == [{"market": "KR", "last_close_date": None, "last_open_date": None}]
+
+
+@needs_db
 def test_cash_roundtrip(sf):
     with sf() as s:
         _seed_character(s, "국내형", "KRW")

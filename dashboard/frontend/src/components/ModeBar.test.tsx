@@ -25,3 +25,40 @@ describe("ModeBar (audit §4/§5)", () => {
     expect(html).toContain("데이터 기준 시각 없음");
   });
 });
+
+describe("ModeBar per-market data as-of (P0)", () => {
+  const twoMarkets = [
+    { market: "KR", last_close_date: "2026-07-10", last_open_date: "2026-07-10" },
+    { market: "US", last_close_date: "2026-07-09", last_open_date: "2026-07-09" },
+  ];
+
+  it("renders both markets' as-of dates", () => {
+    const html = renderToStaticMarkup(
+      <ModeBar connected={true} asOf={new Date("2026-07-10T05:00:00Z")} markets={["KR", "US"]} initialMarketStatuses={twoMarkets} />
+    );
+    expect(html).toContain("KR 데이터기준 2026-07-10");
+    expect(html).toContain("US 데이터기준 2026-07-09");
+  });
+
+  it("renders — for a market with no close date yet", () => {
+    const html = renderToStaticMarkup(
+      <ModeBar connected={true} asOf={null} markets={["KR"]} initialMarketStatuses={[{ market: "KR", last_close_date: null, last_open_date: null }]} />
+    );
+    expect(html).toContain("KR 데이터기준 —");
+  });
+
+  it("keeps connection state independent of per-market as-of rendering", () => {
+    const connectedHtml = renderToStaticMarkup(
+      <ModeBar connected={true} asOf={null} markets={["KR", "US"]} initialMarketStatuses={twoMarkets} />
+    );
+    const disconnectedHtml = renderToStaticMarkup(
+      <ModeBar connected={false} asOf={null} markets={["KR", "US"]} initialMarketStatuses={twoMarkets} />
+    );
+    for (const html of [connectedHtml, disconnectedHtml]) {
+      expect(html).toContain("KR 데이터기준 2026-07-10");
+      expect(html).toContain("US 데이터기준 2026-07-09");
+    }
+    expect(connectedHtml).toContain("실시간 연결");
+    expect(disconnectedHtml).toContain("연결 끊김");
+  });
+});

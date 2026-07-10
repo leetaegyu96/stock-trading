@@ -4,6 +4,7 @@ import type {
   CardSummary,
   Dashboard,
   EquityPoint,
+  MarketStatus,
   Metrics,
   PositionOut,
   TradeOut,
@@ -86,6 +87,11 @@ export function postWithdraw(
 
 export function getDashboard(): Promise<Dashboard> {
   return request<Dashboard>("/api/dashboard");
+}
+
+/** 시장별 데이터 기준(run_state) — as-of 표시용(P0). */
+export function getMarketStatus(): Promise<MarketStatus[]> {
+  return request<MarketStatus[]>("/api/status");
 }
 
 export { ApiError };

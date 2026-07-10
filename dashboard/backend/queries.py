@@ -165,6 +165,16 @@ def benchmark(sf, name: str) -> dict | None:
         }
 
 
+def market_status(sf) -> list[dict]:
+    """시장별 데이터 기준(run_state) — as-of 표시용."""
+    with sf() as s:
+        rows = s.execute(select(db.RunState)).scalars().all()
+        return [{"market": r.market,
+                 "last_close_date": r.last_close_date.isoformat() if r.last_close_date else None,
+                 "last_open_date": r.last_open_date.isoformat() if r.last_open_date else None}
+                for r in rows]
+
+
 def cash(sf, name: str) -> dict[str, float]:
     """캐릭터의 통화별 현금 잔고."""
     with sf() as s:

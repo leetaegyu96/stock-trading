@@ -138,3 +138,10 @@ export interface Dashboard {
   characters: CharPortfolio[];
   recent_trades: RecentTrade[];
 }
+
+/** 시장별 데이터 기준(run_state 미러) — as-of 표시용(P0). */
+export interface MarketStatus {
+  market: string;
+  last_close_date: string | null;
+  last_open_date: string | null;
+}
