@@ -194,10 +194,13 @@ def _cli() -> None:
     kr_syms = universe.kospi200(cache, start)[: args.kr_top]
     us_syms = universe.sp500(cache)[: args.us_top]
     print(f"[seed_from_replay] KR {len(kr_syms)}종목, US {len(us_syms)}종목 로딩 중...")
+    guard_on = bool(cfg.rules.bear_guard_characters)
     bundle = DataBundle(
         kr=datamod.load_kr_daily(kr_syms, start, end, cache),
         us=datamod.load_us_daily(us_syms, start, end, cache),
         fx=datamod.load_fx(start, end, cache),
+        kr_index=datamod.load_index("KR", start, end, cache) if (guard_on and kr_syms) else None,
+        us_index=datamod.load_index("US", start, end, cache) if (guard_on and us_syms) else None,
     )
     print(f"[seed_from_replay] 리플레이 실행 {start} ~ {end} ...")
     result = run_replay(cfg, bundle, start, end)

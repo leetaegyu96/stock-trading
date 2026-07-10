@@ -40,8 +40,8 @@ class SignalParams:
     support_lookback: int = 20          # R18 지지선(최근 저점)
     gap_down_pct: float = -0.02         # R19 갭 하락 임계
     big_body_pct: float = 0.03          # R23 장대 음봉 몸통 비율
-    market_trend_period_kr: int = 20    # 하락장 가드: KR 지수(코스피200) SMA 기간
-    market_trend_period_us: int = 20    # 하락장 가드: US 지수(S&P500) SMA 기간
+    market_trend_period_kr: int = 20    # 하락장 가드(가드 opt-in 시에만 사용): KR 지수(코스피200) SMA 기간
+    market_trend_period_us: int = 20    # 하락장 가드(가드 opt-in 시에만 사용): US 지수(S&P500) SMA 기간
 
 
 @dataclass(frozen=True)
@@ -97,7 +97,9 @@ class TradeRules:
     trailing_top: float = 0.40          # 이 이상이면 최고가 대비 trail_pct 트레일
     max_positions: int = 5
     cooldown_days: int = 2
-    bear_guard_characters: frozenset = frozenset()  # 하락장 가드 적용 캐릭터(빈 집합=전체 off)
+    # 하락장 가드 적용 캐릭터(빈 집합=전체 off). 스윕+12개월 검증 결과 기본 off 확정:
+    # docs/experiments/bear_guard_tuning_sweep_2026-01-09_2026-07-09.md
+    bear_guard_characters: frozenset = frozenset()
 
 
 @dataclass(frozen=True)
