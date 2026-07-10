@@ -1,6 +1,7 @@
 from datetime import date
+import pytest
 from tests.live.conftest import needs_db
-from simcore.live.db import CashBalance, TradeRow
+from simcore.live.db import CashBalance, TradeRow, SignalStatusRow
 from simcore.config import Config
 from simcore.engine import Engine, PendingBuy, PendingSell
 from simcore.models import Currency, Market, TradeReason
@@ -219,3 +220,56 @@ def test_append_new_trades_survives_restart(session):
         rows = s.query(TradeRow).filter_by(character="국내형").all()
         assert len(rows) == 2
         assert {r.symbol for r in rows} == {"005930", "000660"}
+
+
+@needs_db
+def test_replace_signal_status_replaces_all_and_keeps_only_latest(session):
+    """전량 교체: 두 번째 replace 호출 후에는 첫 배치의 행이 남아있지 않고
+    두 번째 배치만 조회되어야 한다(최신 마감만 유지)."""
+    import os
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    batch1 = [
+        {"date": date(2026, 7, 6), "character": "국내형", "symbol": "005930",
+         "kind": "후보", "green_score": 20, "red_score": 0, "buy_gate": True,
+         "status": "예약", "block_reason": "", "stop_px": None, "trail_px": None,
+         "close": 70000.0},
+    ]
+    repo.replace_signal_status(batch1)
+    with sf() as s:
+        assert s.query(SignalStatusRow).count() == 1
+
+    batch2 = [
+        {"date": date(2026, 7, 7), "character": "국내형", "symbol": "000660",
+         "kind": "보유", "green_score": 0, "red_score": 5, "buy_gate": False,
+         "status": "", "block_reason": "", "stop_px": 65000.0, "trail_px": None,
+         "close": 68000.0},
+        {"date": date(2026, 7, 7), "character": "해외형", "symbol": "AAPL",
+         "kind": "후보", "green_score": 15, "red_score": 2, "buy_gate": False,
+         "status": "차단", "block_reason": "점수부족", "stop_px": None,
+         "trail_px": None, "close": 190.5},
+    ]
+    repo.replace_signal_status(batch2)
+    with sf() as s:
+        assert s.query(SignalStatusRow).count() == 2
+
+    rows = repo.signal_status()
+    assert len(rows) == 2
+    by_symbol = {r["symbol"]: r for r in rows}
+    assert "005930" not in by_symbol  # 첫 배치는 제거됨
+
+    held = by_symbol["000660"]
+    assert held["date"] == date(2026, 7, 7)
+    assert held["character"] == "국내형"
+    assert held["kind"] == "보유"
+    assert held["red_score"] == 5
+    assert held["buy_gate"] is False
+    assert held["stop_px"] == pytest.approx(65000.0)
+    assert held["trail_px"] is None  # nullable 필드 온전히 보존
+
+    cand = by_symbol["AAPL"]
+    assert cand["kind"] == "후보"
+    assert cand["status"] == "차단"
+    assert cand["block_reason"] == "점수부족"
+    assert cand["stop_px"] is None
+    assert cand["close"] == pytest.approx(190.5)

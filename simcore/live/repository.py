@@ -226,3 +226,28 @@ class Repository:
         with self._session(session) as s:
             s.add(db.CapitalFlowRow(date=flow.date, character=flow.character,
                 amount_krw=flow.amount_krw, fx_rate=flow.fx_rate))
+
+    def replace_signal_status(self, rows: list[dict], session=None) -> None:
+        """전량 교체 — 최신 마감분만 유지한다(감사 Phase B, 스펙 §5)."""
+        with self._session(session) as s:
+            s.execute(delete(db.SignalStatusRow))
+            for r in rows:
+                s.add(db.SignalStatusRow(
+                    date=r["date"], character=r["character"], symbol=r["symbol"],
+                    kind=r["kind"], green_score=r.get("green_score", 0),
+                    red_score=r.get("red_score", 0), buy_gate=r.get("buy_gate", False),
+                    status=r.get("status", ""), block_reason=r.get("block_reason", ""),
+                    stop_px=r.get("stop_px"), trail_px=r.get("trail_px"),
+                    close=r.get("close")))
+
+    def signal_status(self) -> list[dict]:
+        """전체 후보·보유 상태 행(호출자가 character/kind 등을 필터한다)."""
+        with self.sf() as s:
+            rows = s.execute(select(db.SignalStatusRow)
+                             .order_by(db.SignalStatusRow.id)).scalars().all()
+            return [{
+                "date": r.date, "character": r.character, "symbol": r.symbol,
+                "kind": r.kind, "green_score": r.green_score, "red_score": r.red_score,
+                "buy_gate": r.buy_gate, "status": r.status, "block_reason": r.block_reason,
+                "stop_px": r.stop_px, "trail_px": r.trail_px, "close": r.close,
+            } for r in rows]

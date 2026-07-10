@@ -162,6 +162,25 @@ class DailyBarRow(Base):
     volume: Mapped[float] = mapped_column(Float)
 
 
+class SignalStatusRow(Base):
+    """마감 시점 후보·보유 상태 스냅샷(감사 Phase B). 전량 교체 방식으로 최신 마감분만
+    유지한다 — 요청 경로는 이 테이블만 읽고 evaluate_frame 등 무거운 계산을 하지 않는다."""
+    __tablename__ = "signal_status"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[date] = mapped_column(Date)
+    character: Mapped[str] = mapped_column(String)
+    symbol: Mapped[str] = mapped_column(String)
+    kind: Mapped[str] = mapped_column(String)          # "후보" | "보유"
+    green_score: Mapped[int] = mapped_column(Integer, default=0)
+    red_score: Mapped[int] = mapped_column(Integer, default=0)
+    buy_gate: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String, default="")
+    block_reason: Mapped[str] = mapped_column(String, default="")
+    stop_px: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trail_px: Mapped[float | None] = mapped_column(Float, nullable=True)
+    close: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
 class UniverseRow(Base):
     __tablename__ = "universe"
     market: Mapped[str] = mapped_column(String, primary_key=True)

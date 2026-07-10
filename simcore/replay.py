@@ -40,6 +40,7 @@ class ReplayResult:
     positions_by_char: dict = field(default_factory=dict)
     cash_by_char: dict = field(default_factory=dict)
     last_close: dict = field(default_factory=dict)
+    signal_status: list = field(default_factory=list)
 
 
 def _market_data(bundle: DataBundle) -> dict[Market, dict[str, pd.DataFrame]]:
@@ -100,6 +101,7 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
     engine.start(all_dates[0].date(), fx0)
 
     last_close: dict[str, float] = {}
+    last_snaps_by_market: dict[Market, dict[str, SymbolSnapshot]] = {}
     equity_rows, green_counts = [], []
     for ts in all_dates:
         d = ts.date()
@@ -140,6 +142,7 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
                     green_score=gs, red_score=rs, buy_gate=gate)
                 last_close[sym] = close
                 green_counts.append(gs)             # green_score 분포 기록
+            last_snaps_by_market[market] = snaps    # 마지막 거래일 값으로 매 스텝 덮어씀
             engine.evaluate_close(d, market, snaps, bearish_by_market=bearish)
         eq = engine.snapshot(last_close, fx)
         equity_rows.append({"date": ts, **eq})
@@ -189,6 +192,35 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
             for p in st.portfolio.positions.values()
         ]
         cash_by_char[name] = {cur.value: amt for cur, amt in st.portfolio.cash.items()}
+
+    # ---- 마지막 거래일의 후보/보유 상태 (감사 Phase B — 대시보드 의사결정판) ----
+    last_day = all_dates[-1].date()
+    signal_status: list[dict] = []
+    for name, st in engine.states.items():
+        for c in engine.last_candidates.get(name, []):
+            signal_status.append({
+                "date": last_day, "character": name, "symbol": c.symbol,
+                "kind": "후보", "green_score": c.green_score, "red_score": c.red_score,
+                "buy_gate": c.buy_gate, "status": c.status,
+                "block_reason": c.block_reason, "stop_px": None, "trail_px": None,
+                "close": last_close.get(c.symbol),
+            })
+        for sym, pos in st.portfolio.positions.items():
+            snap = last_snaps_by_market.get(pos.market, {}).get(sym)
+            red_score = snap.red_score if snap is not None else 0
+            stop_px = pos.avg_price * (1 + pos.locked_stop_pct)
+            peak_gain = pos.peak_price / pos.avg_price - 1.0
+            trail_px = (pos.peak_price * (1 - config.rules.trail_pct)
+                        if peak_gain >= config.rules.trailing_top else None)
+            signal_status.append({
+                "date": last_day, "character": name, "symbol": sym,
+                "kind": "보유", "green_score": 0, "red_score": red_score,
+                "buy_gate": False, "status": "", "block_reason": "",
+                "stop_px": stop_px, "trail_px": trail_px,
+                "close": last_close.get(sym),
+            })
+
     return ReplayResult(trades, equity, flows_by_char, green_hist, summary,
                         positions_by_char=positions_by_char,
-                        cash_by_char=cash_by_char, last_close=dict(last_close))
+                        cash_by_char=cash_by_char, last_close=dict(last_close),
+                        signal_status=signal_status)
