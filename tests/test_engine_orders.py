@@ -215,12 +215,13 @@ def test_bear_guard_v2_multimarket_both_bearish_blocks():
 
 
 def test_bear_guard_only_listed_characters_blocked():
-    # 집합에 든 캐릭터만 차단 — 국내형·범용형은 집합 밖이라 양시장 하락에도 매수 허용
+    # 집합에 든 캐릭터만 차단. 국내형(KR)만 가드 대상 → KR 마감에서 실제 차단 분기 검증.
+    # 범용형(KR+US)은 집합 밖이라 양시장 하락에도 매수 허용.
     from datetime import date
     cfg = replace(Config(), rules=replace(Config().rules,
-                  bear_guard_characters=frozenset({"해외형"})))
+                  bear_guard_characters=frozenset({"국내형"})))
     eng = Engine(cfg); eng.start(date(2026, 1, 2), 1300.0)
     eng.evaluate_close(date(2026, 1, 2), Market.KR, {"AAA": _buy_snap()},
                        bearish_by_market={Market.KR: True, Market.US: True})
-    assert any(b.symbol == "AAA" for b in eng.states["국내형"].pending_buys)
-    assert any(b.symbol == "AAA" for b in eng.states["범용형"].pending_buys)
+    assert not eng.states["국내형"].pending_buys                              # 대상+전시장하락 → 차단
+    assert any(b.symbol == "AAA" for b in eng.states["범용형"].pending_buys)  # 집합 밖 → 허용
