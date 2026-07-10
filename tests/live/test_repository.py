@@ -88,6 +88,28 @@ def test_persist_rehydrate_pending_orders_roundtrip(session):
 
 
 @needs_db
+def test_append_new_trades_persists_decision_type_and_trigger_rule(session):
+    """Task 6: Trade.decision_type/trigger_rule(Task 1·2)이 TradeRow에 저장·복원되어야
+    한다 — 대시보드(Task 7/8)가 이 두 컬럼을 소비한다."""
+    import os
+    from simcore.models import DecisionType
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    eng = Engine(Config())
+    eng.start(date(2026, 7, 6), 1300.0)
+    st = eng.states["국내형"]
+    st.portfolio.buy(date(2026, 7, 6), "005930", Market.KR, 10, 70000.0,
+                      TradeReason.SIGNAL_BUY, decision_type=DecisionType.FORCED_SELL,
+                      trigger_rule="R7")
+    repo.append_new_trades(eng)
+
+    with sf() as s:
+        row = s.query(TradeRow).filter_by(character="국내형", symbol="005930").one()
+        assert row.decision_type == "FORCED_SELL"
+        assert row.trigger_rule == "R7"
+
+
+@needs_db
 def test_run_state_idempotency_and_flow_queue(session):
     import os
     from simcore.live.repository import Repository

@@ -39,6 +39,18 @@ def test_buys_then_stops_out_deterministically():
     assert {"STOP_LOSS", "TRAILING_STOP"} & set(trades.reason)
     pd.testing.assert_frame_equal(r1.trades, r2.trades)  # 결정론
 
+def test_trades_dataframe_carries_decision_type_and_trigger_rule():
+    """trades DataFrame에 decision_type/trigger_rule 컬럼이 있어야 하고,
+    강제청산(STOP_LOSS/TRAILING_STOP) 행은 decision_type=="FORCED_SELL" 이며
+    trigger_rule 이 R7/R10 이어야 한다(engine.check_stops 배선, Task 1·2)."""
+    bundle, idx = make_bundle()
+    r = run_replay(CFG, bundle, idx[70].date(), idx[-1].date())
+    assert {"decision_type", "trigger_rule"} <= set(r.trades.columns)
+    forced = r.trades[r.trades.reason.isin(["STOP_LOSS", "TRAILING_STOP"])]
+    assert not forced.empty
+    assert (forced["decision_type"] == "FORCED_SELL").all()
+    assert set(forced["trigger_rule"]) <= {"R7", "R10"}
+
 def test_equity_curve_continuous_and_invariant():
     bundle, idx = make_bundle()
     r = run_replay(CFG, bundle, idx[70].date(), idx[-1].date())

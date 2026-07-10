@@ -115,6 +115,25 @@ def test_seed_preserves_real_today_return_for_usd_holders():
     assert checked_usd_holder  # 이 케이스가 실제로 USD 보유 캐릭터를 검증했는지 확인
 
 
+def test_seed_persists_decision_type_and_trigger_rule():
+    """Task 6: 리플레이 trades DataFrame의 decision_type/trigger_rule(Task 1·2)이
+    시딩된 TradeRow에 그대로 보존되어야 한다 — 대시보드(Task 7/8)가 이 컬럼을 읽는다."""
+    bundle = _bundle()
+    result = run_replay(Config(), bundle, date(2025, 9, 1), date(2026, 2, 1))
+    engine = db.make_engine("sqlite://")
+    db.create_all(engine)
+    sf = db.make_session_factory(engine)
+    seed_replay_result_into_db(result, bundle, sf, fx_rate=1300.0)
+
+    assert not result.trades.empty
+    with sf() as s:
+        rows = s.query(db.TradeRow).order_by(db.TradeRow.id).all()
+        assert len(rows) == len(result.trades)
+        for row, (_, exp) in zip(rows, result.trades.iterrows()):
+            assert row.decision_type == exp["decision_type"]
+            assert row.trigger_rule == exp["trigger_rule"]
+
+
 def test_seed_requires_force_flag_when_run_as_cli(monkeypatch):
     """--force 없이 CLI 실행하면 즉시 종료(가드)한다."""
     import runpy

@@ -153,6 +153,7 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
         "green_count": t.green_count, "red_count": t.red_count,
         "green_score": t.green_score, "red_score": t.red_score,
         "fired": ";".join(t.fired), "realized_pnl": t.realized_pnl,
+        "decision_type": t.decision_type.value, "trigger_rule": t.trigger_rule,
     } for st in engine.states.values() for t in st.portfolio.trades])
 
     indexes = {Market.KR: bundle.kr_index, Market.US: bundle.us_index}

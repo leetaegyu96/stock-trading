@@ -149,7 +149,8 @@ class Repository:
                         reason=t.reason.value, green_count=t.green_count,
                         red_count=t.red_count, green_score=t.green_score,
                         red_score=t.red_score, fired=list(t.fired),
-                        realized_pnl=t.realized_pnl))
+                        realized_pnl=t.realized_pnl,
+                        decision_type=t.decision_type.value, trigger_rule=t.trigger_rule))
                 self._trade_cursor[name] = len(st.portfolio.trades)
 
     def record_equity(self, ts, snap: dict, session=None) -> None:

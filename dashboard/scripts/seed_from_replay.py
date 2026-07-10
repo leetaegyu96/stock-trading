@@ -147,7 +147,8 @@ def seed_replay_result_into_db(result: ReplayResult, bundle: DataBundle, sf,
                     fee=float(row.fee), tax=float(row.tax), reason=row.reason,
                     green_count=int(row.green_count), red_count=int(row.red_count),
                     green_score=int(row.green_score), red_score=int(row.red_score),
-                    fired=_fired_list(row.fired), realized_pnl=float(row.realized_pnl)))
+                    fired=_fired_list(row.fired), realized_pnl=float(row.realized_pnl),
+                    decision_type=row.decision_type, trigger_rule=row.trigger_rule))
 
         # ---- 7. 일봉 (최종 스냅샷 시점까지, 심볼당 최근 ≤5봉) ----
         # last_close 정합을 위해 마지막 봉이 replay 가 실제로 처리한 마지막 날짜(last_date)

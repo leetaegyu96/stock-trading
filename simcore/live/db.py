@@ -104,6 +104,8 @@ class TradeRow(Base):
     red_score: Mapped[int] = mapped_column(Integer, default=0)
     fired: Mapped[list[str]] = mapped_column(_StringArray, default=list)
     realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
+    decision_type: Mapped[str] = mapped_column(String, default="BUY")
+    trigger_rule: Mapped[str] = mapped_column(String, default="")
 
 
 class CapitalFlowRow(Base):
