@@ -88,6 +88,10 @@ class Orchestrator:
         if not self.cfg.rules.bear_guard_characters or self.index_provider is None:
             return None
         indices = {}
+        # 주의: 라이브는 KR 마감 이벤트 시점에 US 지수도 조회 → US는 당일 미마감이라 asof(d)가
+        # 전일 US 세션을 반환할 수 있음. 리플레이는 같은 시뮬 날짜로 양시장을 동시 판정하므로,
+        # 범용형(양시장 동시 하락 필요)을 라이브에서 켤 경우 경계일에 라이브↔리플레이 판정이
+        # 어긋날 수 있다(단일시장형은 무관). 범용형 라이브 활성화 전 점검 필요.
         for mk in (Market.KR, Market.US):
             try:
                 indices[mk] = self.index_provider(mk.value, d)

@@ -30,7 +30,6 @@ def _fx_provider(repo: Repository):
     실패 시 마지막 알려진 환율(run_state.last_fx_rate) 폴백."""
     def fx(d: date) -> float:
         try:
-            from simcore import data as datamod
             s = datamod.load_fx(d, d, cache_dir=Path("data/cache"))
             return float(s.iloc[-1])
         except Exception:
