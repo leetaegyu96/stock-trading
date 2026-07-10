@@ -368,6 +368,35 @@ def test_forced_sell_trade_renders_decision_based_summary(sf):
 
 
 @needs_db
+def test_trades_with_unknown_decision_type_does_not_500(sf):
+    """감사 Minor: DB에 손상/미확정 decision_type(빈 문자열 등 DecisionType이 아닌
+    값)이 들어 있어도 /trades 는 500이 아니라 200을 반환하고, 임의의 결정을
+    지어내지 않고 레거시(점수 기반) 요약으로 폴백해야 한다."""
+    with sf() as s:
+        s.merge(db.CharacterRow(name="국내형", base_currency="KRW"))
+        s.add(db.TradeRow(
+            ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+            character="국내형", symbol="005930", market=Market.KR.value, side="SELL",
+            quantity=1, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_SELL",
+            green_count=0, red_count=2, fired=["R1", "R4"], realized_pnl=-500.0,
+            green_score=0, red_score=9,
+            decision_type="BOGUS_UNKNOWN", trigger_rule="",
+        ))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r = TestClient(app).get("/api/characters/국내형/trades")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r.status_code == 200
+    [t] = r.json()
+    assert t["decision_type"] == "BOGUS_UNKNOWN"  # 원본 값은 그대로 노출(폴백은 요약 로직만)
+    assert t["signal_summary"] != ""               # 레거시 경로로 요약 생성(크래시 없음)
+
+
+@needs_db
 def test_dashboard_endpoint_shape(sf):
     with sf() as s:
         # movers: KR·US 각 2봉 → 등락률 계산 대상

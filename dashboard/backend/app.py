@@ -93,6 +93,18 @@ def _symbols_by_market(positions: list[dict]) -> dict[str, list[str]]:
     return result
 
 
+def _safe_decision_type(raw) -> DecisionType | None:
+    """DB의 decision_type이 미확정/레거시/손상값이어도 500을 내지 않고 None으로
+    폴백한다 — summarize()는 decision_type=None이면 레거시(score-only) 경로로 요약한다.
+    임의의 결정을 지어내지 않는다."""
+    if not raw:
+        return None
+    try:
+        return DecisionType(raw)
+    except (ValueError, TypeError):
+        return None
+
+
 def _merge_live_price(pos: dict, live: dict | None) -> dict:
     """포지션에 현재가·평가액(eval_value)·손익%(pnl_pct)·stale 을 병합한다.
     live 정보가 없거나 폴백 가격조차 없으면 avg_price 로 더 폴백하고 stale=True."""
@@ -184,7 +196,8 @@ def character_trades(name: str, limit: int = 200, sf=Depends(get_sf)) -> list[Tr
             **t,
             signal_summary=sd.summarize(
                 t["fired"], score, t["side"], _SCORES,
-                decision_type=DecisionType(t["decision_type"]), trigger_rule=t["trigger_rule"],
+                decision_type=_safe_decision_type(t["decision_type"]),
+                trigger_rule=t["trigger_rule"],
             ),
             signal_detail=sd.detail(t["fired"], _SCORES),
         ))
