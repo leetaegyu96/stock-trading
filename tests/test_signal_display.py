@@ -36,3 +36,37 @@ def test_detail_has_name_category_stars():
 
 def test_names_cover_all_scored_codes_exactly():
     assert set(sd.SIGNAL_NAMES) == set(SignalScores().points)
+
+
+def test_summarize_uses_decision_not_score():
+    from simcore.signal_display import summarize
+    from simcore.models import DecisionType
+    from simcore.config import SignalScores
+    s = SignalScores()
+    # R5+R23 강제, score 8 — 재계산이면 "주의", 결정기반이면 "강제 전량매도"
+    out = summarize(("R5","R23"), 8, "SELL", s,
+                    decision_type=DecisionType.FORCED_SELL, trigger_rule="R5+R23")
+    assert "강제 전량매도" in out and "주의" not in out
+
+
+def test_summarize_forced_causes():
+    from simcore.signal_display import summarize
+    from simcore.models import DecisionType
+    from simcore.config import SignalScores
+    s = SignalScores()
+    m = {"R18":"지지선 붕괴", "R7":"잠금 손절선 도달", "R10":"최고가 대비 트레일링선 도달"}
+    for trig, phrase in m.items():
+        out = summarize((), 0, "SELL", s, decision_type=DecisionType.FORCED_SELL, trigger_rule=trig)
+        assert phrase in out and "강제 전량매도" in out
+
+
+def test_summarize_withdrawal_or_delisting_full_sell_is_neutral():
+    """FULL_SELL with empty trigger_rule AND no scored fired codes (e.g. USER_WITHDRAWAL /
+    DELISTED default decision) must NOT fabricate a signal phrase — should be neutral
+    so the display layer falls back to the real `reason`."""
+    from simcore.signal_display import summarize
+    from simcore.models import DecisionType
+    from simcore.config import SignalScores
+    s = SignalScores()
+    out = summarize((), 0, "SELL", s, decision_type=DecisionType.FULL_SELL, trigger_rule="")
+    assert out == "신호 없음"
