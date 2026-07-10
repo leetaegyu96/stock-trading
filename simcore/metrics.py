@@ -88,9 +88,8 @@ def risk_metrics(
     if mdd != 0:
         calmar = float(cagr / abs(mdd))
     else:
-        # 낙폭이 전혀 없었던 구간(무위험 상승 등): 0 으로 깎지 않고 cagr 로 대체한다.
-        # (데이터 부족 등 퇴화 케이스는 cagr 도 0 이므로 이 분기에서도 자연히 0 이 된다.)
-        calmar = cagr
+        # mdd==0 (낙폭 없음) → calmar(위험조정 지표) 측정 불가, 0 반환 (cagr 로 대체하지 않음)
+        calmar = 0.0
 
     profit_factor = 0.0
     avg_win = 0.0
@@ -100,6 +99,9 @@ def risk_metrics(
     max_consecutive_losses = 0
 
     if trades is not None and len(trades) > 0 and "realized_pnl" in trades.columns:
+        # "side" 컬럼이 있으면 SELL(실현손익 발생) 행만 명시적으로 필터링한다.
+        # 호출자(report.py/queries)는 side+realized_pnl 을 갖춘 DataFrame 을 넘기는 것이 계약이며,
+        # side 컬럼이 없는 경우에만 realized_pnl 전체를 그대로 사용한다.
         if "side" in trades.columns:
             pnl = trades.loc[trades["side"] == "SELL", "realized_pnl"].astype("float64")
         else:
