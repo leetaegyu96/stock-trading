@@ -5,7 +5,8 @@ from datetime import date as Date
 from simcore.config import Config
 from simcore import costs as costmod
 from simcore.models import (
-    CapitalFlow, Currency, Market, MARKET_CURRENCY, Position, Side, Trade, TradeReason,
+    CapitalFlow, Currency, DecisionType, Market, MARKET_CURRENCY, Position, Side, Trade,
+    TradeReason,
 )
 
 _EPS = 1e-6
@@ -57,7 +58,8 @@ class Portfolio:
     # ---- 매매 ----
     def buy(self, d: Date, symbol: str, market: Market, quantity: int, price: float,
             reason: TradeReason, green_count: int = 0, green_score: int = 0,
-            fired: tuple[str, ...] = ()) -> Trade:
+            fired: tuple[str, ...] = (), decision_type: DecisionType = DecisionType.BUY,
+            trigger_rule: str = "") -> Trade:
         if symbol in self.positions:
             raise ValueError(f"{self.character}: {symbol} 이미 보유 중 - 재매수 금지")
         cur = MARKET_CURRENCY[market]
@@ -73,14 +75,16 @@ class Portfolio:
             peak_price=price, locked_stop_pct=self.config.rules.stop_loss_pct)
         trade = Trade(d, self.character, symbol, market, Side.BUY, quantity, price,
                       fee, tax, reason, green_count=green_count, fired=fired,
-                      green_score=green_score)
+                      green_score=green_score, decision_type=decision_type,
+                      trigger_rule=trigger_rule)
         self.trades.append(trade)
         self.assert_invariants()
         return trade
 
     def sell(self, d: Date, symbol: str, price: float, reason: TradeReason,
              quantity: int | None = None, red_count: int = 0, red_score: int = 0,
-             fired: tuple[str, ...] = ()) -> Trade:
+             fired: tuple[str, ...] = (), decision_type: DecisionType = DecisionType.FULL_SELL,
+             trigger_rule: str = "") -> Trade:
         pos = self.positions[symbol]
         qty = pos.quantity if quantity is None else min(quantity, pos.quantity)
         cur = MARKET_CURRENCY[pos.market]
@@ -88,13 +92,18 @@ class Portfolio:
         fee, tax = costmod.trade_costs(pos.market, Side.SELL, gross, self.config.costs)
         self.cash[cur] += gross - fee - tax
         pnl = (price - pos.avg_price) * qty - fee - tax
+        # 반올림(max(1, qty*fraction))으로 부분매도 수량이 잔량 전체를 청산하는 경우
+        # (예: quantity==1) "부분 매도" 라벨이 남으면 설명·수량이 불일치하므로 승격한다.
+        if decision_type == DecisionType.PARTIAL_SELL and qty >= pos.quantity:
+            decision_type = DecisionType.FULL_SELL
         if qty >= pos.quantity:
             self.positions.pop(symbol)
         else:
             pos.quantity -= qty                       # 부분매도: 평단·트레일링 유지
         trade = Trade(d, self.character, symbol, pos.market, Side.SELL, qty,
                       price, fee, tax, reason, red_count=red_count, fired=fired,
-                      red_score=red_score, realized_pnl=pnl)
+                      red_score=red_score, realized_pnl=pnl, decision_type=decision_type,
+                      trigger_rule=trigger_rule)
         self.trades.append(trade)
         self.assert_invariants()
         return trade

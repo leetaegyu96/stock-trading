@@ -55,9 +55,10 @@ def main() -> None:
     kr_syms = universe.kospi200(cache, start)[: args.kr_top]
     us_syms = universe.sp500(cache)[: args.us_top]
     print(f"[universe] KR {len(kr_syms)}종목, US {len(us_syms)}종목 로딩 중...")
-    guard_on = bool(cfg.rules.bear_guard_characters)
-    kr_index = datamod.load_index("KR", start, end, cache) if (guard_on and kr_syms) else None
-    us_index = datamod.load_index("US", start, end, cache) if (guard_on and us_syms) else None
+    # 지수는 벤치마크(P0-3) 계산에 항상 필요 + 하락장 가드 활성 캐릭터가 있을 때도 사용됨 —
+    # 가드 스위치와 무관하게 심볼이 있으면 로드
+    kr_index = datamod.load_index("KR", start, end, cache) if kr_syms else None
+    us_index = datamod.load_index("US", start, end, cache) if us_syms else None
     bundle = DataBundle(
         kr=datamod.load_kr_daily(kr_syms, start, end, cache),
         us=datamod.load_us_daily(us_syms, start, end, cache),

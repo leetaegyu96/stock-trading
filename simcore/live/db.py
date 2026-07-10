@@ -58,6 +58,10 @@ class PendingOrder(Base):
     reason: Mapped[str] = mapped_column(String, default="SIGNAL_SELL")
     partial: Mapped[bool] = mapped_column(Boolean, default=False)
     created_date: Mapped[date] = mapped_column(Date)
+    # 결정 시점 확정 필드(Task1/2) — 재시작 후에도 보존해야 함. 비어있으면(레거시/미확정)
+    # rehydrate 시 None 으로 복원되고, engine._sell/_buy 의 방어적 fallback이 적용된다.
+    decision_type: Mapped[str] = mapped_column(String, default="")
+    trigger_rule: Mapped[str] = mapped_column(String, default="")
 
 
 class Cooldown(Base):
@@ -104,6 +108,18 @@ class TradeRow(Base):
     red_score: Mapped[int] = mapped_column(Integer, default=0)
     fired: Mapped[list[str]] = mapped_column(_StringArray, default=list)
     realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
+    decision_type: Mapped[str] = mapped_column(String, default="BUY")
+    trigger_rule: Mapped[str] = mapped_column(String, default="")
+
+
+class BenchmarkRow(Base):
+    """캐릭터별 벤치마크(지수) 수익률 스냅샷. query-path에서 네트워크를 타지 않도록
+    seed_from_replay(리플레이 배치)가 미리 계산해 적재한다 — 요청 시점 계산 금지."""
+    __tablename__ = "benchmarks"
+    character: Mapped[str] = mapped_column(String, primary_key=True)
+    benchmark_return: Mapped[float | None] = mapped_column(Float, nullable=True)
+    benchmark_name: Mapped[str] = mapped_column(String, default="")
+    ts: Mapped[datetime] = mapped_column(DateTime)
 
 
 class CapitalFlowRow(Base):

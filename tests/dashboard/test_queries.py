@@ -1,5 +1,7 @@
 from datetime import date, datetime
 
+import pytest
+
 from simcore.live import db
 
 from tests.dashboard.conftest import needs_db
@@ -69,6 +71,59 @@ def test_trades_roundtrip_and_limit(sf):
 
 
 @needs_db
+def test_trades_include_decision_type_and_trigger_rule(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="005930", market="KOSPI", side="SELL",
+                           quantity=1, price=70000.0, fee=100.0, tax=0.0,
+                           reason="FORCED_SELL", green_count=0, red_count=0,
+                           fired=[], realized_pnl=-500.0,
+                           decision_type="FORCED_SELL", trigger_rule="R18"))
+        s.commit()
+
+    rows = q.trades(sf, "국내형")
+    assert rows[0]["decision_type"] == "FORCED_SELL"
+    assert rows[0]["trigger_rule"] == "R18"
+
+
+@needs_db
+def test_recent_trades_include_decision_type_and_trigger_rule(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="005930", market="KOSPI", side="SELL",
+                           quantity=1, price=70000.0, fee=100.0, tax=0.0,
+                           reason="FORCED_SELL", green_count=0, red_count=0,
+                           fired=[], realized_pnl=-500.0,
+                           decision_type="FORCED_SELL", trigger_rule="R18"))
+        s.commit()
+
+    rows = q.recent_trades(sf)
+    assert rows[0]["decision_type"] == "FORCED_SELL"
+    assert rows[0]["trigger_rule"] == "R18"
+
+
+@needs_db
+def test_benchmark_returns_none_when_not_seeded(sf):
+    assert q.benchmark(sf, "국내형") is None
+
+
+@needs_db
+def test_benchmark_roundtrip(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.BenchmarkRow(character="국내형", benchmark_return=0.08,
+                               benchmark_name="KOSPI200", ts=datetime(2026, 1, 5, 15, 40)))
+        s.commit()
+
+    row = q.benchmark(sf, "국내형")
+    assert row is not None
+    assert row["benchmark_return"] == pytest.approx(0.08)
+    assert row["benchmark_name"] == "KOSPI200"
+
+
+@needs_db
 def test_flows_roundtrip(sf):
     with sf() as s:
         _seed_character(s, "국내형", "KRW")
@@ -100,6 +155,33 @@ def test_equity_series_roundtrip(sf):
         (datetime(2026, 1, 1, 15, 30), 10_000_000.0),
         (datetime(2026, 1, 2, 15, 30), 10_500_000.0),
     ]
+
+
+@needs_db
+def test_market_status_roundtrip(sf):
+    with sf() as s:
+        s.add(db.RunState(market="KR", last_open_date=date(2026, 7, 10),
+                           last_close_date=date(2026, 7, 10), last_fx_rate=1.0))
+        s.add(db.RunState(market="US", last_open_date=date(2026, 7, 9),
+                           last_close_date=date(2026, 7, 9), last_fx_rate=1300.0))
+        s.commit()
+
+    rows = q.market_status(sf)
+    by_market = {r["market"]: r for r in rows}
+    assert set(by_market) == {"KR", "US"}
+    assert by_market["KR"]["last_close_date"] == "2026-07-10"
+    assert by_market["US"]["last_close_date"] == "2026-07-09"
+    assert by_market["KR"]["last_open_date"] == "2026-07-10"
+
+
+@needs_db
+def test_market_status_handles_null_dates(sf):
+    with sf() as s:
+        s.add(db.RunState(market="KR", last_open_date=None, last_close_date=None, last_fx_rate=0.0))
+        s.commit()
+
+    rows = q.market_status(sf)
+    assert rows == [{"market": "KR", "last_close_date": None, "last_open_date": None}]
 
 
 @needs_db

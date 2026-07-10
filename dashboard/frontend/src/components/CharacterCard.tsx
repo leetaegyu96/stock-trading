@@ -4,7 +4,14 @@ import type { CardSummary } from "../types";
 import { Avatar } from "./Avatar";
 import { moodFromPnl } from "./mood";
 import { Sparkline } from "./Sparkline";
-import { formatKrw, formatSignedKrw, signClass, signedPct } from "./format";
+import {
+  BENCHMARK_UNAVAILABLE_LABEL,
+  benchmarkDeltaLabel,
+  formatKrw,
+  formatSignedKrw,
+  signClass,
+  signedPct,
+} from "./format";
 import "./theme.css";
 
 export interface CharacterCardProps {
@@ -74,9 +81,13 @@ export function CharacterCard({ summary, onClick }: CharacterCardProps) {
         <span>
           보유 <span className="num">{summary.n_positions}</span>종목
         </span>
-        {summary.benchmark_delta !== null && (
+        {summary.benchmark_available && summary.benchmark_delta !== null ? (
           <span className={signClass(summary.benchmark_delta)}>
-            벤치 <span className="num">{signedPct(summary.benchmark_delta * 100)}p</span>
+            벤치 <span className="num">{benchmarkDeltaLabel(summary.benchmark_delta).replace("초과수익 ", "")}</span>
+          </span>
+        ) : (
+          <span className="char-card__benchmark-warn" title="벤치마크 데이터가 아직 집계되지 않았습니다.">
+            ⚠ {BENCHMARK_UNAVAILABLE_LABEL}
           </span>
         )}
         <span>

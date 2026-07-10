@@ -43,7 +43,30 @@ def detail(fired, scores: SignalScores) -> list[dict]:
     return out
 
 
-def summarize(fired, score: int, side: str, scores: SignalScores) -> str:
+_FORCED_PHRASE = {
+    "R5+R23": "급락 복합조건",
+    "R18": "지지선 붕괴",
+    "R7": "잠금 손절선 도달",
+    "R10": "최고가 대비 트레일링선 도달",
+}
+
+
+def summarize(fired, score: int, side: str, scores: SignalScores, decision_type=None, trigger_rule: str = "") -> str:
+    if decision_type is not None:
+        from simcore.models import DecisionType
+        if decision_type == DecisionType.FORCED_SELL:
+            cause = _FORCED_PHRASE.get(trigger_rule, trigger_rule or "강제 조건")
+            return f"{cause} → 강제 전량매도"
+        if decision_type in (DecisionType.PARTIAL_SELL, DecisionType.FULL_SELL):
+            named = [SIGNAL_NAMES.get(c, c) for c in fired if c in scores.points]
+            if not trigger_rule and not named:
+                # USER_WITHDRAWAL/DELISTED 같은 비신호성 매도(기본 FULL_SELL, trigger/fired 둘 다 빈값):
+                # 신호 문구를 조작해내지 않고 중립 반환 — 화면 계층이 실제 reason을 노출한다.
+                return "신호 없음"
+            head = " + ".join(named[:3]) or "적신호"
+            verb = "부분 매도" if decision_type == DecisionType.PARTIAL_SELL else "전량 매도"
+            return f"{head} → {verb} (적신호 {score}점)"
+    # BUY 또는 decision 미지정(하위호환) → 기존 로직
     named = [SIGNAL_NAMES.get(c, c) for c in fired if c in scores.points]
     if not named:
         return "신호 없음"

@@ -118,7 +118,7 @@ def test_list_characters_returns_all_seeded_cards(sf):
     assert len(cards) == 3
     for card in cards:
         assert set(card) == {
-            "name", "base_currency", "markets", "benchmark_delta",
+            "name", "base_currency", "markets", "benchmark_delta", "benchmark_available",
             "total_asset_krw", "twr", "pnl_krw", "today_pnl_pct",
             "equity_spark", "n_positions", "cash_krw",
         }
@@ -133,6 +133,7 @@ def test_list_characters_returns_all_seeded_cards(sf):
     assert by_name["범용형"]["base_currency"] == "KRW"
     assert by_name["범용형"]["markets"] == ["KR", "US"]
     assert all(c["benchmark_delta"] is None for c in cards)
+    assert all(c["benchmark_available"] is False for c in cards)
 
 
 @needs_db
@@ -335,6 +336,64 @@ def test_trades_include_name_and_signal_summary(sf):
     assert t["red_score"] == 0
     assert t["signal_summary"] != ""
     assert t["signal_detail"]
+    assert t["decision_type"] == "BUY"
+    assert t["trigger_rule"] == ""
+
+
+@needs_db
+def test_forced_sell_trade_renders_decision_based_summary(sf):
+    with sf() as s:
+        s.merge(db.CharacterRow(name="국내형", base_currency="KRW"))
+        s.add(db.TradeRow(
+            ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+            character="국내형", symbol="005930", market=Market.KR.value, side="SELL",
+            quantity=1, price=1000.0, fee=0.0, tax=0.0, reason="FORCED_SELL",
+            green_count=0, red_count=0, fired=[], realized_pnl=-500.0,
+            green_score=0, red_score=0,
+            decision_type="FORCED_SELL", trigger_rule="R18",
+        ))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r = TestClient(app).get("/api/characters/국내형/trades")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r.status_code == 200
+    [t] = r.json()
+    assert t["decision_type"] == "FORCED_SELL"
+    assert t["trigger_rule"] == "R18"
+    assert "강제 전량매도" in t["signal_summary"]
+
+
+@needs_db
+def test_trades_with_unknown_decision_type_does_not_500(sf):
+    """감사 Minor: DB에 손상/미확정 decision_type(빈 문자열 등 DecisionType이 아닌
+    값)이 들어 있어도 /trades 는 500이 아니라 200을 반환하고, 임의의 결정을
+    지어내지 않고 레거시(점수 기반) 요약으로 폴백해야 한다."""
+    with sf() as s:
+        s.merge(db.CharacterRow(name="국내형", base_currency="KRW"))
+        s.add(db.TradeRow(
+            ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+            character="국내형", symbol="005930", market=Market.KR.value, side="SELL",
+            quantity=1, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_SELL",
+            green_count=0, red_count=2, fired=["R1", "R4"], realized_pnl=-500.0,
+            green_score=0, red_score=9,
+            decision_type="BOGUS_UNKNOWN", trigger_rule="",
+        ))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r = TestClient(app).get("/api/characters/국내형/trades")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r.status_code == 200
+    [t] = r.json()
+    assert t["decision_type"] == "BOGUS_UNKNOWN"  # 원본 값은 그대로 노출(폴백은 요약 로직만)
+    assert t["signal_summary"] != ""               # 레거시 경로로 요약 생성(크래시 없음)
 
 
 @needs_db
@@ -402,6 +461,29 @@ def test_dashboard_endpoint_shape(sf):
     t = d["recent_trades"][0]
     assert t["symbol"] == "005930" and t["name"] == "삼성전자"
     assert t["character"] == "국내형"
+
+
+@needs_db
+def test_market_status_endpoint_returns_per_market_dates(sf):
+    with sf() as s:
+        s.add(db.RunState(market="KR", last_open_date=date(2026, 7, 10),
+                           last_close_date=date(2026, 7, 10), last_fx_rate=1.0))
+        s.add(db.RunState(market="US", last_open_date=date(2026, 7, 9),
+                           last_close_date=date(2026, 7, 9), last_fx_rate=1300.0))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r = TestClient(app).get("/api/status")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r.status_code == 200
+    rows = r.json()
+    by_market = {row["market"]: row for row in rows}
+    assert set(by_market) == {"KR", "US"}
+    assert by_market["KR"]["last_close_date"] == "2026-07-10"
+    assert by_market["US"]["last_close_date"] == "2026-07-09"
 
 
 @needs_db

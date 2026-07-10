@@ -32,6 +32,13 @@ class TradeReason(str, Enum):
     TRAILING_STOP = "TRAILING_STOP"
 
 
+class DecisionType(str, Enum):
+    BUY = "BUY"
+    PARTIAL_SELL = "PARTIAL_SELL"
+    FULL_SELL = "FULL_SELL"
+    FORCED_SELL = "FORCED_SELL"
+
+
 @dataclass(frozen=True)
 class DailyBar:
     symbol: str
@@ -72,6 +79,8 @@ class Trade:
     green_score: int = 0
     red_score: int = 0
     realized_pnl: float = 0.0  # 시장 통화, 비용 차감 후
+    decision_type: DecisionType = DecisionType.BUY
+    trigger_rule: str = ""
 
 
 @dataclass(frozen=True)

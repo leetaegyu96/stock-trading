@@ -63,6 +63,27 @@ def _twr_and_pnl(eq: pd.Series, flows: pd.Series) -> tuple[float, float]:
     return twr, pnl
 
 
+def _benchmark_fields(sf, name: str, twr: float) -> dict:
+    """벤치마크 스토어(BenchmarkRow) 조회 → delta 계산. 시딩 안 됐으면 available=False,
+    return/delta 는 None(조용히 숨기지 않고 화면이 경고할 수 있게 한다 — P0-3)."""
+    row = queries.benchmark(sf, name)
+    if row is None:
+        return {
+            "benchmark_return": None,
+            "benchmark_delta": None,
+            "benchmark_name": "",
+            "benchmark_available": False,
+        }
+    bmk_ret = row["benchmark_return"]
+    delta = (twr - bmk_ret) if bmk_ret is not None else None
+    return {
+        "benchmark_return": bmk_ret,
+        "benchmark_delta": delta,
+        "benchmark_name": row["benchmark_name"],
+        "benchmark_available": True,
+    }
+
+
 def _today_pnl_pct(eq: pd.Series) -> float:
     if len(eq) < 2:
         return 0.0
@@ -90,12 +111,14 @@ def card_summary(sf, name: str, fx_rate: float, last_prices: dict[str, float]) -
     positions_krw = sum(_position_value_krw(p, last_prices, fx_rate) for p in positions)
 
     base_currency, markets = _character_identity(name)
+    bmk = _benchmark_fields(sf, name, twr)
 
     return CardSummary(
         name=name,
         base_currency=base_currency,
         markets=markets,
-        benchmark_delta=None,
+        benchmark_delta=bmk["benchmark_delta"],
+        benchmark_available=bmk["benchmark_available"],
         total_asset_krw=cash_krw + positions_krw,
         twr=twr,
         pnl_krw=pnl_krw,
@@ -137,17 +160,38 @@ def _win_rate(trades: list[dict]) -> float:
 
 
 def detail_metrics(sf, name: str) -> Metrics:
-    """상세 지표: TWR·MDD·거래건수·승률·손익."""
+    """상세 지표: TWR·MDD·거래건수·승률·손익 + 위험조정 지표 + 벤치마크 대비."""
     eq = _equity_series(sf, name)
     flows = _flow_series(sf, name)
     twr, pnl_krw = _twr_and_pnl(eq, flows)
     mdd = metrics.max_drawdown(eq)
 
     all_trades = queries.trades(sf, name, limit=_ALL_TRADES_LIMIT)
+    # risk_metrics 는 side+realized_pnl 을 갖춘 DataFrame 을 기대한다(SELL 행만 실현손익 반영).
+    trades_df = pd.DataFrame(all_trades)[["side", "realized_pnl"]] if all_trades else None
+    risk = metrics.risk_metrics(eq, trades_df)
+    bmk = _benchmark_fields(sf, name, twr)
+
     return Metrics(
         twr=twr,
         mdd=mdd,
         n_trades=len(all_trades),
         win_rate=_win_rate(all_trades),
         pnl_krw=pnl_krw,
+        cagr=risk["cagr"],
+        volatility=risk["volatility"],
+        sharpe=risk["sharpe"],
+        sortino=risk["sortino"],
+        calmar=risk["calmar"],
+        profit_factor=risk["profit_factor"],
+        avg_win=risk["avg_win"],
+        avg_loss=risk["avg_loss"],
+        win_loss_ratio=risk["win_loss_ratio"],
+        expectancy=risk["expectancy"],
+        max_consecutive_losses=risk["max_consecutive_losses"],
+        recovery_days=risk["recovery_days"],
+        benchmark_return=bmk["benchmark_return"],
+        benchmark_delta=bmk["benchmark_delta"],
+        benchmark_name=bmk["benchmark_name"],
+        benchmark_available=bmk["benchmark_available"],
     )

@@ -37,3 +37,13 @@ def test_position_trailing_fields_default():
 
 def test_trailing_stop_reason_exists():
     assert TradeReason.TRAILING_STOP.value == "TRAILING_STOP"
+
+
+def test_trade_has_decision_fields():
+    from simcore.models import Trade, DecisionType, Market, Side
+    from datetime import date
+    t = Trade(date(2026,1,2), "국내형", "AAA", Market.KR, Side.SELL, 1, 100.0, 0.0, 0.0,
+              __import__("simcore.models", fromlist=["TradeReason"]).TradeReason.SIGNAL_SELL,
+              realized_pnl=0.0, decision_type=DecisionType.FORCED_SELL, trigger_rule="R18")
+    assert t.decision_type == DecisionType.FORCED_SELL and t.trigger_rule == "R18"
+    assert list(DecisionType) and DecisionType.BUY.value == "BUY"
