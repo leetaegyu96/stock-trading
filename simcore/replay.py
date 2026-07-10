@@ -46,6 +46,34 @@ def _market_data(bundle: DataBundle) -> dict[Market, dict[str, pd.DataFrame]]:
     return {Market.KR: bundle.kr, Market.US: bundle.us}
 
 
+_INDEX_NAME = {Market.KR: "KOSPI200", Market.US: "S&P500"}
+
+
+def _char_benchmark(markets: tuple[Market, ...], indexes: dict[Market, pd.Series | None],
+                     start: Date, end: Date) -> tuple[float | None, str]:
+    """캐릭터의 시장 구성에 따른 벤치마크 수익률/이름.
+
+    - 단일시장: 해당 시장 지수의 구간 수익률 (없으면 None/"").
+    - 다중시장(범용형): 각 시장 지수 수익률의 단순평균("혼합").
+      한쪽 지수만 있으면 그 지수 값을 그대로 사용(이름도 그 지수 이름).
+      둘 다 없으면 None/"".
+    """
+    rets: dict[Market, float] = {}
+    for m in markets:
+        r = metrics.benchmark_return(indexes.get(m), start, end)
+        if r is not None:
+            rets[m] = r
+    if not rets:
+        return None, ""
+    if len(markets) == 1:
+        m = markets[0]
+        return rets[m], _INDEX_NAME[m]
+    if len(rets) == len(markets):
+        return sum(rets.values()) / len(rets), "혼합"
+    only_m = next(iter(rets))
+    return rets[only_m], _INDEX_NAME[only_m]
+
+
 def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
                flows: list[FlowEvent] = ()) -> ReplayResult:
     md = _market_data(bundle)
@@ -127,6 +155,7 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
         "fired": ";".join(t.fired), "realized_pnl": t.realized_pnl,
     } for st in engine.states.values() for t in st.portfolio.trades])
 
+    indexes = {Market.KR: bundle.kr_index, Market.US: bundle.us_index}
     flows_by_char, summary = {}, {}
     for name, st in engine.states.items():
         f = pd.Series({pd.Timestamp(fl.date): fl.amount_krw
@@ -135,11 +164,17 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
         flows_by_char[name] = f
         eq = equity[name]
         char_trades = trades[trades.character == name] if not trades.empty else trades
+        twr = metrics.time_weighted_return(eq, f)
+        bmk_ret, bmk_name = _char_benchmark(st.spec.markets, indexes, start, end)
+        bmk_delta = (twr - bmk_ret) if bmk_ret is not None else None
         summary[name] = {
-            "twr": metrics.time_weighted_return(eq, f),
+            "twr": twr,
             "mdd": metrics.max_drawdown(eq),
             "pnl_krw": metrics.simple_pnl_krw(eq, f),
             "n_trades": int(len(char_trades)),
+            "benchmark_return": bmk_ret,
+            "benchmark_delta": bmk_delta,
+            "benchmark_name": bmk_name,
         }
     green_hist = pd.Series(green_counts).value_counts().sort_index()
 

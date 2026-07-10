@@ -47,6 +47,26 @@ def simple_pnl_krw(equity: pd.Series, flows: pd.Series | None = None) -> float:
     return float(eq.iloc[-1] - eq.iloc[0] - net_flows)
 
 
+def benchmark_return(index: "pd.Series | None", start, end) -> float | None:
+    """구간 [start, end] 의 벤치마크(지수) 수익률. index 가 없거나 비어있으면 None.
+
+    거래일이 아닌 start/end 도 asof() 로 직전 값에 정렬해 처리한다.
+    시작/끝 값을 asof 로 구할 수 없거나(NaN, 범위 밖) 시작값이 0 이면 None.
+    """
+    if index is None or len(index) == 0:
+        return None
+    start_ts = pd.Timestamp(start)
+    end_ts = pd.Timestamp(end)
+    try:
+        v0 = index.asof(start_ts)
+        v1 = index.asof(end_ts)
+    except Exception:
+        return None
+    if v0 is None or v1 is None or pd.isna(v0) or pd.isna(v1) or v0 == 0:
+        return None
+    return float(v1 / v0 - 1.0)
+
+
 def risk_metrics(
     equity: pd.Series,
     trades: pd.DataFrame | None = None,

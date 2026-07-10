@@ -95,3 +95,32 @@ def test_risk_metrics_empty_and_all_loss():
     assert m["profit_factor"] == 0.0 and m["avg_win"] == 0.0     # 이익 없음
     m2 = risk_metrics(eq, None)                                   # 거래정보 없음
     assert m2["profit_factor"] == 0.0 and m2["expectancy"] == 0.0
+
+
+def test_benchmark_return_and_none():
+    import pandas as pd
+    from simcore.metrics import benchmark_return
+    idx = pd.date_range("2025-01-01", periods=10)
+    s = pd.Series(range(100, 110), index=idx, dtype=float)
+    r = benchmark_return(s, idx[0], idx[-1])
+    assert r == pytest.approx(109 / 100 - 1)
+    assert benchmark_return(None, idx[0], idx[-1]) is None
+
+
+def test_benchmark_return_empty_series_is_none():
+    import pandas as pd
+    from simcore.metrics import benchmark_return
+    idx = pd.date_range("2025-01-01", periods=10)
+    empty = pd.Series([], dtype=float)
+    assert benchmark_return(empty, idx[0], idx[-1]) is None
+
+
+def test_benchmark_return_aligns_nontrading_day_via_asof():
+    import pandas as pd
+    from simcore.metrics import benchmark_return
+    from datetime import date
+    idx = pd.bdate_range("2025-01-02", periods=10)  # 2025-01-02(목), 01-03(금), 01-06(월)...
+    s = pd.Series(range(100, 110), index=idx, dtype=float)
+    # start=비거래일(토요일 2025-01-04) → asof 로 직전 거래일(01-03, 값 101)에 정렬돼야 함
+    r = benchmark_return(s, date(2025, 1, 4), idx[-1])
+    assert r == pytest.approx(109 / 101 - 1)

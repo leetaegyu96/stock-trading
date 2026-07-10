@@ -116,6 +116,25 @@ def test_bear_guard_suppresses_buys_in_index_downtrend():
     n_off = 0 if res_off.trades.empty else (res_off.trades.side == "BUY").sum()
     assert n_on < n_off        # 가드가 하락장 매수를 억제
 
+def test_summary_benchmark_delta_present_with_kr_index():
+    bundle, idx = make_bundle()
+    kr_index = pd.Series(np.linspace(100, 130, len(idx)), index=idx)  # 상승 지수
+    bundle = replace(bundle, kr_index=kr_index)
+    r = run_replay(CFG, bundle, idx[70].date(), idx[-1].date())
+    s = r.summary["국내형"]
+    assert s["benchmark_return"] is not None
+    assert s["benchmark_delta"] is not None
+    assert s["benchmark_delta"] == pytest.approx(s["twr"] - s["benchmark_return"])
+    assert s["benchmark_name"] == "KOSPI200"
+
+def test_summary_benchmark_delta_none_without_index():
+    bundle, idx = make_bundle()  # kr_index=None (기본값)
+    r = run_replay(CFG, bundle, idx[70].date(), idx[-1].date())
+    s = r.summary["국내형"]
+    assert s["benchmark_return"] is None
+    assert s["benchmark_delta"] is None
+    assert s["benchmark_name"] == ""
+
 def test_bear_guard_v2_universal_buys_when_only_one_market_bearish():
     import numpy as np, pandas as pd
     from datetime import date
@@ -134,3 +153,51 @@ def test_bear_guard_v2_universal_buys_when_only_one_market_bearish():
     res = run_replay(cfg_on, bundle, date(2025, 9, 1), date(2026, 2, 1))
     buys = res.trades[(res.trades.side == "BUY") & (res.trades.character == "범용형")] if not res.trades.empty else res.trades
     assert len(buys) > 0        # 한쪽만 하락 → 범용형 매수 허용(v1이면 KR 매수 전면 차단이었음)
+
+def test_summary_benchmark_universal_averages_both_markets():
+    import numpy as np, pandas as pd
+    from datetime import date
+    from simcore.config import Config
+    from simcore.replay import DataBundle, run_replay
+    from simcore import metrics
+    idx = pd.date_range("2025-06-01", periods=220, freq="B")
+    up = np.linspace(100, 400, 220)
+    mk = lambda: pd.DataFrame({"open": up, "high": up + 2, "low": up - 2, "close": up,
+                               "volume": np.linspace(1e3, 5e3, 220)}, index=idx)
+    kr_index = pd.Series(np.linspace(100, 130, 220), index=idx)
+    us_index = pd.Series(np.linspace(200, 260, 220), index=idx)
+    bundle = DataBundle(kr={"AAA": mk()}, us={"BBB": mk()}, fx=pd.Series(1300.0, index=idx),
+                        kr_index=kr_index, us_index=us_index)
+    start, end = date(2025, 9, 1), date(2026, 2, 1)
+    res = run_replay(Config(), bundle, start, end)
+    s = res.summary["범용형"]
+    kr_r = metrics.benchmark_return(kr_index, start, end)
+    us_r = metrics.benchmark_return(us_index, start, end)
+    assert s["benchmark_return"] == pytest.approx((kr_r + us_r) / 2)
+    assert s["benchmark_delta"] == pytest.approx(s["twr"] - s["benchmark_return"])
+    assert s["benchmark_name"] == "혼합"
+    # 단일시장 캐릭터: 해외형=US 지수(S&P500)
+    su = res.summary["해외형"]
+    assert su["benchmark_return"] == pytest.approx(us_r)
+    assert su["benchmark_name"] == "S&P500"
+
+def test_summary_benchmark_universal_uses_single_index_when_only_one_available():
+    import numpy as np, pandas as pd
+    from datetime import date
+    from simcore.config import Config
+    from simcore.replay import DataBundle, run_replay
+    from simcore import metrics
+    idx = pd.date_range("2025-06-01", periods=220, freq="B")
+    up = np.linspace(100, 400, 220)
+    mk = lambda: pd.DataFrame({"open": up, "high": up + 2, "low": up - 2, "close": up,
+                               "volume": np.linspace(1e3, 5e3, 220)}, index=idx)
+    kr_index = pd.Series(np.linspace(100, 130, 220), index=idx)
+    bundle = DataBundle(kr={"AAA": mk()}, us={"BBB": mk()}, fx=pd.Series(1300.0, index=idx),
+                        kr_index=kr_index, us_index=None)
+    start, end = date(2025, 9, 1), date(2026, 2, 1)
+    res = run_replay(Config(), bundle, start, end)
+    s = res.summary["범용형"]
+    kr_r = metrics.benchmark_return(kr_index, start, end)
+    assert s["benchmark_return"] == pytest.approx(kr_r)
+    assert s["benchmark_delta"] == pytest.approx(s["twr"] - s["benchmark_return"])
+    assert s["benchmark_name"] == "KOSPI200"
