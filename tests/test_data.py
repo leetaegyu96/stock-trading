@@ -113,3 +113,30 @@ def test_load_index_kr_falls_back_when_pykrx_returns_empty(tmp_path, monkeypatch
 
     assert not s.empty
     assert (s == 250.0).all()
+
+
+def test_make_bearish_fn_basic_and_fallbacks():
+    import numpy as np
+    import pandas as pd
+    from simcore.data import make_bearish_fn
+    idx = pd.bdate_range("2026-01-01", periods=60)
+    down = pd.Series(np.linspace(200, 100, 60), index=idx)   # 종가 < SMA20
+    up = pd.Series(np.linspace(100, 200, 60), index=idx)     # 종가 > SMA20
+    fn = make_bearish_fn({"KR": down, "US": up}, {"KR": 20, "US": 20})
+    assert fn(idx[-1]) == {"KR": True, "US": False}
+    # 지수 없음(None) → False
+    assert make_bearish_fn({"KR": None}, {"KR": 20})(idx[-1]) == {"KR": False}
+    # 워밍업(SMA NaN) → False
+    assert make_bearish_fn({"KR": down}, {"KR": 20})(idx[3]) == {"KR": False}
+
+
+def test_make_bearish_fn_period_independent_per_market():
+    # 같은 지수라도 시장별 기간이 다르면 판정이 갈린다 (하락 후 단기 반등 시나리오)
+    import numpy as np
+    import pandas as pd
+    from simcore.data import make_bearish_fn
+    idx = pd.bdate_range("2026-01-01", periods=60)
+    v = np.concatenate([np.linspace(200, 100, 50), np.linspace(103, 130, 10)])
+    s = pd.Series(v, index=idx)
+    fn = make_bearish_fn({"KR": s, "US": s}, {"KR": 5, "US": 60})
+    assert fn(idx[-1]) == {"KR": False, "US": True}   # 단기(5)는 반등 반영, 장기(60)는 하락

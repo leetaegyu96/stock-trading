@@ -10,6 +10,7 @@ from simcore.engine import Engine
 from simcore.models import DailyBar, Market, SymbolSnapshot
 from simcore import signals as sigmod
 from simcore import metrics
+from simcore import data as datamod
 
 
 @dataclass
@@ -55,23 +56,8 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
     # 1-2) 시장 지수 20일선 → 시장별 하락장(가드) 판정
     periods = {Market.KR: config.signals.market_trend_period_kr,
                Market.US: config.signals.market_trend_period_us}
-    index_by_market = {Market.KR: bundle.kr_index, Market.US: bundle.us_index}
-    sma_by_market = {m: (s.rolling(periods[m]).mean() if s is not None else None)
-                     for m, s in index_by_market.items()}
-
-    def _bearish(market: Market, ts) -> bool:
-        s = index_by_market.get(market)
-        sma = sma_by_market.get(market)
-        if s is None or sma is None:
-            return False
-        try:
-            close = float(s.asof(ts))
-            avg = float(sma.asof(ts))
-        except (KeyError, ValueError):
-            return False
-        if pd.isna(close) or pd.isna(avg):
-            return False
-        return close < avg
+    bearish_fn = datamod.make_bearish_fn(
+        {Market.KR: bundle.kr_index, Market.US: bundle.us_index}, periods)
     # 2) 시뮬 날짜 = 두 시장 거래일 합집합 (start~end)
     all_dates = sorted({d for data in md.values() for df in data.values()
                         for d in df.index if start <= d.date() <= end})
@@ -101,7 +87,7 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
         for f in flow_map.get(d, []):
             engine.apply_flow(d, f.character, f.amount_krw, fx,
                               open_prices=opens_today, liquidate=f.liquidate)
-        bearish = {Market.KR: _bearish(Market.KR, ts), Market.US: _bearish(Market.US, ts)}
+        bearish = bearish_fn(ts)
         for market, data in md.items():
             todays = {sym: df for sym, df in data.items() if ts in df.index}
             if not todays:
