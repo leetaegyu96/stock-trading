@@ -264,6 +264,96 @@ def test_partial_sell_promotes_to_full_when_rounding_liquidates_whole_position()
     assert t.decision_type == DecisionType.FULL_SELL   # 라벨 승격
 
 
+# ---- Task 1: 매수후보 평가 기록(관찰 전용) ----
+
+def test_candidate_reserved_when_passing():
+    e = make_engine()
+    e.evaluate_close(D1, Market.KR, {"A": snap("A", green=("G1", "G4", "G7"),
+                                                green_score=18, gate=True)})
+    c = next(c for c in e.last_candidates["국내형"] if c.symbol == "A")
+    assert c.status == "예약" and c.block_reason == ""
+    assert c.green_score == 18 and c.market == Market.KR and c.buy_gate is True
+
+
+@pytest.mark.parametrize("reason,score,gate", [
+    ("점수부족", 17, True),
+    ("게이트미충족", 18, False),
+])
+def test_candidate_blocked_reasons_score_gate(reason, score, gate):
+    e = make_engine()
+    e.evaluate_close(D1, Market.KR, {"A": snap("A", green=("G1", "G4", "G7"),
+                                                green_score=score, gate=gate)})
+    c = next(c for c in e.last_candidates["국내형"] if c.symbol == "A")
+    assert c.status == "차단" and c.block_reason == reason
+
+
+def test_candidate_blocked_reason_held():
+    e = make_engine()
+    e.evaluate_close(D1, Market.KR, {"A": snap("A", green=("G1", "G4", "G7"),
+                                                green_score=18, gate=True)})
+    e.fill_open(D2, Market.KR, {"A": 100.0}, fx_rate=1300.0)
+    assert "A" in e.states["국내형"].portfolio.positions
+    e.evaluate_close(D2, Market.KR, {"A": snap("A", green=("G1", "G4", "G7"),
+                                                green_score=18, gate=True)})
+    c = next(c for c in e.last_candidates["국내형"] if c.symbol == "A")
+    assert c.status == "차단" and c.block_reason == "보유중"
+
+
+def test_candidate_blocked_reason_cooldown():
+    e = make_engine()
+    def buy_snap():
+        return snap("A", green=("G1", "G4", "G7"), green_score=18, gate=True)
+    e.evaluate_close(D1, Market.KR, {"A": buy_snap()})
+    e.fill_open(D2, Market.KR, {"A": 100.0}, fx_rate=1300.0)
+    e.evaluate_close(D2, Market.KR, {"A": snap("A", red=("R1", "R4", "R11"), red_score=15)})
+    e.fill_open(D3, Market.KR, {"A": 100.0}, fx_rate=1300.0)   # 매도 체결 → 쿨다운 시작
+    e.evaluate_close(D3, Market.KR, {"A": buy_snap()})
+    c = next(c for c in e.last_candidates["국내형"] if c.symbol == "A")
+    assert c.status == "차단" and c.block_reason == "쿨다운"
+
+
+def test_candidate_blocked_reason_slot_shortage_after_fill():
+    e = make_engine(max_positions=1)
+    snaps = {
+        "A": snap("A", green=("G1", "G4"), green_score=18, gate=True),
+        "B": snap("B", green=("G1", "G4", "G7"), green_score=23, gate=True),  # 우선순위 높음
+    }
+    e.evaluate_close(D1, Market.KR, snaps)
+    e.fill_open(D2, Market.KR, {"A": 100.0, "B": 100.0}, fx_rate=1300.0)
+    pos = e.states["국내형"].portfolio.positions
+    assert list(pos) == ["B"]
+    a = next(c for c in e.last_candidates["국내형"] if c.symbol == "A")
+    b = next(c for c in e.last_candidates["국내형"] if c.symbol == "B")
+    assert a.status == "차단" and a.block_reason == "슬롯부족"
+    assert b.status == "예약" and b.block_reason == ""
+
+
+def test_candidate_blocked_reason_cash_shortage_after_fill():
+    e = make_engine()  # max_positions=5, 예산 1억/5=2000만
+    e.evaluate_close(D1, Market.KR, {"A": snap("A", green=("G1", "G4", "G7"),
+                                                green_score=18, gate=True)})
+    # 가격이 예산 대비 너무 높아 qty<=0 → 매수 불성립(현금부족)
+    e.fill_open(D2, Market.KR, {"A": 50_000_000.0}, fx_rate=1300.0)
+    assert "A" not in e.states["국내형"].portfolio.positions
+    c = next(c for c in e.last_candidates["국내형"] if c.symbol == "A")
+    assert c.status == "차단" and c.block_reason == "현금부족"
+
+
+def test_candidate_market_partition_preserved_across_markets():
+    from simcore.models import SymbolSnapshot
+    cfg = Config()
+    eng = Engine(cfg)   # 기본 캐릭터(범용형 포함)
+    eng.start(D1, fx_rate=1300.0)
+    kr_snap = {"A": snap("A", green=("G1", "G4", "G7"), green_score=18, gate=True, market=Market.KR)}
+    us_snap = {"X": SymbolSnapshot("X", Market.US, ("G1", "G4", "G7"), (), 100.0, 0.01, 1000.0,
+                                    green_score=18, red_score=0, buy_gate=True)}
+    eng.evaluate_close(D1, Market.KR, kr_snap)
+    eng.evaluate_close(D1, Market.US, us_snap)
+    pairs = {(c.symbol, c.market) for c in eng.last_candidates["범용형"]}
+    assert ("A", Market.KR) in pairs
+    assert ("X", Market.US) in pairs
+
+
 def test_bear_guard_only_listed_characters_blocked():
     # 집합에 든 캐릭터만 차단. 국내형(KR)만 가드 대상 → KR 마감에서 실제 차단 분기 검증.
     # 범용형(KR+US)은 집합 밖이라 양시장 하락에도 매수 허용.

@@ -92,6 +92,18 @@ class CapitalFlow:
 
 
 @dataclass(frozen=True)
+class CandidateEval:
+    """장 마감 매수 후보 평가 기록(관찰 전용) — 매매 결정에는 사용되지 않는다."""
+    symbol: str
+    market: Market
+    green_score: int
+    red_score: int
+    buy_gate: bool
+    status: str            # "예약" | "차단"
+    block_reason: str = ""  # 예약이면 ""
+
+
+@dataclass(frozen=True)
 class SymbolSnapshot:
     """장 마감 후 종목 하나의 신호 판정 결과. 엔진은 이것만 소비한다."""
     symbol: str
