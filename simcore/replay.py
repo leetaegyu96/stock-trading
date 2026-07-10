@@ -53,7 +53,7 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
     frames = {m: {sym: sigmod.evaluate_frame(df, config.signals)
                   for sym, df in data.items()}
               for m, data in md.items()}
-    # 1-2) 시장 지수 20일선 → 시장별 하락장(가드) 판정
+    # 1-2) 시장 지수 SMA(시장별 기간) → 시장별 하락장(가드) 판정
     periods = {Market.KR: config.signals.market_trend_period_kr,
                Market.US: config.signals.market_trend_period_us}
     bearish_fn = datamod.make_bearish_fn(

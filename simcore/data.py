@@ -136,11 +136,11 @@ def load_index(market: str, start: Date, end: Date, cache_dir: Path) -> pd.Serie
     return df["close"].astype(float).sort_index() if not df.empty else pd.Series(dtype="float64")
 
 
-def make_bearish_fn(indices: dict, periods: dict):
+def make_bearish_fn(indices: dict, periods: dict) -> Callable[[pd.Timestamp], dict]:
     """시장별 지수 종가·SMA 기간으로 '하락장 판정 함수'를 만든다 (리플레이·라이브 공용).
 
     indices: {시장키: pd.Series | None} — 지수 종가(일별). periods: {시장키: SMA 기간}.
-    반환 fn(ts) -> {시장키: bool}. 지수 없음/워밍업 NaN/asof 실패 → False (가드 미발동).
+    반환 fn(ts) -> {시장키: bool}. 지수 없음/워밍업 NaN/asof 실패(빈 지수 포함) → False (가드 미발동).
     """
     smas = {m: (s.rolling(periods[m]).mean() if s is not None else None)
             for m, s in indices.items()}
@@ -152,7 +152,7 @@ def make_bearish_fn(indices: dict, periods: dict):
         try:
             close = float(s.asof(ts))
             avg = float(sma.asof(ts))
-        except (KeyError, ValueError):
+        except (KeyError, ValueError, IndexError):
             return False
         if pd.isna(close) or pd.isna(avg):
             return False

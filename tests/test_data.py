@@ -140,3 +140,16 @@ def test_make_bearish_fn_period_independent_per_market():
     s = pd.Series(v, index=idx)
     fn = make_bearish_fn({"KR": s, "US": s}, {"KR": 5, "US": 60})
     assert fn(idx[-1]) == {"KR": False, "US": True}   # 단기(5)는 반등 반영, 장기(60)는 하락
+
+
+def test_make_bearish_fn_empty_and_asof_failure_fallback():
+    import pandas as pd
+    from simcore.data import make_bearish_fn
+    # 빈 지수(예: load_index 무데이터 폴백) → asof에서 IndexError → except 폴백 경로에서 False
+    empty = pd.Series(dtype="float64")
+    assert make_bearish_fn({"KR": empty}, {"KR": 20})(pd.Timestamp("2026-01-10")) == {"KR": False}
+    # asof가 파싱 불가능한 값을 받아 예외를 던지는 경우에도 False (안전 폴백)
+    idx = pd.bdate_range("2026-01-01", periods=30)
+    s = pd.Series(range(30), index=idx, dtype=float)
+    fn = make_bearish_fn({"KR": s}, {"KR": 5})
+    assert fn("not-a-timestamp") == {"KR": False}
