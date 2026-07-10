@@ -1,0 +1,7 @@
+interface:
+  display_name: "트레이딩 제품 감사"
+  short_description: "코드·실화면·신호·성과·UI/UX를 한 번에 통합 감사"
+  default_prompt: "Use $auditing-trading-product to audit the latest Claude changes in this trading project."
+
+policy:
+  allow_implicit_invocation: true
