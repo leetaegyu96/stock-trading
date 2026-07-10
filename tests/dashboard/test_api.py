@@ -297,13 +297,83 @@ def test_character_trades_returns_rows_and_respects_limit(sf):
         app.dependency_overrides.pop(get_sf, None)
 
     assert r_all.status_code == 200
-    trades = r_all.json()
+    body = r_all.json()
+    trades = body["items"]
+    assert body["total"] == 5
     assert len(trades) == 5
     assert trades[0]["symbol"] == "SYM4"  # 최신순
     assert trades[0]["realized_pnl"] == 1500.0
 
     assert r_limited.status_code == 200
-    assert len(r_limited.json()) == 2
+    limited_body = r_limited.json()
+    assert len(limited_body["items"]) == 2
+    assert limited_body["total"] == 5  # total은 limit 적용 전 건수
+
+
+@needs_db
+def test_character_trades_filters_by_query_params(sf):
+    with sf() as s:
+        _seed_full(s)
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r_symbol = TestClient(app).get("/api/characters/테스트형/trades?symbol=SYM2")
+        r_side = TestClient(app).get("/api/characters/테스트형/trades?side=SELL")
+        r_date = TestClient(app).get(
+            "/api/characters/테스트형/trades?date_from=2026-01-02&date_to=2026-01-02"
+        )
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r_symbol.status_code == 200
+    body = r_symbol.json()
+    assert body["total"] == 1
+    assert body["items"][0]["symbol"] == "SYM2"
+
+    assert r_side.status_code == 200
+    assert r_side.json()["total"] == 5  # _seed_full 은 전부 SELL
+
+    assert r_date.status_code == 200
+    date_body = r_date.json()
+    assert date_body["total"] == 1
+    assert date_body["items"][0]["date"] == "2026-01-02"
+
+
+@needs_db
+def test_character_lifecycles_endpoint_groups_entry_to_exit(sf):
+    with sf() as s:
+        s.merge(db.CharacterRow(name="국내형", base_currency="KRW"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="005930", market=Market.KR.value, side="BUY",
+                           quantity=10, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           decision_type="BUY", trigger_rule="R1"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 2, 9, 30), date=date(2026, 1, 2),
+                           character="국내형", symbol="005930", market=Market.KR.value, side="SELL",
+                           quantity=10, price=1100.0, fee=0.0, tax=0.0, reason="SIGNAL_SELL",
+                           green_count=0, red_count=0, fired=[], realized_pnl=1000.0,
+                           decision_type="SELL", trigger_rule="R2"))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r = TestClient(app).get("/api/characters/국내형/lifecycles")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r.status_code == 200
+    [life] = r.json()
+    assert life["symbol"] == "005930"
+    assert life["name"] == "삼성전자"
+    assert life["open"] is False
+    assert life["entry_date"] == "2026-01-01"
+    assert life["exit_date"] == "2026-01-02"
+    assert life["realized_pnl_sum"] == 1000.0
+    assert life["qty_peak"] == 10
+    assert life["entry_trigger"] == "R1"
+    assert len(life["trades"]) == 2
+    assert life["trades"][0]["signal_summary"] != ""
 
 
 @needs_db
@@ -326,7 +396,7 @@ def test_trades_include_name_and_signal_summary(sf):
         app.dependency_overrides.pop(get_sf, None)
 
     assert r.status_code == 200
-    rows = r.json()
+    rows = r.json()["items"]
     assert rows, "거래가 있어야 함"
     t = rows[0]
     assert "name" in t and "signal_summary" in t and "signal_detail" in t
@@ -361,7 +431,7 @@ def test_forced_sell_trade_renders_decision_based_summary(sf):
         app.dependency_overrides.pop(get_sf, None)
 
     assert r.status_code == 200
-    [t] = r.json()
+    [t] = r.json()["items"]
     assert t["decision_type"] == "FORCED_SELL"
     assert t["trigger_rule"] == "R18"
     assert "강제 전량매도" in t["signal_summary"]
@@ -391,7 +461,7 @@ def test_trades_with_unknown_decision_type_does_not_500(sf):
         app.dependency_overrides.pop(get_sf, None)
 
     assert r.status_code == 200
-    [t] = r.json()
+    [t] = r.json()["items"]
     assert t["decision_type"] == "BOGUS_UNKNOWN"  # 원본 값은 그대로 노출(폴백은 요약 로직만)
     assert t["signal_summary"] != ""               # 레거시 경로로 요약 생성(크래시 없음)
 

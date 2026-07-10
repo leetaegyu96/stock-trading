@@ -88,6 +88,26 @@ class TradeOut(BaseModel):
     trigger_rule: str = ""
 
 
+class TradesPage(BaseModel):
+    """거래 내역 페이지 — items(현재 페이지)와 total(필터 기준 전체 건수)."""
+    items: list[TradeOut]
+    total: int
+
+
+class LifecycleOut(BaseModel):
+    """포지션 생애(진입→청산) — 종목별 보유수량 0→BUY 시작, 0 도달 SELL로 종료."""
+    symbol: str
+    name: str
+    market: str
+    entry_date: date
+    exit_date: date | None = None
+    open: bool
+    trades: list[TradeOut]
+    qty_peak: int
+    realized_pnl_sum: float
+    entry_trigger: str
+
+
 class MarketStatusOut(BaseModel):
     """시장별 데이터 기준(run_state) — as-of 표시용(P0)."""
     market: str

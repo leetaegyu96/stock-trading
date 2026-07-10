@@ -23,7 +23,6 @@ from dashboard.backend import queries
 from dashboard.backend.schemas import CardSummary, Metrics
 
 _SPARK_POINTS = 30
-_ALL_TRADES_LIMIT = 1_000_000  # win_rate/n_trades 는 페이지네이션 없이 전체 이력을 봐야 함
 _SPEC_BY_NAME = {s.name: s for s in DEFAULT_CHARACTERS}
 
 
@@ -166,7 +165,7 @@ def detail_metrics(sf, name: str) -> Metrics:
     twr, pnl_krw = _twr_and_pnl(eq, flows)
     mdd = metrics.max_drawdown(eq)
 
-    all_trades = queries.trades(sf, name, limit=_ALL_TRADES_LIMIT)
+    all_trades = queries._all_trades(sf, name)
     # risk_metrics 는 side+realized_pnl 을 갖춘 DataFrame 을 기대한다(SELL 행만 실현손익 반영).
     trades_df = pd.DataFrame(all_trades)[["side", "realized_pnl"]] if all_trades else None
     risk = metrics.risk_metrics(eq, trades_df)

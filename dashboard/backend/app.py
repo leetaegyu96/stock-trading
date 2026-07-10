@@ -5,9 +5,10 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager, suppress
+from datetime import date as date_type
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, PlainTextResponse
 
 from simcore.config import Config
@@ -29,10 +30,12 @@ from dashboard.backend.schemas import (
     DashboardOut,
     EquityPoint,
     FlowOut,
+    LifecycleOut,
     MarketStatusOut,
     Metrics,
     PositionOut,
     TradeOut,
+    TradesPage,
 )
 
 # 카드/집계(list_character_cards)는 daily_bars 최신 종가(또는 avg_price 폴백)만 사용한다.
@@ -187,20 +190,47 @@ def character_positions(name: str, sf=Depends(get_sf), kis=Depends(get_kis)) -> 
     return [PositionOut(**_merge_live_price(p, prices.get(p["symbol"]))) for p in positions]
 
 
-@app.get("/api/characters/{name}/trades", response_model=list[TradeOut])
-def character_trades(name: str, limit: int = 200, sf=Depends(get_sf)) -> list[TradeOut]:
+def _trade_out(t: dict) -> TradeOut:
+    """거래 dict → TradeOut(signal_summary/signal_detail 계산 포함)."""
+    score = t["green_score"] if t["side"] == "BUY" else t["red_score"]
+    return TradeOut(
+        **t,
+        signal_summary=sd.summarize(
+            t["fired"], score, t["side"], _SCORES,
+            decision_type=_safe_decision_type(t["decision_type"]),
+            trigger_rule=t["trigger_rule"],
+        ),
+        signal_detail=sd.detail(t["fired"], _SCORES),
+    )
+
+
+@app.get("/api/characters/{name}/trades", response_model=TradesPage)
+def character_trades(
+    name: str,
+    limit: int = Query(20, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    symbol: str | None = None,
+    side: str | None = None,
+    decision_type: str | None = None,
+    date_from: date_type | None = None,
+    date_to: date_type | None = None,
+    sf=Depends(get_sf),
+) -> TradesPage:
+    page = queries.trades(
+        sf, name, limit=limit, offset=offset, symbol=symbol, side=side,
+        decision_type=decision_type, date_from=date_from, date_to=date_to,
+    )
+    return TradesPage(items=[_trade_out(t) for t in page["items"]], total=page["total"])
+
+
+@app.get("/api/characters/{name}/lifecycles", response_model=list[LifecycleOut])
+def character_lifecycles(
+    name: str, limit: int = Query(10, ge=1, le=100), sf=Depends(get_sf)
+) -> list[LifecycleOut]:
+    """캐릭터의 포지션 생애(진입→청산) 목록 — 진행중인 생애가 먼저 온다."""
     out = []
-    for t in queries.trades(sf, name, limit=limit):
-        score = t["green_score"] if t["side"] == "BUY" else t["red_score"]
-        out.append(TradeOut(
-            **t,
-            signal_summary=sd.summarize(
-                t["fired"], score, t["side"], _SCORES,
-                decision_type=_safe_decision_type(t["decision_type"]),
-                trigger_rule=t["trigger_rule"],
-            ),
-            signal_detail=sd.detail(t["fired"], _SCORES),
-        ))
+    for life in queries.position_lifecycles(sf, name, limit=limit):
+        out.append(LifecycleOut(**{**life, "trades": [_trade_out(t) for t in life["trades"]]}))
     return out
 
 
