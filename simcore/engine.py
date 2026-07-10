@@ -7,7 +7,7 @@ from datetime import date as Date
 from simcore.config import Config
 from simcore import costs as costmod
 from simcore.models import (
-    Currency, DailyBar, Market, MARKET_CURRENCY, SymbolSnapshot, TradeReason,
+    Currency, DailyBar, DecisionType, Market, MARKET_CURRENCY, SymbolSnapshot, TradeReason,
 )
 from simcore.portfolio import Portfolio
 
@@ -35,6 +35,8 @@ class PendingBuy:
     fired: tuple[str, ...]
     change_pct: float
     volume: float
+    decision_type: DecisionType = None   # 결정 시점 확정
+    trigger_rule: str = ""
 
 
 @dataclass
@@ -46,6 +48,8 @@ class PendingSell:
     red_score: int
     fired: tuple[str, ...]
     partial: bool = False
+    decision_type: DecisionType = None   # 결정 시점 확정
+    trigger_rule: str = ""
 
 
 @dataclass
