@@ -1,5 +1,7 @@
 from datetime import date, datetime
 
+import pytest
+
 from simcore.live import db
 
 from tests.dashboard.conftest import needs_db
@@ -66,6 +68,59 @@ def test_trades_roundtrip_and_limit(sf):
 
     limited = q.trades(sf, "국내형", limit=2)
     assert len(limited) == 2
+
+
+@needs_db
+def test_trades_include_decision_type_and_trigger_rule(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="005930", market="KOSPI", side="SELL",
+                           quantity=1, price=70000.0, fee=100.0, tax=0.0,
+                           reason="FORCED_SELL", green_count=0, red_count=0,
+                           fired=[], realized_pnl=-500.0,
+                           decision_type="FORCED_SELL", trigger_rule="R18"))
+        s.commit()
+
+    rows = q.trades(sf, "국내형")
+    assert rows[0]["decision_type"] == "FORCED_SELL"
+    assert rows[0]["trigger_rule"] == "R18"
+
+
+@needs_db
+def test_recent_trades_include_decision_type_and_trigger_rule(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="005930", market="KOSPI", side="SELL",
+                           quantity=1, price=70000.0, fee=100.0, tax=0.0,
+                           reason="FORCED_SELL", green_count=0, red_count=0,
+                           fired=[], realized_pnl=-500.0,
+                           decision_type="FORCED_SELL", trigger_rule="R18"))
+        s.commit()
+
+    rows = q.recent_trades(sf)
+    assert rows[0]["decision_type"] == "FORCED_SELL"
+    assert rows[0]["trigger_rule"] == "R18"
+
+
+@needs_db
+def test_benchmark_returns_none_when_not_seeded(sf):
+    assert q.benchmark(sf, "국내형") is None
+
+
+@needs_db
+def test_benchmark_roundtrip(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.BenchmarkRow(character="국내형", benchmark_return=0.08,
+                               benchmark_name="KOSPI200", ts=datetime(2026, 1, 5, 15, 40)))
+        s.commit()
+
+    row = q.benchmark(sf, "국내형")
+    assert row is not None
+    assert row["benchmark_return"] == pytest.approx(0.08)
+    assert row["benchmark_name"] == "KOSPI200"
 
 
 @needs_db

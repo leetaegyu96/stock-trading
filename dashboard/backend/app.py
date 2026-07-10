@@ -16,6 +16,7 @@ from simcore.live.kis_client import KisClient
 from simcore.live.ratelimit import RateLimiter
 from simcore.live.repository import DbTokenStore, Repository
 from simcore.live.settings import load_settings
+from simcore.models import DecisionType
 from simcore.names import display_name
 from simcore import signal_display as sd
 
@@ -174,7 +175,10 @@ def character_trades(name: str, limit: int = 200, sf=Depends(get_sf)) -> list[Tr
         score = t["green_score"] if t["side"] == "BUY" else t["red_score"]
         out.append(TradeOut(
             **t,
-            signal_summary=sd.summarize(t["fired"], score, t["side"], _SCORES),
+            signal_summary=sd.summarize(
+                t["fired"], score, t["side"], _SCORES,
+                decision_type=DecisionType(t["decision_type"]), trigger_rule=t["trigger_rule"],
+            ),
             signal_detail=sd.detail(t["fired"], _SCORES),
         ))
     return out

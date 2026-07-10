@@ -66,6 +66,8 @@ def trades(sf, name: str, limit: int = 200) -> list[dict]:
                 "red_score": r.red_score,
                 "fired": list(r.fired or []),
                 "realized_pnl": r.realized_pnl,
+                "decision_type": r.decision_type,
+                "trigger_rule": r.trigger_rule,
             }
             for r in rows
         ]
@@ -143,7 +145,24 @@ def recent_trades(sf, limit: int = 12) -> list[dict]:
                          .limit(limit)).scalars().all()
         return [{"character": r.character, "symbol": r.symbol, "market": r.market,
                  "side": r.side, "reason": r.reason, "realized_pnl": r.realized_pnl,
-                 "date": r.date} for r in rows]
+                 "date": r.date, "decision_type": r.decision_type,
+                 "trigger_rule": r.trigger_rule} for r in rows]
+
+
+def benchmark(sf, name: str) -> dict | None:
+    """캐릭터의 벤치마크(지수) 수익률 스냅샷. 시딩 안 됐으면 None —
+    호출부(summary)가 이를 '숨기지 않고' benchmark_available=False 로 노출해야 한다."""
+    with sf() as s:
+        row = s.execute(
+            select(db.BenchmarkRow).where(db.BenchmarkRow.character == name)
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        return {
+            "benchmark_return": row.benchmark_return,
+            "benchmark_name": row.benchmark_name,
+            "ts": row.ts,
+        }
 
 
 def cash(sf, name: str) -> dict[str, float]:

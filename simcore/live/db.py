@@ -108,6 +108,16 @@ class TradeRow(Base):
     trigger_rule: Mapped[str] = mapped_column(String, default="")
 
 
+class BenchmarkRow(Base):
+    """캐릭터별 벤치마크(지수) 수익률 스냅샷. query-path에서 네트워크를 타지 않도록
+    seed_from_replay(리플레이 배치)가 미리 계산해 적재한다 — 요청 시점 계산 금지."""
+    __tablename__ = "benchmarks"
+    character: Mapped[str] = mapped_column(String, primary_key=True)
+    benchmark_return: Mapped[float | None] = mapped_column(Float, nullable=True)
+    benchmark_name: Mapped[str] = mapped_column(String, default="")
+    ts: Mapped[datetime] = mapped_column(DateTime)
+
+
 class CapitalFlowRow(Base):
     __tablename__ = "capital_flows"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

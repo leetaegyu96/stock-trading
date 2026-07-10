@@ -118,7 +118,7 @@ def test_list_characters_returns_all_seeded_cards(sf):
     assert len(cards) == 3
     for card in cards:
         assert set(card) == {
-            "name", "base_currency", "markets", "benchmark_delta",
+            "name", "base_currency", "markets", "benchmark_delta", "benchmark_available",
             "total_asset_krw", "twr", "pnl_krw", "today_pnl_pct",
             "equity_spark", "n_positions", "cash_krw",
         }
@@ -133,6 +133,7 @@ def test_list_characters_returns_all_seeded_cards(sf):
     assert by_name["범용형"]["base_currency"] == "KRW"
     assert by_name["범용형"]["markets"] == ["KR", "US"]
     assert all(c["benchmark_delta"] is None for c in cards)
+    assert all(c["benchmark_available"] is False for c in cards)
 
 
 @needs_db
@@ -335,6 +336,35 @@ def test_trades_include_name_and_signal_summary(sf):
     assert t["red_score"] == 0
     assert t["signal_summary"] != ""
     assert t["signal_detail"]
+    assert t["decision_type"] == "BUY"
+    assert t["trigger_rule"] == ""
+
+
+@needs_db
+def test_forced_sell_trade_renders_decision_based_summary(sf):
+    with sf() as s:
+        s.merge(db.CharacterRow(name="국내형", base_currency="KRW"))
+        s.add(db.TradeRow(
+            ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+            character="국내형", symbol="005930", market=Market.KR.value, side="SELL",
+            quantity=1, price=1000.0, fee=0.0, tax=0.0, reason="FORCED_SELL",
+            green_count=0, red_count=0, fired=[], realized_pnl=-500.0,
+            green_score=0, red_score=0,
+            decision_type="FORCED_SELL", trigger_rule="R18",
+        ))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r = TestClient(app).get("/api/characters/국내형/trades")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r.status_code == 200
+    [t] = r.json()
+    assert t["decision_type"] == "FORCED_SELL"
+    assert t["trigger_rule"] == "R18"
+    assert "강제 전량매도" in t["signal_summary"]
 
 
 @needs_db

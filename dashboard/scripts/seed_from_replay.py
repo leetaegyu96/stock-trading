@@ -33,7 +33,7 @@ _BASE_CURRENCY_BY_NAME = {s.name: s.base_currency.value for s in DEFAULT_CHARACT
 _TABLES_TO_CLEAR = (
     db.EquityPoint, db.TradeRow, db.CapitalFlowRow, db.FlowRequest,
     db.PositionRow, db.CashBalance, db.Cooldown, db.PendingOrder,
-    db.DailyBarRow, db.UniverseRow, db.CharacterRow,
+    db.DailyBarRow, db.UniverseRow, db.BenchmarkRow, db.CharacterRow,
 )
 
 
@@ -149,6 +149,17 @@ def seed_replay_result_into_db(result: ReplayResult, bundle: DataBundle, sf,
                     green_score=int(row.green_score), red_score=int(row.red_score),
                     fired=_fired_list(row.fired), realized_pnl=float(row.realized_pnl),
                     decision_type=row.decision_type, trigger_rule=row.trigger_rule))
+
+        # ---- 6b. 벤치마크(지수) 수익률 스냅샷 — query-path 는 이 값을 그대로 읽기만 하고
+        # 절대 요청 시점에 네트워크로 재계산하지 않는다(대시보드 안전성). ----
+        for name in names:
+            info = result.summary.get(name, {})
+            s.add(db.BenchmarkRow(
+                character=name,
+                benchmark_return=info.get("benchmark_return"),
+                benchmark_name=info.get("benchmark_name", ""),
+                ts=datetime.combine(last_date, _EQUITY_TIME),
+            ))
 
         # ---- 7. 일봉 (최종 스냅샷 시점까지, 심볼당 최근 ≤5봉) ----
         # last_close 정합을 위해 마지막 봉이 replay 가 실제로 처리한 마지막 날짜(last_date)
