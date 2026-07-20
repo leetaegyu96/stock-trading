@@ -62,6 +62,17 @@ class PositionOut(BaseModel):
     eval_value: float | None = None
     pnl_pct: float | None = None
     stale: bool | None = None
+    # 의사결정판 확장 필드(감사 Phase B) — SignalStatusRow(kind=보유)가 없는 종목/캐릭터는
+    # 신호 관련 필드가 전부 null 이다(500 방지, "관찰 데이터 없음"을 있는 그대로 노출).
+    weight_pct: float | None = None
+    entry_trigger: str = ""
+    current_red_score: int | None = None
+    stop_px: float | None = None
+    trail_px: float | None = None
+    stop_distance_pct: float | None = None
+    potential_loss: float | None = None
+    pending_sell: bool = False
+    as_of: date | None = None
 
 
 class TradeOut(BaseModel):
@@ -86,6 +97,38 @@ class TradeOut(BaseModel):
     realized_pnl: float
     decision_type: str = "BUY"
     trigger_rule: str = ""
+
+
+class TradesPage(BaseModel):
+    """거래 내역 페이지 — items(현재 페이지)와 total(필터 기준 전체 건수)."""
+    items: list[TradeOut]
+    total: int
+
+
+class LifecycleOut(BaseModel):
+    """포지션 생애(진입→청산) — 종목별 보유수량 0→BUY 시작, 0 도달 SELL로 종료."""
+    symbol: str
+    name: str
+    market: str
+    entry_date: date
+    exit_date: date | None = None
+    open: bool
+    trades: list[TradeOut]
+    qty_peak: int
+    realized_pnl_sum: float
+    entry_trigger: str
+
+
+class CandidateOut(BaseModel):
+    """오늘의 매수후보(SignalStatusRow kind=후보) — 의사결정판(감사 Phase B)."""
+    symbol: str
+    name: str
+    green_score: int
+    red_score: int
+    buy_gate: bool
+    status: str          # "예약" | "차단"
+    block_reason: str    # "점수부족"|"게이트미충족"|"보유중"|"쿨다운"|"슬롯부족"|"현금부족"|"가격없음"|""
+    as_of: date
 
 
 class MarketStatusOut(BaseModel):
@@ -143,8 +186,48 @@ class RecentTradeOut(BaseModel):
     date: date
 
 
+class PendingOrderOut(BaseModel):
+    """대기주문(BUY/SELL 결정) — today_actions 용."""
+    symbol: str
+    name: str
+    market: str
+    side: str
+    decision_type: str = ""
+    trigger_rule: str = ""
+    reason: str = ""
+
+
+class ForcedSellAlertOut(BaseModel):
+    """최신 거래일에 발생한 강제청산 경보 — today_actions 용."""
+    symbol: str
+    name: str
+    market: str
+    date: date
+    realized_pnl: float
+
+
+class TodayActionsOut(BaseModel):
+    """캐릭터별 오늘의 결정(대기주문) + 최신일 강제청산 경보."""
+    character: str
+    pending_orders: list[PendingOrderOut]
+    forced_sell_alerts: list[ForcedSellAlertOut]
+
+
+class CharacterRiskOut(BaseModel):
+    """캐릭터별 포트폴리오 위험: 현금비중·총노출·최대 보유 비중(종목 집중)·일 손익.
+    "업종 집중"이 아니다 — 업종/실적일 데이터가 없다."""
+    character: str
+    cash_ratio: float
+    total_exposure_pct: float
+    max_position_weight_pct: float
+    daily_pnl_krw: float
+
+
 class DashboardOut(BaseModel):
     """일일 현황판 응답."""
     movers: dict[str, dict[str, list[MoverOut]]]
     characters: list[CharPortfolioOut]
     recent_trades: list[RecentTradeOut]
+    # 의사결정판 확장(감사 Phase B) — 필드 추가 방식이라 기존 소비처는 영향 없음.
+    today_actions: list[TodayActionsOut] = []
+    risk: list[CharacterRiskOut] = []

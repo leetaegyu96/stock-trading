@@ -66,6 +66,22 @@ describe("MetricsPanel MDD phrasing", () => {
   });
 });
 
+describe("MetricsPanel 승률 옆 평균이익·평균손실·손익비", () => {
+  it("shows avg win/avg loss/손익비 alongside 승률", () => {
+    const html = renderToStaticMarkup(
+      <MetricsPanel metrics={makeMetrics({ win_rate: 0.6, avg_win: 12345, avg_loss: -6789, win_loss_ratio: 1.82 })} />
+    );
+    expect(html).toContain("승률");
+    expect(html).toContain("60.0%");
+    expect(html).toContain("평균이익");
+    expect(html).toContain("+₩12,345");
+    expect(html).toContain("평균손실");
+    expect(html).toContain("-₩6,789");
+    expect(html).toContain("손익비");
+    expect(html).toContain("1.82");
+  });
+});
+
 describe("MetricsPanel risk-adjusted strip", () => {
   it("renders Sharpe/Sortino/Calmar/Profit Factor/기대값/최대연속손실/회복기간", () => {
     const html = renderToStaticMarkup(<MetricsPanel metrics={makeMetrics({})} />);

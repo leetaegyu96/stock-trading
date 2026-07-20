@@ -186,6 +186,34 @@ def test_seed_persists_decision_type_and_trigger_rule():
             assert row.trigger_rule == exp["trigger_rule"]
 
 
+def test_seed_persists_signal_status_from_replay_result():
+    """Task 3: seed_replay_result_into_db 가 result.signal_status(마지막 거래일의
+    후보·보유 상태)를 replace_signal_status 로 SignalStatusRow 에 적재해야 한다 —
+    대시보드 의사결정판(Task 5)이 요청 경로에서 이 테이블만 읽는다."""
+    bundle = _bundle()
+    result = run_replay(Config(), bundle, date(2025, 9, 1), date(2026, 2, 1))
+    engine = db.make_engine("sqlite://")
+    db.create_all(engine)
+    sf = db.make_session_factory(engine)
+    seed_replay_result_into_db(result, bundle, sf, fx_rate=1300.0)
+
+    assert result.signal_status  # 이 fixture 는 비어있지 않은 signal_status 를 만든다
+    with sf() as s:
+        rows = s.query(db.SignalStatusRow).all()
+        assert len(rows) == len(result.signal_status)
+        by_symbol = {(r.character, r.symbol, r.kind): r for r in rows}
+        for expected in result.signal_status:
+            key = (expected["character"], expected["symbol"], expected["kind"])
+            row = by_symbol[key]
+            assert row.market == expected["market"]
+            assert row.green_score == expected["green_score"]
+            assert row.red_score == expected["red_score"]
+            assert row.buy_gate == expected["buy_gate"]
+            assert row.status == expected["status"]
+            assert row.block_reason == expected["block_reason"]
+            assert row.close == expected["close"]
+
+
 def test_seed_requires_force_flag_when_run_as_cli(monkeypatch):
     """--force 없이 CLI 실행하면 즉시 종료(가드)한다."""
     import runpy

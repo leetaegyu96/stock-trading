@@ -150,6 +150,40 @@ def test_card_summary_spark_limited_to_30_points(sf):
 
 
 @needs_db
+def test_character_risk_matches_hand_computed(sf):
+    with sf() as s:
+        _seed(s)
+        s.commit()
+
+    risk = summary.character_risk(sf, "테스트형", fx_rate=1300.0, last_prices={"AAPL": 160.0})
+
+    cash_krw = 500_000.0 + 1_000.0 * 1300.0          # 1,800,000
+    positions_krw = 5 * 160.0 * 1300.0               # 1,040,000
+    total = cash_krw + positions_krw
+
+    assert risk["character"] == "테스트형"
+    assert risk["cash_ratio"] == pytest.approx(cash_krw / total)
+    assert risk["total_exposure_pct"] == pytest.approx(positions_krw / total)
+    # 보유 1종목뿐이므로 최대 보유 비중(종목 집중) == 총노출
+    assert risk["max_position_weight_pct"] == pytest.approx(positions_krw / total)
+    # 일 손익: 자산곡선 마지막 두 점 차 (12,800,000 - 12,900,000)
+    assert risk["daily_pnl_krw"] == pytest.approx(-100_000.0)
+
+
+@needs_db
+def test_character_risk_defaults_when_no_history(sf):
+    with sf() as s:
+        s.merge(db.CharacterRow(name="빈형", base_currency="KRW"))
+        s.commit()
+
+    risk = summary.character_risk(sf, "빈형", fx_rate=1300.0, last_prices={})
+    assert risk["cash_ratio"] == 0.0
+    assert risk["total_exposure_pct"] == 0.0
+    assert risk["max_position_weight_pct"] == 0.0
+    assert risk["daily_pnl_krw"] == 0.0
+
+
+@needs_db
 def test_card_summary_and_detail_metrics_defaults_when_no_history(sf):
     with sf() as s:
         s.merge(db.CharacterRow(name="빈형", base_currency="KRW"))

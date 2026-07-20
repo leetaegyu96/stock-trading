@@ -1,9 +1,10 @@
 """대시보드 백엔드 — Postgres 조회 (simcore.live.db ORM 재사용, 읽기 전용)."""
 from __future__ import annotations
 
+from datetime import date as date_type
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from simcore.live import db
 from simcore.live.repository import Repository
@@ -38,39 +39,148 @@ def positions(sf, name: str) -> list[dict]:
         ]
 
 
-def trades(sf, name: str, limit: int = 200) -> list[dict]:
-    """캐릭터의 거래 내역(최신순, limit 개)."""
+def _trade_dict(r: db.TradeRow) -> dict:
+    return {
+        "ts": r.ts,
+        "date": r.date,
+        "symbol": r.symbol,
+        "name": display_name(r.symbol, r.market),
+        "market": r.market,
+        "side": r.side,
+        "quantity": r.quantity,
+        "price": r.price,
+        "fee": r.fee,
+        "tax": r.tax,
+        "reason": r.reason,
+        "green_count": r.green_count,
+        "red_count": r.red_count,
+        "green_score": r.green_score,
+        "red_score": r.red_score,
+        "fired": list(r.fired or []),
+        "realized_pnl": r.realized_pnl,
+        "decision_type": r.decision_type,
+        "trigger_rule": r.trigger_rule,
+    }
+
+
+def trades(
+    sf,
+    name: str,
+    limit: int = 20,
+    offset: int = 0,
+    symbol: str | None = None,
+    side: str | None = None,
+    decision_type: str | None = None,
+    date_from: date_type | None = None,
+    date_to: date_type | None = None,
+) -> dict:
+    """캐릭터의 거래 내역(최신순) — 필터+페이지네이션.
+
+    반환: {"items": [...거래 dict...], "total": int}. total 은 limit/offset 적용
+    전, 같은 필터 조건에서의 전체 건수(페이지 UI가 전체 페이지 수를 계산할 수 있게)."""
+    conditions = [db.TradeRow.character == name]
+    if symbol is not None:
+        conditions.append(db.TradeRow.symbol == symbol)
+    if side is not None:
+        conditions.append(db.TradeRow.side == side)
+    if decision_type is not None:
+        conditions.append(db.TradeRow.decision_type == decision_type)
+    if date_from is not None:
+        conditions.append(db.TradeRow.date >= date_from)
+    if date_to is not None:
+        conditions.append(db.TradeRow.date <= date_to)
+
+    with sf() as s:
+        total = s.execute(
+            select(func.count()).select_from(db.TradeRow).where(*conditions)
+        ).scalar_one()
+        rows = s.execute(
+            select(db.TradeRow)
+            .where(*conditions)
+            .order_by(db.TradeRow.ts.desc(), db.TradeRow.id.desc())
+            .limit(limit)
+            .offset(offset)
+        ).scalars().all()
+        return {"items": [_trade_dict(r) for r in rows], "total": total}
+
+
+def _all_trades(sf, name: str) -> list[dict]:
+    """페이지네이션 없이 캐릭터 전체 거래 이력(집계용: 승률/n_trades 등 — 요청 경로
+    에서 전체 이력을 필요로 하는 내부 호출부 전용). 순서는 trades()와 동일(최신순)."""
+    return trades(sf, name, limit=1_000_000)["items"]
+
+
+def position_lifecycles(sf, name: str, limit: int = 10) -> list[dict]:
+    """캐릭터의 포지션 생애(진입→청산) 그룹핑 — 종목별 보유수량을 시간순으로 추적한다.
+
+    규칙: 보유수량이 0인 상태에서 BUY가 오면 새 생애 시작. SELL은 수량을 줄이고,
+    0(또는 그 이하 — 데이터 이상으로 초과매도가 있어도 크래시하지 않도록 방어)에
+    도달하면 그 생애를 종료(exit_date 기록)한다. 청산 후 재매수는 별도의 새 생애.
+
+    엣지 케이스: 시드 데이터가 이력 중간부터 시작해 사전 BUY 없이 SELL이 먼저
+    나타나는 경우(orphan SELL) — 대응하는 생애가 없으므로 크래시하지 않고 그
+    거래를 건너뛴다(어떤 생애에도 포함되지 않음)."""
     with sf() as s:
         rows = s.execute(
             select(db.TradeRow)
             .where(db.TradeRow.character == name)
-            .order_by(db.TradeRow.ts.desc(), db.TradeRow.id.desc())
-            .limit(limit)
+            .order_by(db.TradeRow.ts, db.TradeRow.id)
         ).scalars().all()
-        return [
-            {
-                "ts": r.ts,
-                "date": r.date,
-                "symbol": r.symbol,
-                "name": display_name(r.symbol, r.market),
-                "market": r.market,
-                "side": r.side,
-                "quantity": r.quantity,
-                "price": r.price,
-                "fee": r.fee,
-                "tax": r.tax,
-                "reason": r.reason,
-                "green_count": r.green_count,
-                "red_count": r.red_count,
-                "green_score": r.green_score,
-                "red_score": r.red_score,
-                "fired": list(r.fired or []),
-                "realized_pnl": r.realized_pnl,
-                "decision_type": r.decision_type,
-                "trigger_rule": r.trigger_rule,
-            }
-            for r in rows
-        ]
+
+    lifecycles: list[dict] = []
+    open_by_symbol: dict[str, dict] = {}
+    qty_by_symbol: dict[str, int] = {}
+
+    for r in rows:
+        symbol = r.symbol
+        current_qty = qty_by_symbol.get(symbol, 0)
+        trade = _trade_dict(r)
+
+        if r.side == "BUY":
+            if current_qty == 0:
+                life = {
+                    "symbol": symbol,
+                    "name": display_name(symbol, r.market),
+                    "market": r.market,
+                    "entry_date": r.date,
+                    "exit_date": None,
+                    "open": True,
+                    "trades": [],
+                    "qty_peak": 0,
+                    "realized_pnl_sum": 0.0,
+                    "entry_trigger": r.trigger_rule,
+                }
+                open_by_symbol[symbol] = life
+                lifecycles.append(life)
+            life = open_by_symbol[symbol]
+            life["trades"].append(trade)
+            current_qty += r.quantity
+            life["qty_peak"] = max(life["qty_peak"], current_qty)
+            qty_by_symbol[symbol] = current_qty
+        else:  # SELL
+            life = open_by_symbol.get(symbol)
+            if life is None:
+                # orphan SELL: 대응하는 생애가 없다(시드가 이력 중간부터 시작하는
+                # 경우 등) — 스킵하고 계속 진행(크래시 방지).
+                continue
+            life["trades"].append(trade)
+            life["realized_pnl_sum"] += r.realized_pnl
+            current_qty -= r.quantity
+            if current_qty <= 0:
+                life["exit_date"] = r.date
+                life["open"] = False
+                current_qty = 0
+                del open_by_symbol[symbol]
+            qty_by_symbol[symbol] = current_qty
+
+    # 진행중(open) 생애는 오래된 것이라도 limit에 밀려 누락되면 안 되므로,
+    # truncate 전에 open/closed로 분리한다 — open은 전부 선택하고(최신 entry_date
+    # 우선), 남은 자리를 가장 최근에 진입한 closed 생애로 채운다.
+    lifecycles.sort(key=lambda life: life["entry_date"], reverse=True)
+    open_lifecycles = [life for life in lifecycles if life["open"]]
+    closed_lifecycles = [life for life in lifecycles if not life["open"]]
+    remaining = max(limit - len(open_lifecycles), 0)
+    return open_lifecycles + closed_lifecycles[:remaining]
 
 
 def flows(sf, name: str) -> list[dict]:
@@ -173,6 +283,102 @@ def market_status(sf) -> list[dict]:
                  "last_close_date": r.last_close_date.isoformat() if r.last_close_date else None,
                  "last_open_date": r.last_open_date.isoformat() if r.last_open_date else None}
                 for r in rows]
+
+
+def signal_status(sf, name: str, kind: str | None = None) -> list[dict]:
+    """캐릭터의 SignalStatusRow 목록(관찰 전용, 마감 시점 저장 데이터만 읽는다).
+    kind("후보"|"보유")를 주면 그 종류만 필터한다."""
+    rows = Repository(sf).signal_status(character=name)
+    if kind is not None:
+        rows = [r for r in rows if r["kind"] == kind]
+    return rows
+
+
+def candidates(sf, name: str) -> list[dict]:
+    """캐릭터의 오늘 매수후보 상태(SignalStatusRow kind=후보) — CandidateOut 매핑용."""
+    return [
+        {
+            "symbol": r["symbol"],
+            "name": display_name(r["symbol"], r["market"]),
+            "green_score": r["green_score"],
+            "red_score": r["red_score"],
+            "buy_gate": r["buy_gate"],
+            "status": r["status"],
+            "block_reason": r["block_reason"],
+            "as_of": r["date"],
+        }
+        for r in signal_status(sf, name, kind="후보")
+    ]
+
+
+def last_buy_triggers(sf, name: str) -> dict[str, str]:
+    """캐릭터의 종목별 마지막 BUY 거래 trigger_rule (positions.entry_trigger 용)."""
+    with sf() as s:
+        rows = s.execute(
+            select(db.TradeRow)
+            .where(db.TradeRow.character == name, db.TradeRow.side == "BUY")
+            .order_by(db.TradeRow.ts, db.TradeRow.id)
+        ).scalars().all()
+    result: dict[str, str] = {}
+    for r in rows:
+        result[r.symbol] = r.trigger_rule  # 시간순 정렬이므로 마지막 것으로 덮어써짐
+    return result
+
+
+def pending_sell_symbols(sf, name: str) -> set[str]:
+    """SELL 대기주문이 있는 종목 집합(positions.pending_sell 용)."""
+    with sf() as s:
+        rows = s.execute(
+            select(db.PendingOrder.symbol)
+            .where(db.PendingOrder.character == name, db.PendingOrder.side == "SELL")
+        ).scalars().all()
+        return set(rows)
+
+
+def pending_orders(sf, name: str) -> list[dict]:
+    """캐릭터의 대기주문(BUY/SELL) 목록 — today_actions 용."""
+    with sf() as s:
+        rows = s.execute(
+            select(db.PendingOrder).where(db.PendingOrder.character == name)
+        ).scalars().all()
+        return [
+            {
+                "symbol": r.symbol,
+                "market": r.market,
+                "side": r.side,
+                "decision_type": r.decision_type,
+                "trigger_rule": r.trigger_rule,
+                "reason": r.reason,
+            }
+            for r in rows
+        ]
+
+
+def forced_sell_alerts(sf, name: str) -> list[dict]:
+    """캐릭터의 최신 거래일에 발생한 FORCED_SELL 경보(today_actions 용).
+    거래 이력이 없으면 빈 리스트."""
+    with sf() as s:
+        latest_date = s.execute(
+            select(func.max(db.TradeRow.date)).where(db.TradeRow.character == name)
+        ).scalar_one_or_none()
+        if latest_date is None:
+            return []
+        rows = s.execute(
+            select(db.TradeRow).where(
+                db.TradeRow.character == name,
+                db.TradeRow.date == latest_date,
+                db.TradeRow.decision_type == "FORCED_SELL",
+            )
+        ).scalars().all()
+        return [
+            {
+                "symbol": r.symbol,
+                "market": r.market,
+                "date": r.date,
+                "realized_pnl": r.realized_pnl,
+            }
+            for r in rows
+        ]
 
 
 def cash(sf, name: str) -> dict[str, float]:

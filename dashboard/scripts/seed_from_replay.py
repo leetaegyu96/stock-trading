@@ -21,6 +21,7 @@ from dashboard.backend.constants import FALLBACK_FX_RATE
 from simcore.config import Config
 from simcore.engine import DEFAULT_CHARACTERS
 from simcore.live import db
+from simcore.live.repository import Repository
 from simcore.replay import DataBundle, ReplayResult, run_replay
 
 _EQUITY_TIME = time(15, 40)
@@ -176,6 +177,10 @@ def seed_replay_result_into_db(result: ReplayResult, bundle: DataBundle, sf,
                         open=float(bar["open"]), high=float(bar["high"]),
                         low=float(bar["low"]), close=float(bar["close"]),
                         volume=float(bar["volume"])))
+
+        # ---- 8. 신호 상태(마지막 거래일의 후보·보유) — 감사 Phase B(의사결정판) ----
+        # market=None → 전체 교체(리플레이 시딩은 한 번에 모든 시장·캐릭터를 새로 쓴다).
+        Repository(sf).replace_signal_status(result.signal_status, session=s, market=None)
 
         s.commit()
 

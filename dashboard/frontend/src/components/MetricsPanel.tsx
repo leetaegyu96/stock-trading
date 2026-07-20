@@ -59,6 +59,10 @@ export function MetricsPanel({ metrics, className }: MetricsPanelProps) {
     { label: "누적손익", value: formatSignedKrw(metrics.pnl_krw), cls: signClass(metrics.pnl_krw) },
     { label: "거래 횟수", value: `${metrics.n_trades.toLocaleString("ko-KR")}건` },
     { label: "승률", value: `${winRatePct.toFixed(1)}%` },
+    // 승률만으로는 맥락이 부족하므로 바로 옆에 평균이익·평균손실·손익비를 함께 보여준다.
+    { label: "평균이익", value: formatSignedKrw(metrics.avg_win), cls: signClass(metrics.avg_win) },
+    { label: "평균손실", value: formatSignedKrw(metrics.avg_loss), cls: signClass(metrics.avg_loss) },
+    { label: "손익비", value: metrics.win_loss_ratio.toFixed(2) },
   ];
 
   const tooltip = riskTooltip(metrics);

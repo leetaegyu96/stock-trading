@@ -1,13 +1,12 @@
-// 메인 페이지: 일일 현황판. 좌측은 캐릭터 카드(실시간 갱신), 우측은
-// 오늘의 시장 동향·내 캐릭터 요약·최근 거래로 구성된 현황판.
+// 메인 페이지: 오늘의 의사결정판. 오늘의 행동(대기주문·강제매도 경보) →
+// 포트폴리오 위험 스트립 → 캐릭터 카드(실시간 갱신) → 내 캐릭터/오늘의 시장/
+// 최근 거래(하단) 순서로 배치한다(감사 Phase B). 실제 레이아웃은 DecisionBoard가
+// 담당하고, 이 페이지는 데이터 패칭/로딩·에러 상태만 관리한다.
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, getCharacters, getDashboard } from "../api";
 import { useCardsSocket } from "../ws";
-import { CharacterCard } from "../components/CharacterCard";
-import { MarketMovers } from "../components/MarketMovers";
-import { HoldingsPreview } from "../components/HoldingsPreview";
-import { RecentTrades } from "../components/RecentTrades";
+import { DecisionBoard } from "../components/DecisionBoard";
 import { formatKrw } from "../components/format";
 import type { CardSummary, Dashboard } from "../types";
 import "../components/theme.css";
@@ -115,42 +114,12 @@ export function Main() {
       )}
 
       {cards !== null && cards.length > 0 && (
-        <div className="main-layout">
-          <div className="card-col">
-            {cards.map((card) => (
-              <CharacterCard key={card.name} summary={card} onClick={handleCardClick} />
-            ))}
-          </div>
-
-          <div className="board">
-            <section className="detail-panel">
-              <h2 className="detail-panel__title">오늘의 시장</h2>
-              {board ? (
-                <MarketMovers movers={board.movers} />
-              ) : (
-                <p className="board__empty">{boardError ?? "불러오는 중…"}</p>
-              )}
-            </section>
-
-            <section className="detail-panel">
-              <h2 className="detail-panel__title">내 캐릭터</h2>
-              {board ? (
-                <HoldingsPreview characters={board.characters} />
-              ) : (
-                <p className="board__empty">{boardError ?? "불러오는 중…"}</p>
-              )}
-            </section>
-
-            <section className="detail-panel">
-              <h2 className="detail-panel__title">최근 거래</h2>
-              {board ? (
-                <RecentTrades trades={board.recent_trades} />
-              ) : (
-                <p className="board__empty">{boardError ?? "불러오는 중…"}</p>
-              )}
-            </section>
-          </div>
-        </div>
+        <DecisionBoard
+          cards={cards}
+          board={board}
+          boardError={boardError}
+          onCardClick={handleCardClick}
+        />
       )}
     </div>
   );

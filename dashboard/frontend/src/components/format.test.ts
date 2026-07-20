@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  changeArrow,
   formatKrw,
   holdingDays,
   shortDate,
@@ -26,6 +27,20 @@ describe("signedPct", () => {
 
   it("does not add a sign for exactly zero", () => {
     expect(signedPct(0)).toBe("0.00%");
+  });
+});
+
+describe("changeArrow", () => {
+  it("shows ▲ for positive change", () => {
+    expect(changeArrow(1.2)).toBe("▲");
+  });
+
+  it("shows ▼ for negative change", () => {
+    expect(changeArrow(-0.5)).toBe("▼");
+  });
+
+  it("shows – for exactly zero", () => {
+    expect(changeArrow(0)).toBe("–");
   });
 });
 

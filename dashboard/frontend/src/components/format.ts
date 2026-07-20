@@ -18,6 +18,13 @@ export function signClass(value: number): "up" | "down" | "neutral" {
   return "neutral";
 }
 
+/** 등락 색상과 병행 표시할 부호(▲/▼/–). 접근성: 색상만으로 등락을 구분하지 않는다. */
+export function changeArrow(value: number): "▲" | "▼" | "–" {
+  if (value > 0) return "▲";
+  if (value < 0) return "▼";
+  return "–";
+}
+
 /** YYYY-MM-DD(혹은 ISO) 문자열 기준, 오늘까지 보유일수(당일 포함 1일차). */
 export function holdingDays(openedDate: string, now: Date = new Date()): number {
   const opened = new Date(openedDate);
