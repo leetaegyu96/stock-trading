@@ -92,7 +92,7 @@ def boot(settings: LiveSettings) -> None:
     universe = _universe_provider(kis, repo)
     for market in _MARKETS:
         catch_up(orch, repo, market, date.today(), universe(market), holidays(market))
-    sched = LiveScheduler(orch, repo, holidays, universe).build()
+    sched = LiveScheduler(orch, repo, holidays, universe, cfg=orch.cfg).build()
     sched.start()
     print("[live] 스케줄러 가동. Ctrl+C 로 종료.")
     try:
