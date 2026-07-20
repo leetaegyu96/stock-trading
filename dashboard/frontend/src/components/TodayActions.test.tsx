@@ -63,4 +63,44 @@ describe("TodayActions", () => {
     expect(html).toContain("강제매도");
     expect(html).toContain("애플");
   });
+
+  it("renders forced-sell alert realized_pnl with a down arrow (▼) when negative", () => {
+    const actions: TodayActionsOut[] = [
+      {
+        character: "해외형",
+        pending_orders: [],
+        forced_sell_alerts: [
+          {
+            symbol: "AAPL",
+            name: "애플",
+            market: "US",
+            date: "2026-07-20",
+            realized_pnl: -120.5,
+          },
+        ],
+      },
+    ];
+    const html = renderToStaticMarkup(<TodayActions actions={actions} />);
+    expect(html).toContain("▼");
+  });
+
+  it("renders forced-sell alert realized_pnl with an up arrow (▲) when positive", () => {
+    const actions: TodayActionsOut[] = [
+      {
+        character: "해외형",
+        pending_orders: [],
+        forced_sell_alerts: [
+          {
+            symbol: "AAPL",
+            name: "애플",
+            market: "US",
+            date: "2026-07-20",
+            realized_pnl: 200.75,
+          },
+        ],
+      },
+    ];
+    const html = renderToStaticMarkup(<TodayActions actions={actions} />);
+    expect(html).toContain("▲");
+  });
 });

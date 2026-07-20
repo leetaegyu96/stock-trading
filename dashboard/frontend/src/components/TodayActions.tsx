@@ -2,7 +2,7 @@
 // 강제청산 경보. 전 캐릭터에 걸쳐 아무 것도 없으면 "오늘 예정된 행동 없음"을 그대로
 // 보여준다(조용히 빈 화면으로 두지 않음).
 import type { TodayActionsOut } from "../types";
-import { formatSignedPrice, reasonInfo, shortDate, sideLabel } from "./format";
+import { changeArrow, formatSignedPrice, reasonInfo, shortDate, sideLabel } from "./format";
 
 export interface TodayActionsProps {
   actions: TodayActionsOut[];
@@ -31,6 +31,7 @@ export function TodayActions({ actions }: TodayActionsProps) {
                     {f.name}
                   </span>
                   <span className={`num ${f.realized_pnl >= 0 ? "up" : "down"}`}>
+                    <span aria-hidden="true">{changeArrow(f.realized_pnl)}</span>{" "}
                     {formatSignedPrice(f.market, f.realized_pnl)}
                   </span>
                   <span className="muted">{shortDate(f.date)}</span>
