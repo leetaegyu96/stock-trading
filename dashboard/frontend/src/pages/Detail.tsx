@@ -1,6 +1,6 @@
 // 캐릭터 상세 페이지: 헤더(아바타·이름·입출금) → 성과지표 스트립 → 자산곡선 →
 // 보유종목 → 거래내역. 카드 브로드캐스트에서 이 캐릭터 값이 바뀌면 조용히 재조회.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ApiError,
@@ -117,22 +117,29 @@ export function Detail() {
     void load(name, true);
   }, [name, load]);
 
+  // 실시간 포지션 시그니처: 카드 브로드캐스트에서 이 캐릭터의 포지션 관련 값을 문자열로
+  // 축약한 안정적인 primitive. liveCards 배열 자체(참조가 매 프레임 바뀔 수 있음)가 아니라
+  // 이 문자열을 의존성으로 사용해야 아래 effect들이 실제 값 변경 시에만 재실행된다.
+  const livePositionsSignature = useMemo(() => {
+    const card = liveCards.find((c) => c.name === name);
+    return card ? `${card.n_positions}:${card.total_asset_krw}:${card.cash_krw}` : null;
+  }, [liveCards, name]);
+
   // 실시간: 카드 스냅샷에서 이 캐릭터의 포지션 관련 값이 바뀌면 스피너 없이 재조회.
   useEffect(() => {
-    if (!name || liveCards.length === 0) return;
-    const card = liveCards.find((c) => c.name === name);
-    if (!card) return;
-    const signature = `${card.n_positions}:${card.total_asset_krw}:${card.cash_krw}`;
+    if (!name || livePositionsSignature === null) return;
     if (positionsSignatureRef.current === null) {
-      positionsSignatureRef.current = signature;
+      positionsSignatureRef.current = livePositionsSignature;
       return;
     }
-    if (positionsSignatureRef.current === signature) return;
-    positionsSignatureRef.current = signature;
+    if (positionsSignatureRef.current === livePositionsSignature) return;
+    positionsSignatureRef.current = livePositionsSignature;
     void load(name, false);
-  }, [liveCards, name, load]);
+  }, [livePositionsSignature, name, load]);
 
-  // 거래내역(플랫 뷰): 페이지·필터 변경 시 재조회.
+  // 거래내역(플랫 뷰): 페이지·필터 변경 + 실시간 포지션 시그니처(livePositionsSignature)
+  // 변경 시 재조회. load() 를 트리거하는 것과 동일한 시그니처를 의존성에 넣어, 강제매도 등
+  // 실시간 체결이 발생하면 현재 페이지/필터를 유지한 채 조용히 다시 조회한다.
   useEffect(() => {
     if (!name) return;
     let cancelled = false;
@@ -154,9 +161,10 @@ export function Detail() {
     return () => {
       cancelled = true;
     };
-  }, [name, tradesPageNum, tradesFilters]);
+  }, [name, tradesPageNum, tradesFilters, livePositionsSignature]);
 
-  // 포지션 생애 뷰: 토글 시에만 조회(불필요한 요청 방지).
+  // 포지션 생애 뷰: 토글 시 + 실시간 포지션 시그니처 변경 시 조회(뷰가 아닐 땐 스킵해
+  // 불필요한 요청을 방지하되, 뷰 진입 상태에서는 실시간 체결을 반영한다).
   useEffect(() => {
     if (!name || tradesView !== "lifecycle") return;
     let cancelled = false;
@@ -170,7 +178,7 @@ export function Detail() {
     return () => {
       cancelled = true;
     };
-  }, [name, tradesView]);
+  }, [name, tradesView, livePositionsSignature]);
 
   const handleTradesFilterChange = useCallback((patch: Partial<TradesFilterState>) => {
     setTradesFilters((prev) => ({ ...prev, ...patch }));
