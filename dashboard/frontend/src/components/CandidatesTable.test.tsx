@@ -7,12 +7,14 @@ function makeCandidate(overrides: Partial<CandidateOut>): CandidateOut {
   return {
     symbol: "005930",
     name: "삼성전자",
+    market: "KR",
     green_score: 3,
     red_score: 1,
     buy_gate: true,
     status: "예약",
     block_reason: "",
     as_of: "2026-07-20",
+    close: 70000,
     ...overrides,
   };
 }
@@ -60,5 +62,28 @@ describe("CandidatesTable", () => {
     );
     expect(html).toContain(">4<");
     expect(html).toContain(">2<");
+  });
+
+  it("renders a US candidate's close price with $ formatting", () => {
+    const html = renderToStaticMarkup(
+      <CandidatesTable
+        candidates={[makeCandidate({ symbol: "AAPL", market: "US", close: 172.5 })]}
+      />
+    );
+    expect(html).toContain("$172.50");
+  });
+
+  it("renders a KR candidate's close price with ₩ formatting", () => {
+    const html = renderToStaticMarkup(
+      <CandidatesTable candidates={[makeCandidate({ symbol: "005930", market: "KR", close: 70000 })]} />
+    );
+    expect(html).toContain("₩70,000");
+  });
+
+  it("renders — when close is null", () => {
+    const html = renderToStaticMarkup(
+      <CandidatesTable candidates={[makeCandidate({ close: null })]} />
+    );
+    expect(html).toContain("—");
   });
 });

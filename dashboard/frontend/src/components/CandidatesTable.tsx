@@ -2,6 +2,7 @@
 // 차단 사유. block_reason은 백엔드가 확정한 표시값을 그대로 렌더한다(프론트에서
 // 재계산/재해석하지 않음).
 import type { CandidateOut } from "../types";
+import { formatPrice } from "./format";
 
 export interface CandidatesTableProps {
   candidates: CandidateOut[];
@@ -23,6 +24,7 @@ export function CandidatesTable({ candidates, className }: CandidatesTableProps)
         <thead>
           <tr>
             <th>종목</th>
+            <th className="ta-r">가격</th>
             <th className="ta-r">청신호</th>
             <th className="ta-r">적신호</th>
             <th>매수게이트</th>
@@ -39,6 +41,7 @@ export function CandidatesTable({ candidates, className }: CandidatesTableProps)
                   <span className="detail-table__name">{c.name}</span>
                   <span className="detail-table__code">{c.symbol}</span>
                 </td>
+                <td className="ta-r num">{c.close === null ? "—" : formatPrice(c.market, c.close)}</td>
                 <td className="ta-r num">{c.green_score}</td>
                 <td className="ta-r num">{c.red_score}</td>
                 <td>
