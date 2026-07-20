@@ -1,7 +1,7 @@
 // 오늘의 시장 동향: 시장(국내/해외)별 등락률 상위·하위 종목.
 // 데이터는 전체 시장이 아니라 캐릭터들이 추적하는 유니버스 한정.
 import type { Dashboard, Mover } from "../types";
-import { signClass, signedPct } from "./format";
+import { formatPrice, signClass, signedPct } from "./format";
 
 export interface MarketMoversProps {
   movers: Dashboard["movers"];
@@ -15,6 +15,9 @@ function MoverRow({ mover }: { mover: Mover }) {
     <li className="movers__item">
       <span className="movers__name" title={mover.symbol}>
         {mover.name}
+      </span>
+      <span className="movers__price">
+        {mover.close === null || mover.close === undefined ? "—" : formatPrice(mover.market, mover.close)}
       </span>
       <span className={`chip chip--${signClass(pct)}`}>{signedPct(pct)}</span>
     </li>
