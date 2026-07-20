@@ -269,20 +269,8 @@ body {
 }
 .page-state--error { color: var(--color-danger); }
 
-/* ── 메인 레이아웃(좌: 캐릭터 카드열 · 우: 일일 현황판) ── */
-.main-layout {
-  display: grid;
-  grid-template-columns: minmax(300px, 360px) 1fr;
-  gap: 20px;
-  align-items: start;
-}
-.card-col { display: flex; flex-direction: column; gap: 16px; }
-.board { display: flex; flex-direction: column; gap: 16px; }
+/* ── 의사결정판 공용 빈 상태 문구(오늘의 행동/위험 스트립/시장/최근거래 로딩·빈 상태) ── */
 .board__empty { color: var(--color-text-muted); font-size: 13px; padding: 8px 0; margin: 0; }
-
-@media (max-width: 860px) {
-  .main-layout { grid-template-columns: 1fr; }
-}
 
 /* ── 오늘의 시장(movers) ── */
 .movers { display: flex; flex-direction: column; gap: 16px; }

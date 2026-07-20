@@ -23,7 +23,6 @@ from dashboard.backend import queries
 from dashboard.backend.schemas import CardSummary, Metrics
 
 _SPARK_POINTS = 30
-_ALL_TRADES_LIMIT = 1_000_000  # win_rate/n_trades 는 페이지네이션 없이 전체 이력을 봐야 함
 _SPEC_BY_NAME = {s.name: s for s in DEFAULT_CHARACTERS}
 
 
@@ -151,6 +150,37 @@ def character_portfolios(sf, fx_rate, last_prices_by_char) -> list[dict]:
     return out
 
 
+def _daily_pnl_krw(eq: pd.Series) -> float:
+    """자산곡선 마지막 두 점의 차(원화) — 점이 2개 미만이면 0.0."""
+    if len(eq) < 2:
+        return 0.0
+    return float(eq.iloc[-1] - eq.iloc[-2])
+
+
+def character_risk(sf, name: str, fx_rate: float, last_prices: dict[str, float]) -> dict:
+    """캐릭터 위험 지표: 현금비중·총노출·최대 보유 비중(종목 집중, "업종 집중" 아님)·일 손익.
+
+    저장 데이터(equity_curve/positions/cash_balances)만 읽는다 — evaluate_frame 등 무거운
+    계산 없음. 보유·현금 이력이 전혀 없으면 전부 0.0 폴백(500 방지)."""
+    eq = _equity_series(sf, name)
+    positions = queries.positions(sf, name)
+    cash = queries.cash(sf, name)
+    cash_krw = cash.get("KRW", 0.0) + cash.get("USD", 0.0) * fx_rate
+    position_values_krw = [_position_value_krw(p, last_prices, fx_rate) for p in positions]
+    positions_krw = sum(position_values_krw)
+    total_krw = cash_krw + positions_krw
+
+    return {
+        "character": name,
+        "cash_ratio": (cash_krw / total_krw) if total_krw else 0.0,
+        "total_exposure_pct": (positions_krw / total_krw) if total_krw else 0.0,
+        "max_position_weight_pct": (
+            (max(position_values_krw) / total_krw) if total_krw and position_values_krw else 0.0
+        ),
+        "daily_pnl_krw": _daily_pnl_krw(eq),
+    }
+
+
 def _win_rate(trades: list[dict]) -> float:
     sells = [t for t in trades if t["side"] == "SELL"]
     if not sells:
@@ -166,7 +196,7 @@ def detail_metrics(sf, name: str) -> Metrics:
     twr, pnl_krw = _twr_and_pnl(eq, flows)
     mdd = metrics.max_drawdown(eq)
 
-    all_trades = queries.trades(sf, name, limit=_ALL_TRADES_LIMIT)
+    all_trades = queries._all_trades(sf, name)
     # risk_metrics 는 side+realized_pnl 을 갖춘 DataFrame 을 기대한다(SELL 행만 실현손익 반영).
     trades_df = pd.DataFrame(all_trades)[["side", "realized_pnl"]] if all_trades else None
     risk = metrics.risk_metrics(eq, trades_df)

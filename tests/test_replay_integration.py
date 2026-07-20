@@ -213,3 +213,42 @@ def test_summary_benchmark_universal_uses_single_index_when_only_one_available()
     assert s["benchmark_return"] == pytest.approx(kr_r)
     assert s["benchmark_delta"] == pytest.approx(s["twr"] - s["benchmark_return"])
     assert s["benchmark_name"] == "KOSPI200"
+
+def test_replay_signal_status_holds_position_with_stop_px_and_candidates():
+    """Task 2: ReplayResult.signal_status 는 마지막 거래일의 후보(engine.last_candidates)
+    + 보유 상태(캐릭터별 보유 종목의 stop_px=avg*(1+locked_stop_pct), trail_px, close)를
+    담아야 한다."""
+    import numpy as np, pandas as pd
+    from datetime import date
+    from simcore.config import Config
+    from simcore.replay import DataBundle, run_replay
+    idx = pd.date_range("2025-06-01", periods=200, freq="B")
+    up = np.linspace(100, 400, 200)
+    df = pd.DataFrame({"open": up, "high": up + 2, "low": up - 2,
+                       "close": up, "volume": np.linspace(1000, 5000, 200)}, index=idx)
+    cfg = Config()
+    res = run_replay(cfg, DataBundle(kr={"AAA": df}, us={},
+                     fx=pd.Series(1300.0, index=idx)), date(2025, 9, 1), date(2026, 2, 1))
+
+    assert res.signal_status  # 비어있지 않음
+    last_day = res.equity.index[-1].date()
+
+    held_rows = [r for r in res.signal_status if r["kind"] == "보유"]
+    assert held_rows
+    kr_pos = next(p for p in res.positions_by_char["국내형"] if p["symbol"] == "AAA")
+    row = next(r for r in held_rows
+               if r["character"] == "국내형" and r["symbol"] == "AAA")
+    assert row["date"] == last_day
+    assert row["close"] == pytest.approx(res.last_close["AAA"])
+    expected_stop = kr_pos["avg_price"] * (1 + kr_pos["locked_stop_pct"])
+    assert row["stop_px"] == pytest.approx(expected_stop)
+    peak_gain = kr_pos["peak_price"] / kr_pos["avg_price"] - 1.0
+    if peak_gain >= cfg.rules.trailing_top:
+        expected_trail = kr_pos["peak_price"] * (1 - cfg.rules.trail_pct)
+        assert row["trail_px"] == pytest.approx(expected_trail)
+    else:
+        assert row["trail_px"] is None
+
+    cand_rows = [r for r in res.signal_status if r["kind"] == "후보"]
+    assert cand_rows  # engine.last_candidates 기반(보유중 차단 포함)
+    assert all(r["date"] == last_day for r in cand_rows)

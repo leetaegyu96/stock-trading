@@ -284,6 +284,120 @@ def test_character_positions_falls_back_when_kis_fails(sf):
 
 
 @needs_db
+def test_character_candidates_endpoint_returns_rows(sf):
+    with sf() as s:
+        s.merge(db.CharacterRow(name="국내형", base_currency="KRW"))
+        s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="005930",
+                                  market="KR", kind="후보", green_score=5, red_score=1,
+                                  buy_gate=True, status="예약", block_reason=""))
+        s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="000660",
+                                  market="KR", kind="후보", green_score=1, red_score=0,
+                                  buy_gate=False, status="차단", block_reason="점수부족"))
+        # 보유 상태 행은 후보 엔드포인트에 섞이면 안 된다
+        s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="035420",
+                                  market="KR", kind="보유", green_score=0, red_score=2,
+                                  buy_gate=False, status="", block_reason="",
+                                  stop_px=9000.0, close=9500.0))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r = TestClient(app).get("/api/characters/국내형/candidates")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r.status_code == 200
+    rows = r.json()
+    assert len(rows) == 2
+    by_symbol = {row["symbol"]: row for row in rows}
+    assert by_symbol["005930"]["name"] == "삼성전자"
+    assert by_symbol["005930"]["buy_gate"] is True
+    assert by_symbol["005930"]["status"] == "예약"
+    assert by_symbol["005930"]["as_of"] == "2026-01-05"
+    assert by_symbol["000660"]["status"] == "차단"
+    assert by_symbol["000660"]["block_reason"] == "점수부족"
+
+
+@needs_db
+def test_character_positions_includes_decision_fields_from_signal_status(sf):
+    with sf() as s:
+        _seed_full(s)
+        # AAPL 최초 진입 BUY(trigger_rule=R7) — entry_trigger 검증용
+        s.add(db.TradeRow(ts=datetime(2026, 1, 2, 9, 30), date=date(2026, 1, 2),
+                           character="테스트형", symbol="AAPL", market=Market.US.value, side="BUY",
+                           quantity=5, price=150.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           decision_type="BUY", trigger_rule="R7"))
+        # 보유 상태 스냅샷(SignalStatusRow kind=보유)
+        s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="테스트형", symbol="AAPL",
+                                  market="US", kind="보유", green_score=0, red_score=4,
+                                  buy_gate=False, status="", block_reason="",
+                                  stop_px=140.0, trail_px=None, close=160.0))
+        # SELL 대기주문 존재
+        s.add(db.PendingOrder(character="테스트형", side="SELL", symbol="AAPL", market="US",
+                               created_date=date(2026, 1, 5)))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    # 실시간(KIS) 가격은 저장된 signal["close"](160.0)와 다르게 두어, 파생필드가
+    # 저장 마감가 기준으로 계산되는지(실시간 가격을 쓰지 않는지) 구분한다.
+    app.dependency_overrides[get_kis] = lambda: _FakeKis(prices={("US", "AAPL"): 170.0})
+    try:
+        r = TestClient(app).get("/api/characters/테스트형/positions")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+        app.dependency_overrides.pop(get_kis, None)
+
+    assert r.status_code == 200
+    [pos] = r.json()
+
+    cash_krw = 500_000.0 + 1_000.0 * 1300.0
+    positions_krw = 5 * 170.0 * 1300.0
+    total_krw = cash_krw + positions_krw
+
+    assert pos["entry_trigger"] == "R7"
+    assert pos["current_red_score"] == 4
+    assert pos["stop_px"] == 140.0
+    assert pos["trail_px"] is None
+    # stop_distance_pct/potential_loss는 실시간가(170.0)가 아니라
+    # SignalStatusRow.close(160.0) 기준으로 계산되어야 한다.
+    assert pos["stop_distance_pct"] == pytest.approx((160.0 - 140.0) / 160.0)
+    assert pos["potential_loss"] == pytest.approx(5 * (160.0 - 140.0) * 1300.0)
+    assert pos["pending_sell"] is True
+    assert pos["as_of"] == "2026-01-05"
+    assert pos["weight_pct"] == pytest.approx(positions_krw / total_krw)
+
+
+@needs_db
+def test_character_positions_extended_fields_null_without_signal_status(sf):
+    """SignalStatusRow가 없는 종목이면(마감 기록 전) 신호 관련 필드는 null — 500 아님."""
+    with sf() as s:
+        _seed_full(s)
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    app.dependency_overrides[get_kis] = lambda: _FakeKis(prices={("US", "AAPL"): 160.0})
+    try:
+        r = TestClient(app).get("/api/characters/테스트형/positions")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+        app.dependency_overrides.pop(get_kis, None)
+
+    assert r.status_code == 200
+    [pos] = r.json()
+    assert pos["current_red_score"] is None
+    assert pos["stop_px"] is None
+    assert pos["trail_px"] is None
+    assert pos["stop_distance_pct"] is None
+    assert pos["potential_loss"] is None
+    assert pos["as_of"] is None
+    assert pos["entry_trigger"] == ""     # BUY 거래 없음 → 빈 문자열 폴백
+    assert pos["pending_sell"] is False
+    # weight_pct 는 signal_status 와 무관하게 계산 가능해야 함
+    assert pos["weight_pct"] is not None
+
+
+@needs_db
 def test_character_trades_returns_rows_and_respects_limit(sf):
     with sf() as s:
         _seed_full(s)
@@ -297,13 +411,83 @@ def test_character_trades_returns_rows_and_respects_limit(sf):
         app.dependency_overrides.pop(get_sf, None)
 
     assert r_all.status_code == 200
-    trades = r_all.json()
+    body = r_all.json()
+    trades = body["items"]
+    assert body["total"] == 5
     assert len(trades) == 5
     assert trades[0]["symbol"] == "SYM4"  # 최신순
     assert trades[0]["realized_pnl"] == 1500.0
 
     assert r_limited.status_code == 200
-    assert len(r_limited.json()) == 2
+    limited_body = r_limited.json()
+    assert len(limited_body["items"]) == 2
+    assert limited_body["total"] == 5  # total은 limit 적용 전 건수
+
+
+@needs_db
+def test_character_trades_filters_by_query_params(sf):
+    with sf() as s:
+        _seed_full(s)
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r_symbol = TestClient(app).get("/api/characters/테스트형/trades?symbol=SYM2")
+        r_side = TestClient(app).get("/api/characters/테스트형/trades?side=SELL")
+        r_date = TestClient(app).get(
+            "/api/characters/테스트형/trades?date_from=2026-01-02&date_to=2026-01-02"
+        )
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r_symbol.status_code == 200
+    body = r_symbol.json()
+    assert body["total"] == 1
+    assert body["items"][0]["symbol"] == "SYM2"
+
+    assert r_side.status_code == 200
+    assert r_side.json()["total"] == 5  # _seed_full 은 전부 SELL
+
+    assert r_date.status_code == 200
+    date_body = r_date.json()
+    assert date_body["total"] == 1
+    assert date_body["items"][0]["date"] == "2026-01-02"
+
+
+@needs_db
+def test_character_lifecycles_endpoint_groups_entry_to_exit(sf):
+    with sf() as s:
+        s.merge(db.CharacterRow(name="국내형", base_currency="KRW"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="005930", market=Market.KR.value, side="BUY",
+                           quantity=10, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           decision_type="BUY", trigger_rule="R1"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 2, 9, 30), date=date(2026, 1, 2),
+                           character="국내형", symbol="005930", market=Market.KR.value, side="SELL",
+                           quantity=10, price=1100.0, fee=0.0, tax=0.0, reason="SIGNAL_SELL",
+                           green_count=0, red_count=0, fired=[], realized_pnl=1000.0,
+                           decision_type="SELL", trigger_rule="R2"))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r = TestClient(app).get("/api/characters/국내형/lifecycles")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r.status_code == 200
+    [life] = r.json()
+    assert life["symbol"] == "005930"
+    assert life["name"] == "삼성전자"
+    assert life["open"] is False
+    assert life["entry_date"] == "2026-01-01"
+    assert life["exit_date"] == "2026-01-02"
+    assert life["realized_pnl_sum"] == 1000.0
+    assert life["qty_peak"] == 10
+    assert life["entry_trigger"] == "R1"
+    assert len(life["trades"]) == 2
+    assert life["trades"][0]["signal_summary"] != ""
 
 
 @needs_db
@@ -326,7 +510,7 @@ def test_trades_include_name_and_signal_summary(sf):
         app.dependency_overrides.pop(get_sf, None)
 
     assert r.status_code == 200
-    rows = r.json()
+    rows = r.json()["items"]
     assert rows, "거래가 있어야 함"
     t = rows[0]
     assert "name" in t and "signal_summary" in t and "signal_detail" in t
@@ -361,7 +545,7 @@ def test_forced_sell_trade_renders_decision_based_summary(sf):
         app.dependency_overrides.pop(get_sf, None)
 
     assert r.status_code == 200
-    [t] = r.json()
+    [t] = r.json()["items"]
     assert t["decision_type"] == "FORCED_SELL"
     assert t["trigger_rule"] == "R18"
     assert "강제 전량매도" in t["signal_summary"]
@@ -391,7 +575,7 @@ def test_trades_with_unknown_decision_type_does_not_500(sf):
         app.dependency_overrides.pop(get_sf, None)
 
     assert r.status_code == 200
-    [t] = r.json()
+    [t] = r.json()["items"]
     assert t["decision_type"] == "BOGUS_UNKNOWN"  # 원본 값은 그대로 노출(폴백은 요약 로직만)
     assert t["signal_summary"] != ""               # 레거시 경로로 요약 생성(크래시 없음)
 
@@ -461,6 +645,60 @@ def test_dashboard_endpoint_shape(sf):
     t = d["recent_trades"][0]
     assert t["symbol"] == "005930" and t["name"] == "삼성전자"
     assert t["character"] == "국내형"
+
+
+@needs_db
+def test_dashboard_endpoint_includes_today_actions_and_risk(sf):
+    with sf() as s:
+        s.merge(db.CharacterRow(name="국내형", base_currency="KRW"))
+        s.add(db.PositionRow(character="국내형", symbol="005930", market=Market.KR.value,
+                              quantity=10, avg_price=68000.0, opened_date=date(2026, 1, 1)))
+        s.add(db.CashBalance(character="국내형", currency="KRW", amount=1_000_000.0))
+        for d, eq in [(1, 10_000_000.0), (2, 10_300_000.0)]:
+            s.add(db.EquityPoint(ts=datetime(2026, 1, d, 15, 30), character="국내형", equity_krw=eq))
+        # 오늘의 결정: BUY 대기주문
+        s.add(db.PendingOrder(character="국내형", side="BUY", symbol="000660", market="KR",
+                               decision_type="BUY", trigger_rule="R1",
+                               created_date=date(2026, 1, 2)))
+        # 최신일 FORCED_SELL 경보
+        s.add(db.TradeRow(ts=datetime(2026, 1, 2, 9, 30), date=date(2026, 1, 2),
+                           character="국내형", symbol="005930", market=Market.KR.value, side="SELL",
+                           quantity=1, price=68000.0, fee=0.0, tax=0.0, reason="FORCED_SELL",
+                           green_count=0, red_count=0, fired=[], realized_pnl=-500.0,
+                           decision_type="FORCED_SELL", trigger_rule="R9"))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r = TestClient(app).get("/api/dashboard")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r.status_code == 200
+    d = r.json()
+    assert "today_actions" in d and "risk" in d
+    assert len(d["today_actions"]) == 3   # DEFAULT_CHARACTERS 3개, 빈 캐릭터도 포함
+    assert len(d["risk"]) == 3
+
+    ta_by_char = {a["character"]: a for a in d["today_actions"]}
+    kr_actions = ta_by_char["국내형"]
+    assert len(kr_actions["pending_orders"]) == 1
+    assert kr_actions["pending_orders"][0]["symbol"] == "000660"
+    assert kr_actions["pending_orders"][0]["name"] == "SK하이닉스"
+    assert kr_actions["pending_orders"][0]["side"] == "BUY"
+    assert len(kr_actions["forced_sell_alerts"]) == 1
+    assert kr_actions["forced_sell_alerts"][0]["symbol"] == "005930"
+    assert kr_actions["forced_sell_alerts"][0]["realized_pnl"] == -500.0
+    # 다른 캐릭터는 대기주문/경보 없음
+    assert ta_by_char["해외형"]["pending_orders"] == []
+    assert ta_by_char["해외형"]["forced_sell_alerts"] == []
+
+    risk_by_char = {r_["character"]: r_ for r_ in d["risk"]}
+    kr_risk = risk_by_char["국내형"]
+    assert 0.0 <= kr_risk["cash_ratio"] <= 1.0
+    assert 0.0 <= kr_risk["total_exposure_pct"] <= 1.0
+    assert kr_risk["max_position_weight_pct"] >= 0.0
+    assert kr_risk["daily_pnl_krw"] == pytest.approx(300_000.0)
 
 
 @needs_db

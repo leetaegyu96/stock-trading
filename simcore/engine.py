@@ -1,13 +1,14 @@
 """매매 엔진. 신호 결과(SymbolSnapshot)를 소비해 7/3 규칙·손익절·포지션 관리를 수행한다.
 시계·데이터 소스를 모른다 — 리플레이와 라이브가 같은 메서드를 호출한다."""
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as dc_replace
 from datetime import date as Date
 
 from simcore.config import Config
 from simcore import costs as costmod
 from simcore.models import (
-    Currency, DailyBar, DecisionType, Market, MARKET_CURRENCY, SymbolSnapshot, TradeReason,
+    CandidateEval, Currency, DailyBar, DecisionType, Market, MARKET_CURRENCY, SymbolSnapshot,
+    TradeReason,
 )
 from simcore.portfolio import Portfolio
 
@@ -69,6 +70,8 @@ class Engine:
             s.name: CharacterState(s, Portfolio(s.name, s.base_currency, config))
             for s in characters
         }
+        # 관찰 전용: 캐릭터명 → 최근 마감 매수 후보 평가(매매 결정에는 사용되지 않음).
+        self.last_candidates: dict[str, list[CandidateEval]] = {}
 
     def start(self, d: Date, fx_rate: float) -> None:
         for st in self.states.values():
@@ -129,15 +132,36 @@ class Engine:
                     and all(bearish_by_market.get(m, False) for m in st.spec.markets)):
                 continue
             held = set(st.portfolio.positions) | {b.symbol for b in st.pending_buys}
+            # 후보 평가 기록(관찰 전용) — 아래 continue 지점들은 원래 단일 or 조건과
+            # 완전히 동일한 순서·조건이며, 결합 결과(스킵 여부)도 동일하다. 기록만 추가.
+            cands: list[CandidateEval] = []
             for sym, s in snaps.items():
-                if (sym in held or sym in st.cooldowns
-                        or s.green_score < r.buy_score_min or not s.buy_gate):
+                if sym in held:
+                    cands.append(CandidateEval(sym, market, s.green_score, s.red_score,
+                                                s.buy_gate, "차단", "보유중"))
+                    continue
+                if sym in st.cooldowns:
+                    cands.append(CandidateEval(sym, market, s.green_score, s.red_score,
+                                                s.buy_gate, "차단", "쿨다운"))
+                    continue
+                if s.green_score < r.buy_score_min:
+                    cands.append(CandidateEval(sym, market, s.green_score, s.red_score,
+                                                s.buy_gate, "차단", "점수부족"))
+                    continue
+                if not s.buy_gate:
+                    cands.append(CandidateEval(sym, market, s.green_score, s.red_score,
+                                                s.buy_gate, "차단", "게이트미충족"))
                     continue
                 st.pending_buys.append(PendingBuy(
                     sym, market, len(s.green), s.green_score, s.green,
                     s.change_pct, s.volume,
                     decision_type=DecisionType.BUY,
                     trigger_rule=f"게이트+{s.green_score}점"))
+                cands.append(CandidateEval(sym, market, s.green_score, s.red_score,
+                                            s.buy_gate, "예약", ""))
+            # 이 시장 분만 교체, 다른 시장 분은 유지
+            kept = [c for c in self.last_candidates.get(st.spec.name, []) if c.market != market]
+            self.last_candidates[st.spec.name] = kept + cands
 
     # ---- 개장: 예약 주문 체결 ----
     def fill_open(self, d: Date, market: Market, opens: dict[str, float],
@@ -173,18 +197,35 @@ class Engine:
             buys = sorted((b for b in st.pending_buys if b.market == market),
                           key=lambda b: (-b.green_score, -b.change_pct, -b.volume))
             st.pending_buys = [b for b in st.pending_buys if b.market != market]
-            for b in buys:
+            for idx, b in enumerate(buys):
                 slots = r.max_positions - len(st.portfolio.positions)
                 if slots <= 0:
+                    for rest in buys[idx:]:
+                        self._mark_candidate_blocked(st, rest.symbol, market, "슬롯부족")
                     break
                 price = opens.get(b.symbol)
-                if (price is None or b.symbol in st.portfolio.positions
-                        or b.symbol in st.cooldowns):
+                if price is None:
+                    self._mark_candidate_blocked(st, b.symbol, market, "가격없음")
                     continue
-                self._buy(st, d, b, price, fx_rate, slots)
+                if b.symbol in st.portfolio.positions or b.symbol in st.cooldowns:
+                    continue
+                bought = self._buy(st, d, b, price, fx_rate, slots)
+                if not bought:
+                    self._mark_candidate_blocked(st, b.symbol, market, "현금부족")
+
+    def _mark_candidate_blocked(self, st: CharacterState, symbol: str, market: Market,
+                                 reason: str) -> None:
+        """관찰 전용: fill_open 체결 단계 차단을 last_candidates에 반영(있으면 갱신)."""
+        lst = self.last_candidates.get(st.spec.name)
+        if not lst:
+            return
+        for i, c in enumerate(lst):
+            if c.symbol == symbol and c.market == market:
+                lst[i] = dc_replace(c, status="차단", block_reason=reason)
+                break
 
     def _buy(self, st: CharacterState, d: Date, b: PendingBuy, price: float,
-             fx_rate: float, slots: int) -> None:
+             fx_rate: float, slots: int) -> bool:
         c = self.config.costs
         cur = MARKET_CURRENCY[b.market]
         pf = st.portfolio
@@ -197,12 +238,13 @@ class Engine:
         fill_price = price * (1 + c.slippage)
         qty = int(budget // (fill_price * (1 + fee_rate)))
         if qty <= 0:
-            return
+            return False
         if cross_currency:
             pf.convert_to_usd(qty * fill_price * (1 + fee_rate), fx_rate)
         pf.buy(d, b.symbol, b.market, qty, fill_price, TradeReason.SIGNAL_BUY,
                green_count=b.green_count, green_score=b.green_score, fired=b.fired,
                decision_type=b.decision_type or DecisionType.BUY, trigger_rule=b.trigger_rule)
+        return True
 
     def _sell(self, st: CharacterState, d: Date, symbol: str, price: float,
               reason: TradeReason, fx_rate: float, quantity: int | None = None,

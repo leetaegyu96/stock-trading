@@ -5,7 +5,13 @@
 // - 기간 토글(1M/3M/6M/전체). 선 색은 기간 수익 부호(상승=빨강/하락=파랑).
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { EquityPoint } from "../types";
-import { formatKrw, formatKrwCompact, shortDate, signClass, signedPct } from "./format";
+import { changeArrow, formatKrw, formatKrwCompact, shortDate, signClass, signedPct } from "./format";
+
+/** 구간 수익률 칩 툴팁 — 실제 계산(단순 수익률)을 정직하게 표기.
+ * 이 칩은 (기간 종료값-시작값)/시작값 이며 입출금 왜곡을 보정하지 않는다.
+ * 입출금을 반영한 TWR은 지표 패널(MetricsPanel)의 "수익률 (TWR)"에서 별도 확인. */
+const PERIOD_CHANGE_TOOLTIP =
+  "기간 시작 대비 단순 수익률(입출금 왜곡 미보정) — 입출금을 반영한 시간가중수익률(TWR)은 지표 패널 참조";
 
 export interface EquityChartProps {
   points: EquityPoint[];
@@ -164,7 +170,10 @@ export function EquityChart({ points, height = 260, className }: EquityChartProp
       <div className="equity-chart__head">
         <div className="equity-chart__summary">
           <strong className="num">{formatKrw(last.equity_krw)}</strong>
-          <span className={`chip chip--${trend}`}>{signedPct(changePct)}</span>
+          <span className="equity-chart__period-label">선택 기간 수익률</span>
+          <span className={`chip chip--${trend}`} title={PERIOD_CHANGE_TOOLTIP}>
+            <span aria-hidden="true">{changeArrow(changePct)}</span> {signedPct(changePct)}
+          </span>
           <span className="equity-chart__range">
             {shortDate(first.ts)} – {shortDate(last.ts)}
           </span>

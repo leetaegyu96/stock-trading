@@ -1,18 +1,35 @@
 // 캐릭터 상세 페이지: 헤더(아바타·이름·입출금) → 성과지표 스트립 → 자산곡선 →
 // 보유종목 → 거래내역. 카드 브로드캐스트에서 이 캐릭터 값이 바뀌면 조용히 재조회.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ApiError, getDetail, getEquity, getPositions, getTrades } from "../api";
+import {
+  ApiError,
+  getCandidates,
+  getDetail,
+  getEquity,
+  getLifecycles,
+  getPositions,
+  getTrades,
+} from "../api";
 import { useCardsSocket } from "../ws";
 import { Avatar } from "../components/Avatar";
 import { moodFromPnl } from "../components/mood";
 import { EquityChart } from "../components/EquityChart";
+import { CandidatesTable } from "../components/CandidatesTable";
 import { PositionsTable } from "../components/PositionsTable";
 import { TradesTable } from "../components/TradesTable";
+import type { TradesFilterState, TradesView } from "../components/TradesTable";
 import { MetricsPanel } from "../components/MetricsPanel";
 import { FlowModal } from "../components/FlowModal";
 import type { FlowMode } from "../components/FlowModal";
-import type { EquityPoint, Metrics, PositionOut, TradeOut } from "../types";
+import type {
+  CandidateOut,
+  EquityPoint,
+  LifecycleOut,
+  Metrics,
+  PositionOut,
+  TradeOut,
+} from "../types";
 import "../components/theme.css";
 import "../components/detail.css";
 
@@ -20,10 +37,29 @@ interface DetailData {
   metrics: Metrics;
   equity: EquityPoint[];
   positions: PositionOut[];
-  trades: TradeOut[];
+  candidates: CandidateOut[];
 }
 
-const TRADES_LIMIT = 100;
+function filtersToQuery(filters: TradesFilterState) {
+  return {
+    symbol: filters.symbol.trim() || undefined,
+    side: filters.side || undefined,
+    decision_type: filters.decisionType || undefined,
+    date_from: filters.dateFrom || undefined,
+    date_to: filters.dateTo || undefined,
+  };
+}
+
+const TRADES_PAGE_SIZE = 20;
+const LIFECYCLES_LIMIT = 10;
+
+const EMPTY_FILTERS: TradesFilterState = {
+  symbol: "",
+  side: "",
+  decisionType: "",
+  dateFrom: "",
+  dateTo: "",
+};
 
 export function Detail() {
   const { name: rawName } = useParams<{ name: string }>();
@@ -36,16 +72,25 @@ export function Detail() {
   const { cards: liveCards } = useCardsSocket();
   const positionsSignatureRef = useRef<string | null>(null);
 
+  // 거래내역: 페이지네이션+필터+뷰 상태는 별도로 관리(전체 페이지 스피너와 무관하게
+  // 자체적으로 재조회). TradesTable은 순수 표시 컴포넌트라 이 상태를 props로 주입한다.
+  const [tradesView, setTradesView] = useState<TradesView>("flat");
+  const [tradesFilters, setTradesFilters] = useState<TradesFilterState>(EMPTY_FILTERS);
+  const [tradesPageNum, setTradesPageNum] = useState(1);
+  const [trades, setTrades] = useState<TradeOut[]>([]);
+  const [tradesTotal, setTradesTotal] = useState(0);
+  const [lifecycles, setLifecycles] = useState<LifecycleOut[]>([]);
+
   const load = useCallback((targetName: string, showSpinner: boolean) => {
     if (showSpinner) setLoading(true);
     return Promise.all([
       getDetail(targetName),
       getEquity(targetName),
       getPositions(targetName),
-      getTrades(targetName, TRADES_LIMIT),
+      getCandidates(targetName),
     ])
-      .then(([metrics, equity, positions, trades]) => {
-        setData({ metrics, equity, positions, trades });
+      .then(([metrics, equity, positions, candidates]) => {
+        setData({ metrics, equity, positions, candidates });
         setError(null);
       })
       .catch((err: unknown) => {
@@ -66,23 +111,79 @@ export function Detail() {
     setData(null);
     setError(null);
     positionsSignatureRef.current = null;
+    setTradesView("flat");
+    setTradesFilters(EMPTY_FILTERS);
+    setTradesPageNum(1);
     void load(name, true);
   }, [name, load]);
 
+  // 실시간 포지션 시그니처: 카드 브로드캐스트에서 이 캐릭터의 포지션 관련 값을 문자열로
+  // 축약한 안정적인 primitive. liveCards 배열 자체(참조가 매 프레임 바뀔 수 있음)가 아니라
+  // 이 문자열을 의존성으로 사용해야 아래 effect들이 실제 값 변경 시에만 재실행된다.
+  const livePositionsSignature = useMemo(() => {
+    const card = liveCards.find((c) => c.name === name);
+    return card ? `${card.n_positions}:${card.total_asset_krw}:${card.cash_krw}` : null;
+  }, [liveCards, name]);
+
   // 실시간: 카드 스냅샷에서 이 캐릭터의 포지션 관련 값이 바뀌면 스피너 없이 재조회.
   useEffect(() => {
-    if (!name || liveCards.length === 0) return;
-    const card = liveCards.find((c) => c.name === name);
-    if (!card) return;
-    const signature = `${card.n_positions}:${card.total_asset_krw}:${card.cash_krw}`;
+    if (!name || livePositionsSignature === null) return;
     if (positionsSignatureRef.current === null) {
-      positionsSignatureRef.current = signature;
+      positionsSignatureRef.current = livePositionsSignature;
       return;
     }
-    if (positionsSignatureRef.current === signature) return;
-    positionsSignatureRef.current = signature;
+    if (positionsSignatureRef.current === livePositionsSignature) return;
+    positionsSignatureRef.current = livePositionsSignature;
     void load(name, false);
-  }, [liveCards, name, load]);
+  }, [livePositionsSignature, name, load]);
+
+  // 거래내역(플랫 뷰): 페이지·필터 변경 + 실시간 포지션 시그니처(livePositionsSignature)
+  // 변경 시 재조회. load() 를 트리거하는 것과 동일한 시그니처를 의존성에 넣어, 강제매도 등
+  // 실시간 체결이 발생하면 현재 페이지/필터를 유지한 채 조용히 다시 조회한다.
+  useEffect(() => {
+    if (!name) return;
+    let cancelled = false;
+    getTrades(name, {
+      limit: TRADES_PAGE_SIZE,
+      offset: (tradesPageNum - 1) * TRADES_PAGE_SIZE,
+      ...filtersToQuery(tradesFilters),
+    })
+      .then((page) => {
+        if (cancelled) return;
+        setTrades(page.items);
+        setTradesTotal(page.total);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTrades([]);
+        setTradesTotal(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [name, tradesPageNum, tradesFilters, livePositionsSignature]);
+
+  // 포지션 생애 뷰: 토글 시 + 실시간 포지션 시그니처 변경 시 조회(뷰가 아닐 땐 스킵해
+  // 불필요한 요청을 방지하되, 뷰 진입 상태에서는 실시간 체결을 반영한다).
+  useEffect(() => {
+    if (!name || tradesView !== "lifecycle") return;
+    let cancelled = false;
+    getLifecycles(name, LIFECYCLES_LIMIT)
+      .then((life) => {
+        if (!cancelled) setLifecycles(life);
+      })
+      .catch(() => {
+        if (!cancelled) setLifecycles([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [name, tradesView, livePositionsSignature]);
+
+  const handleTradesFilterChange = useCallback((patch: Partial<TradesFilterState>) => {
+    setTradesFilters((prev) => ({ ...prev, ...patch }));
+    setTradesPageNum(1);
+  }, []);
 
   const liveCard = liveCards.find((c) => c.name === name);
   const mood = liveCard ? moodFromPnl(liveCard.today_pnl_pct * 100) : "neutral";
@@ -149,6 +250,14 @@ export function Detail() {
 
           <section className="detail-panel">
             <h2 className="detail-panel__title">
+              오늘의 후보
+              <span className="detail-panel__count num">{data.candidates.length}</span>
+            </h2>
+            <CandidatesTable candidates={data.candidates} />
+          </section>
+
+          <section className="detail-panel">
+            <h2 className="detail-panel__title">
               보유종목
               <span className="detail-panel__count num">{data.positions.length}</span>
             </h2>
@@ -158,9 +267,18 @@ export function Detail() {
           <section className="detail-panel">
             <h2 className="detail-panel__title">
               거래내역
-              <span className="detail-panel__count num">{data.trades.length}</span>
+              <span className="detail-panel__count num">{tradesTotal}</span>
             </h2>
-            <TradesTable trades={data.trades} />
+            <TradesTable
+              trades={trades}
+              view={tradesView}
+              onViewChange={setTradesView}
+              lifecycles={lifecycles}
+              filters={tradesFilters}
+              onFilterChange={handleTradesFilterChange}
+              pagination={{ page: tradesPageNum, pageSize: TRADES_PAGE_SIZE, total: tradesTotal }}
+              onPageChange={setTradesPageNum}
+            />
           </section>
         </div>
       )}

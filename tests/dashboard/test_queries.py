@@ -58,8 +58,10 @@ def test_trades_roundtrip_and_limit(sf):
                                fired=["G1", "G2"], realized_pnl=0.0))
         s.commit()
 
-    rows = q.trades(sf, "국내형")
+    result = q.trades(sf, "국내형")
+    rows = result["items"]
     assert len(rows) == 3
+    assert result["total"] == 3
     # 최신 순 정렬
     assert rows[0]["ts"] == datetime(2026, 1, 3, 9, 30)
     assert rows[0]["symbol"] == "005930"
@@ -67,7 +69,8 @@ def test_trades_roundtrip_and_limit(sf):
     assert rows[0]["fired"] == ["G1", "G2"]
 
     limited = q.trades(sf, "국내형", limit=2)
-    assert len(limited) == 2
+    assert len(limited["items"]) == 2
+    assert limited["total"] == 3  # total은 limit/offset 전 필터 기준 건수
 
 
 @needs_db
@@ -82,9 +85,187 @@ def test_trades_include_decision_type_and_trigger_rule(sf):
                            decision_type="FORCED_SELL", trigger_rule="R18"))
         s.commit()
 
-    rows = q.trades(sf, "국내형")
+    rows = q.trades(sf, "국내형")["items"]
     assert rows[0]["decision_type"] == "FORCED_SELL"
     assert rows[0]["trigger_rule"] == "R18"
+
+
+@needs_db
+def test_trades_default_limit_is_20_and_offset_paginates(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        for i in range(25):
+            s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 0) , date=date(2026, 1, 1),
+                               character="국내형", symbol=f"SYM{i:02d}", market="KOSPI",
+                               side="BUY", quantity=1, price=1000.0, fee=0.0, tax=0.0,
+                               reason="SIGNAL_BUY", green_count=0, red_count=0,
+                               fired=[], realized_pnl=0.0))
+        s.commit()
+    result = q.trades(sf, "국내형")
+    assert result["total"] == 25
+    assert len(result["items"]) == 20
+
+    page2 = q.trades(sf, "국내형", offset=20)
+    assert page2["total"] == 25
+    assert len(page2["items"]) == 5
+    # 페이지 1과 2는 겹치지 않는다
+    ids_page1 = {item["symbol"] for item in result["items"]}
+    ids_page2 = {item["symbol"] for item in page2["items"]}
+    assert ids_page1.isdisjoint(ids_page2)
+    assert len(ids_page1 | ids_page2) == 25
+
+
+@needs_db
+def test_trades_filters_narrow_by_symbol_side_decision_type_and_date(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="005930", market="KOSPI", side="BUY",
+                           quantity=1, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           decision_type="BUY", trigger_rule="R1"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 2, 9, 30), date=date(2026, 1, 2),
+                           character="국내형", symbol="005930", market="KOSPI", side="SELL",
+                           quantity=1, price=1100.0, fee=0.0, tax=0.0, reason="SIGNAL_SELL",
+                           green_count=0, red_count=0, fired=[], realized_pnl=100.0,
+                           decision_type="SELL", trigger_rule="R2"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 3, 9, 30), date=date(2026, 1, 3),
+                           character="국내형", symbol="000660", market="KOSPI", side="BUY",
+                           quantity=1, price=2000.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           decision_type="BUY", trigger_rule="R3"))
+        s.commit()
+
+    by_symbol = q.trades(sf, "국내형", symbol="005930")
+    assert by_symbol["total"] == 2
+    assert {t["symbol"] for t in by_symbol["items"]} == {"005930"}
+
+    by_side = q.trades(sf, "국내형", side="SELL")
+    assert by_side["total"] == 1
+    assert by_side["items"][0]["symbol"] == "005930"
+
+    by_decision = q.trades(sf, "국내형", decision_type="SELL")
+    assert by_decision["total"] == 1
+    assert by_decision["items"][0]["decision_type"] == "SELL"
+
+    by_date = q.trades(sf, "국내형", date_from=date(2026, 1, 2), date_to=date(2026, 1, 2))
+    assert by_date["total"] == 1
+    assert by_date["items"][0]["date"] == date(2026, 1, 2)
+
+    by_date_range = q.trades(sf, "국내형", date_from=date(2026, 1, 1), date_to=date(2026, 1, 2))
+    assert by_date_range["total"] == 2
+
+
+@needs_db
+def test_position_lifecycles_groups_entry_to_exit_and_reentry(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        # 생애 1: 진입 -> 부분매도 -> 청산
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="005930", market="KOSPI", side="BUY",
+                           quantity=10, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           decision_type="BUY", trigger_rule="R1"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 2, 9, 30), date=date(2026, 1, 2),
+                           character="국내형", symbol="005930", market="KOSPI", side="SELL",
+                           quantity=4, price=1100.0, fee=0.0, tax=0.0, reason="SIGNAL_SELL",
+                           green_count=0, red_count=0, fired=[], realized_pnl=400.0,
+                           decision_type="SELL", trigger_rule="R2"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 3, 9, 30), date=date(2026, 1, 3),
+                           character="국내형", symbol="005930", market="KOSPI", side="SELL",
+                           quantity=6, price=1200.0, fee=0.0, tax=0.0, reason="SIGNAL_SELL",
+                           green_count=0, red_count=0, fired=[], realized_pnl=1200.0,
+                           decision_type="SELL", trigger_rule="R2"))
+        # 생애 2: 재진입(진행중)
+        s.add(db.TradeRow(ts=datetime(2026, 1, 5, 9, 30), date=date(2026, 1, 5),
+                           character="국내형", symbol="005930", market="KOSPI", side="BUY",
+                           quantity=5, price=1300.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           decision_type="BUY", trigger_rule="R3"))
+        s.commit()
+
+    lifecycles = q.position_lifecycles(sf, "국내형")
+    assert len(lifecycles) == 2
+
+    open_life = next(l for l in lifecycles if l["open"])
+    closed_life = next(l for l in lifecycles if not l["open"])
+
+    assert closed_life["entry_date"] == date(2026, 1, 1)
+    assert closed_life["exit_date"] == date(2026, 1, 3)
+    assert closed_life["realized_pnl_sum"] == 1600.0
+    assert closed_life["qty_peak"] == 10
+    assert len(closed_life["trades"]) == 3
+    assert closed_life["entry_trigger"] == "R1"
+
+    assert open_life["entry_date"] == date(2026, 1, 5)
+    assert open_life["exit_date"] is None
+    assert open_life["realized_pnl_sum"] == 0.0
+    assert open_life["qty_peak"] == 5
+    assert len(open_life["trades"]) == 1
+    assert open_life["entry_trigger"] == "R3"
+
+    # 진행중 생애가 먼저 온다
+    assert lifecycles[0]["open"] is True
+
+
+@needs_db
+def test_position_lifecycles_keeps_old_open_position_within_limit(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        # 오래된 진행중 생애(청산 안 됨) — entry_date가 가장 과거
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="OLDOPEN", market="KOSPI", side="BUY",
+                           quantity=1, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           decision_type="BUY", trigger_rule="R1"))
+        # limit(2)보다 많은, 더 최근에 진입한 청산 완료 생애들(다른 종목)
+        for i, symbol in enumerate(["CLOSEDA", "CLOSEDB", "CLOSEDC"]):
+            entry = date(2026, 2, i + 1)
+            exit_ = date(2026, 2, i + 2)
+            s.add(db.TradeRow(ts=datetime(entry.year, entry.month, entry.day, 9, 30),
+                               date=entry, character="국내형", symbol=symbol, market="KOSPI",
+                               side="BUY", quantity=1, price=1000.0, fee=0.0, tax=0.0,
+                               reason="SIGNAL_BUY", green_count=0, red_count=0, fired=[],
+                               realized_pnl=0.0, decision_type="BUY", trigger_rule="R1"))
+            s.add(db.TradeRow(ts=datetime(exit_.year, exit_.month, exit_.day, 9, 30),
+                               date=exit_, character="국내형", symbol=symbol, market="KOSPI",
+                               side="SELL", quantity=1, price=1100.0, fee=0.0, tax=0.0,
+                               reason="SIGNAL_SELL", green_count=0, red_count=0, fired=[],
+                               realized_pnl=100.0, decision_type="SELL", trigger_rule="R2"))
+        s.commit()
+
+    lifecycles = q.position_lifecycles(sf, "국내형", limit=2)
+    assert len(lifecycles) == 2
+    # 진행중인 오래된 포지션이 limit에 밀려 누락되면 안 된다
+    assert lifecycles[0]["open"] is True
+    assert lifecycles[0]["symbol"] == "OLDOPEN"
+    # 나머지 한 자리는 가장 최근에 진입한 청산 완료 생애가 채운다
+    assert lifecycles[1]["open"] is False
+    assert lifecycles[1]["symbol"] == "CLOSEDC"
+
+
+@needs_db
+def test_position_lifecycles_skips_orphan_sell_without_crashing(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        # 사전 BUY 없이 시작하는 SELL(시드 데이터가 중간부터 시작하는 경우) — 스킵되어야 함
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="005930", market="KOSPI", side="SELL",
+                           quantity=3, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_SELL",
+                           green_count=0, red_count=0, fired=[], realized_pnl=-100.0,
+                           decision_type="SELL", trigger_rule=""))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 2, 9, 30), date=date(2026, 1, 2),
+                           character="국내형", symbol="005930", market="KOSPI", side="BUY",
+                           quantity=5, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           decision_type="BUY", trigger_rule="R1"))
+        s.commit()
+
+    lifecycles = q.position_lifecycles(sf, "국내형")
+    assert len(lifecycles) == 1
+    assert lifecycles[0]["open"] is True
+    assert lifecycles[0]["entry_date"] == date(2026, 1, 2)
+    assert len(lifecycles[0]["trades"]) == 1
 
 
 @needs_db
@@ -182,6 +363,155 @@ def test_market_status_handles_null_dates(sf):
 
     rows = q.market_status(sf)
     assert rows == [{"market": "KR", "last_close_date": None, "last_open_date": None}]
+
+
+@needs_db
+def test_signal_status_filters_by_character_and_kind(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        _seed_character(s, "해외형", "USD")
+        s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="005930",
+                                  market="KR", kind="후보", green_score=5, red_score=0,
+                                  buy_gate=True, status="예약", block_reason=""))
+        s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="000660",
+                                  market="KR", kind="보유", green_score=0, red_score=3,
+                                  buy_gate=False, status="", block_reason="",
+                                  stop_px=9500.0, trail_px=None, close=10000.0))
+        s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="해외형", symbol="AAPL",
+                                  market="US", kind="후보", green_score=2, red_score=0,
+                                  buy_gate=False, status="차단", block_reason="점수부족"))
+        s.commit()
+
+    rows = q.signal_status(sf, "국내형")
+    assert {r["symbol"] for r in rows} == {"005930", "000660"}
+
+    candidates = q.signal_status(sf, "국내형", kind="후보")
+    assert len(candidates) == 1
+    assert candidates[0]["symbol"] == "005930"
+
+    held = q.signal_status(sf, "국내형", kind="보유")
+    assert len(held) == 1
+    assert held[0]["symbol"] == "000660"
+    assert held[0]["stop_px"] == 9500.0
+
+
+@needs_db
+def test_candidates_maps_signal_status_candidate_rows(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="005930",
+                                  market="KR", kind="후보", green_score=5, red_score=1,
+                                  buy_gate=True, status="예약", block_reason=""))
+        s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="000660",
+                                  market="KR", kind="후보", green_score=1, red_score=0,
+                                  buy_gate=False, status="차단", block_reason="점수부족"))
+        s.commit()
+
+    rows = q.candidates(sf, "국내형")
+    assert len(rows) == 2
+    by_symbol = {r["symbol"]: r for r in rows}
+    assert by_symbol["005930"]["name"] == "삼성전자"
+    assert by_symbol["005930"]["green_score"] == 5
+    assert by_symbol["005930"]["red_score"] == 1
+    assert by_symbol["005930"]["buy_gate"] is True
+    assert by_symbol["005930"]["status"] == "예약"
+    assert by_symbol["005930"]["block_reason"] == ""
+    assert by_symbol["005930"]["as_of"] == date(2026, 1, 5)
+    assert by_symbol["000660"]["status"] == "차단"
+    assert by_symbol["000660"]["block_reason"] == "점수부족"
+
+
+@needs_db
+def test_last_buy_triggers_returns_most_recent_trigger_per_symbol(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="005930", market="KOSPI", side="BUY",
+                           quantity=5, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           trigger_rule="R1"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 2, 9, 30), date=date(2026, 1, 2),
+                           character="국내형", symbol="005930", market="KOSPI", side="SELL",
+                           quantity=2, price=1100.0, fee=0.0, tax=0.0, reason="SIGNAL_SELL",
+                           green_count=0, red_count=0, fired=[], realized_pnl=100.0,
+                           trigger_rule="R2"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 3, 9, 30), date=date(2026, 1, 3),
+                           character="국내형", symbol="005930", market="KOSPI", side="BUY",
+                           quantity=3, price=1050.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           trigger_rule="R3"))
+        s.commit()
+
+    triggers = q.last_buy_triggers(sf, "국내형")
+    assert triggers == {"005930": "R3"}  # SELL(R2) 무시, 마지막 BUY(R3) 채택
+
+
+@needs_db
+def test_pending_sell_symbols_returns_only_sell_side(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.PendingOrder(character="국내형", side="SELL", symbol="005930", market="KR",
+                               created_date=date(2026, 1, 5)))
+        s.add(db.PendingOrder(character="국내형", side="BUY", symbol="000660", market="KR",
+                               created_date=date(2026, 1, 5)))
+        s.commit()
+
+    assert q.pending_sell_symbols(sf, "국내형") == {"005930"}
+
+
+@needs_db
+def test_pending_orders_returns_rows_for_character(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.PendingOrder(character="국내형", side="BUY", symbol="005930", market="KR",
+                               green_score=5, decision_type="BUY", trigger_rule="R1",
+                               created_date=date(2026, 1, 5)))
+        s.add(db.PendingOrder(character="해외형", side="BUY", symbol="AAPL", market="US",
+                               created_date=date(2026, 1, 5)))
+        s.commit()
+
+    rows = q.pending_orders(sf, "국내형")
+    assert len(rows) == 1
+    assert rows[0]["symbol"] == "005930"
+    assert rows[0]["side"] == "BUY"
+    assert rows[0]["decision_type"] == "BUY"
+    assert rows[0]["trigger_rule"] == "R1"
+
+
+@needs_db
+def test_forced_sell_alerts_only_latest_date(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="005930", market="KOSPI", side="SELL",
+                           quantity=1, price=1000.0, fee=0.0, tax=0.0, reason="FORCED_SELL",
+                           green_count=0, red_count=0, fired=[], realized_pnl=-100.0,
+                           decision_type="FORCED_SELL", trigger_rule="R9"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 2, 9, 30), date=date(2026, 1, 2),
+                           character="국내형", symbol="000660", market="KOSPI", side="SELL",
+                           quantity=1, price=1000.0, fee=0.0, tax=0.0, reason="FORCED_SELL",
+                           green_count=0, red_count=0, fired=[], realized_pnl=-200.0,
+                           decision_type="FORCED_SELL", trigger_rule="R9"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 2, 9, 45), date=date(2026, 1, 2),
+                           character="국내형", symbol="035420", market="KOSPI", side="BUY",
+                           quantity=1, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           decision_type="BUY", trigger_rule="R1"))
+        s.commit()
+
+    rows = q.forced_sell_alerts(sf, "국내형")
+    assert len(rows) == 1  # 최신일(1/2)의 FORCED_SELL 만, 1/1 은 제외 · BUY 는 제외
+    assert rows[0]["symbol"] == "000660"
+    assert rows[0]["date"] == date(2026, 1, 2)
+    assert rows[0]["realized_pnl"] == -200.0
+
+
+@needs_db
+def test_forced_sell_alerts_empty_when_no_trades(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.commit()
+    assert q.forced_sell_alerts(sf, "국내형") == []
 
 
 @needs_db

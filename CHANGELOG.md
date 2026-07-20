@@ -4,6 +4,19 @@
 
 상세 패치노트는 `docs/patch-notes/vX.Y.Z.md` 참조.
 
+## v1.9.0 — 2026-07-20
+
+감사 Phase B — 의사결정 화면(P1). 첫 화면을 "오늘의 의사결정판"으로 재구성: 오늘의 후보/차단 사유(7종), 보유 리스크(손절선·거리%·잠재손실), 거래 생애 복기(페이지네이션·필터·생애 토글), 지표 맥락(손익비·정직한 단순수익률 라벨). 엔진은 관찰 전용 기록만 추가(결정 로직 무변경), 화면은 저장된 마감 상태(SignalStatusRow)만 읽음.
+
+### Added
+- CandidateEval 후보 평가 기록(관찰 전용)+SignalStatusRow 영속(시드·라이브), /candidates·/lifecycles·positions 리스크 9필드·dashboard today_actions/risk API, /trades {items,total} 페이지네이션·필터, 프론트 의사결정판(DecisionBoard·CandidatesTable·RiskStrip·TodayActions)+거래 복기 UI, trading-rules §16.
+
+### Fixed
+- 생애 진행중 포지션 limit 절단 누락, 리스크 파생필드 저장 마감가 기준 전환, 스냅 누락 보유종목 red_score 승계(라이브), TWR 허위 툴팁 정정, 실시간 갱신 시 거래내역 stale 회귀, ▲/▼ 접근성·제로 케이스.
+
+### 검증
+- pytest 286 + 프론트 vitest 116 통과, 재시딩 스모크 실측(후보 120건 분포·보유 12건 리스크 유한값·생애 open=실보유 일치). 최종 리뷰(opus) Ready to merge, Critical/Important 0. 후속: 이슈 #7. 상세: `docs/patch-notes/v1.9.0.md`.
+
 ## v1.8.0 — 2026-07-10
 
 감사 Phase A — 신뢰 회복(P0). 엔진 결정을 데이터로 영속해 설명↔실제 행동 100% 일치(P0-1), 기술적 신호 라벨·미수집 축 고지(P0-2), 벤치마크 우선·위험조정 지표(P0-3), PAPER 모드·데이터 기준시각 배지.

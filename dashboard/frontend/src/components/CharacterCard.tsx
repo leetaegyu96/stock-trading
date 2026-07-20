@@ -7,6 +7,7 @@ import { Sparkline } from "./Sparkline";
 import {
   BENCHMARK_UNAVAILABLE_LABEL,
   benchmarkDeltaLabel,
+  changeArrow,
   formatKrw,
   formatSignedKrw,
   signClass,
@@ -46,9 +47,7 @@ export function CharacterCard({ summary, onClick }: CharacterCardProps) {
           </span>
         </div>
         <span className={`chip chip--${todaySign}`}>
-          <span aria-hidden="true">
-            {todayPct > 0 ? "▲" : todayPct < 0 ? "▼" : "–"}
-          </span>
+          <span aria-hidden="true">{changeArrow(todayPct)}</span>
           {signedPct(todayPct)}
         </span>
       </header>
