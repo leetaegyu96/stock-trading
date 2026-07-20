@@ -1,6 +1,6 @@
 // 캐릭터별 보유 요약 미리보기: 오늘 손익·보유종목수·베스트/워스트 종목.
 import type { CharPortfolio, HoldingRank } from "../types";
-import { signClass, signedPct } from "./format";
+import { formatPrice, signClass, signedPct } from "./format";
 
 export interface HoldingsPreviewProps {
   characters: CharPortfolio[];
@@ -21,6 +21,9 @@ function RankItem({ label, rank }: { label: string; rank: HoldingRank | null }) 
       <span className="holdings-preview__rank-label">{label}</span>
       <span className="holdings-preview__rank-name" title={rank.symbol}>
         {rank.name}
+      </span>
+      <span className="holdings-preview__rank-price">
+        {rank.close === null || rank.close === undefined ? "—" : formatPrice(rank.market, rank.close)}
       </span>
       <span className={`num holdings-preview__rank-pct ${signClass(pct)}`}>{signedPct(pct)}</span>
     </div>
