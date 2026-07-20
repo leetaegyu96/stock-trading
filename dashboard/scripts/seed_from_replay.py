@@ -75,6 +75,7 @@ def seed_replay_result_into_db(result: ReplayResult, bundle: DataBundle, sf,
     캐릭터), 상수 배율로 전체를 스케일링해 일별 수익률(TWR/MDD/오늘%)은 리플레이
     그대로 보존하면서 정합만 정확히 맞춘다.
     """
+    repo = Repository(sf)
     with sf() as s:
         # ---- 0. 기존 데이터 초기화 ----
         for t in _TABLES_TO_CLEAR:
@@ -165,12 +166,20 @@ def seed_replay_result_into_db(result: ReplayResult, bundle: DataBundle, sf,
         # ---- 7. 일봉 (최종 스냅샷 시점까지, 심볼당 최근 ≤5봉) ----
         # last_close 정합을 위해 마지막 봉이 replay 가 실제로 처리한 마지막 날짜(last_date)
         # 이하의 실제 데이터여야 한다 (bundle 이 replay 구간보다 더 뒤까지 있을 수 있음).
+        # 시장별로 실제 데이터가 있는 마지막 날짜도 여기서 함께 얻어(market_last_date),
+        # RunState(§9)의 시장별 마지막 마감일로 재사용한다 — run_replay 는 두 시장 거래일의
+        # 합집합을 한 스텝으로 처리하므로(공휴일 등으로 시장별 캘린더가 다르면) 전역
+        # last_date 가 각 시장의 실제 마지막 거래일과 다를 수 있다.
+        market_last_date: dict[str, date] = {}
         for market, data in (("KR", bundle.kr), ("US", bundle.us)):
             for symbol, df in data.items():
                 sliced = df[df.index.map(lambda ts: ts.date()) <= last_date]
                 if sliced.empty:
                     continue
                 tail = sliced.tail(_MAX_BARS_PER_SYMBOL)
+                bar_last_date = pd.Timestamp(tail.index[-1]).date()
+                if bar_last_date > market_last_date.get(market, date.min):
+                    market_last_date[market] = bar_last_date
                 for ts, bar in tail.iterrows():
                     s.add(db.DailyBarRow(
                         market=market, symbol=symbol, date=pd.Timestamp(ts).date(),
@@ -180,7 +189,18 @@ def seed_replay_result_into_db(result: ReplayResult, bundle: DataBundle, sf,
 
         # ---- 8. 신호 상태(마지막 거래일의 후보·보유) — 감사 Phase B(의사결정판) ----
         # market=None → 전체 교체(리플레이 시딩은 한 번에 모든 시장·캐릭터를 새로 쓴다).
-        Repository(sf).replace_signal_status(result.signal_status, session=s, market=None)
+        repo.replace_signal_status(result.signal_status, session=s, market=None)
+
+        # ---- 9. RunState(시장별 마지막 마감일) — 데몬 catch_up 연속성 ----
+        # 시딩된 데이터가 곧 "그 시장을 그 날짜까지 마감 처리했다"는 뜻이므로, 데몬이
+        # 이어서 시작할 때 recovery.catch_up() 이 콜드스타트(빈 리스트)로 오판해 공백
+        # 기간의 갭 리플레이를 건너뛰지 않도록 last_close_date/last_fx_rate 를 채운다
+        # (repository.mark_close 재사용 — orchestrator.on_close 가 쓰는 것과 동일 setter).
+        # last_open_date 는 세팅하지 않는다: on_open 이 처리하는 대기 입출금/예약주문 체결을
+        # 시딩은 재현하지 않으므로 "마지막 처리한 개장일"이라는 의미를 정직하게 채울 수
+        # 없다 — 값을 채우면 데몬이 실제로 처리되지 않은 개장일 이벤트를 스킵하게 된다.
+        for market, d in market_last_date.items():
+            repo.mark_close(market, d, fx_rate, session=s)
 
         s.commit()
 

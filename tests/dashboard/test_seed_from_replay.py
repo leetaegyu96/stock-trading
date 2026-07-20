@@ -214,6 +214,65 @@ def test_seed_persists_signal_status_from_replay_result():
             assert row.close == expected["close"]
 
 
+def _bundle_kr_us_offset_calendars():
+    """KR·US 가 서로 다른(엇갈린) 거래일 캘린더를 갖도록 만든 합성 데이터.
+
+    US 인덱스가 KR보다 먼저 끊겨서, 전역 last_date(두 시장 거래일의 합집합 중
+    replay 구간 마지막 날)와 US 시장 자체의 실제 마지막 거래일이 달라진다 —
+    RunState 를 시장별로 정확히 채우는지(전역 last_date 를 그대로 쓰지 않는지)
+    검증하기 위함."""
+    idx_kr = pd.date_range("2025-06-01", periods=220, freq="B")
+    idx_us = idx_kr[:170]  # US 거래일 캘린더가 KR보다 먼저 끊김
+    up_kr = np.linspace(100, 500, len(idx_kr))
+    df_kr = pd.DataFrame({"open": up_kr, "high": up_kr + 3, "low": up_kr - 3,
+                          "close": up_kr, "volume": np.linspace(1e6, 5e6, len(idx_kr))},
+                         index=idx_kr)
+    up_us = np.linspace(50, 250, len(idx_us))
+    df_us = pd.DataFrame({"open": up_us, "high": up_us + 3, "low": up_us - 3,
+                          "close": up_us, "volume": np.linspace(1e6, 5e6, len(idx_us))},
+                         index=idx_us)
+    fx = pd.Series(1300.0, index=idx_kr)
+    return DataBundle(kr={"005930": df_kr}, us={"AAPL": df_us}, fx=fx)
+
+
+def test_seed_sets_run_state_last_close_date_per_market():
+    """시딩 후 데몬이 recovery.catch_up() 에서 콜드스타트로 오판하지 않도록,
+    시장별 RunState.last_close_date 가 그 시장의 실제 마지막 거래일로 채워져야
+    한다(전역 last_date 가 아니라 시장별 캘린더 기준). last_open_date 는 시딩이
+    on_open 의미(대기 입출금/예약주문 체결)를 재현하지 않으므로 None 이어야 한다."""
+    bundle = _bundle_kr_us_offset_calendars()
+    result = run_replay(Config(), bundle, date(2025, 9, 1), date(2026, 2, 1))
+
+    expected_kr_last = max(
+        d.date() for d in bundle.kr["005930"].index if date(2025, 9, 1) <= d.date() <= date(2026, 2, 1))
+    expected_us_last = max(d.date() for d in bundle.us["AAPL"].index)
+    assert expected_kr_last != expected_us_last  # 이 테스트가 실제로 시장별 차이를 검증하는지 확인
+
+    engine = db.make_engine("sqlite://")
+    db.create_all(engine)
+    sf = db.make_session_factory(engine)
+    from simcore.live.repository import Repository
+    repo = Repository(sf)
+
+    seed_replay_result_into_db(result, bundle, sf, fx_rate=FALLBACK_FX_RATE)
+
+    kr_rs = repo.get_run_state("KR")
+    us_rs = repo.get_run_state("US")
+    assert kr_rs.last_close_date == expected_kr_last
+    assert us_rs.last_close_date == expected_us_last
+    assert kr_rs.last_fx_rate == FALLBACK_FX_RATE
+    assert us_rs.last_fx_rate == FALLBACK_FX_RATE
+    assert kr_rs.last_open_date is None
+    assert us_rs.last_open_date is None
+
+    # --force 재시딩(idempotent): 같은 리플레이 결과로 다시 시딩해도 동일한 값.
+    seed_replay_result_into_db(result, bundle, sf, fx_rate=FALLBACK_FX_RATE)
+    kr_rs2 = repo.get_run_state("KR")
+    us_rs2 = repo.get_run_state("US")
+    assert kr_rs2.last_close_date == expected_kr_last
+    assert us_rs2.last_close_date == expected_us_last
+
+
 def test_seed_requires_force_flag_when_run_as_cli(monkeypatch):
     """--force 없이 CLI 실행하면 즉시 종료(가드)한다."""
     import runpy
