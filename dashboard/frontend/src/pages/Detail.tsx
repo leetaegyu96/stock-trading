@@ -7,6 +7,7 @@ import {
   getCandidates,
   getDetail,
   getEquity,
+  getLifecycles,
   getPositions,
   getTrades,
 } from "../api";
@@ -17,10 +18,18 @@ import { EquityChart } from "../components/EquityChart";
 import { CandidatesTable } from "../components/CandidatesTable";
 import { PositionsTable } from "../components/PositionsTable";
 import { TradesTable } from "../components/TradesTable";
+import type { TradesFilterState, TradesView } from "../components/TradesTable";
 import { MetricsPanel } from "../components/MetricsPanel";
 import { FlowModal } from "../components/FlowModal";
 import type { FlowMode } from "../components/FlowModal";
-import type { CandidateOut, EquityPoint, Metrics, PositionOut, TradeOut } from "../types";
+import type {
+  CandidateOut,
+  EquityPoint,
+  LifecycleOut,
+  Metrics,
+  PositionOut,
+  TradeOut,
+} from "../types";
 import "../components/theme.css";
 import "../components/detail.css";
 
@@ -28,11 +37,29 @@ interface DetailData {
   metrics: Metrics;
   equity: EquityPoint[];
   positions: PositionOut[];
-  trades: TradeOut[];
   candidates: CandidateOut[];
 }
 
-const TRADES_LIMIT = 100;
+function filtersToQuery(filters: TradesFilterState) {
+  return {
+    symbol: filters.symbol.trim() || undefined,
+    side: filters.side || undefined,
+    decision_type: filters.decisionType || undefined,
+    date_from: filters.dateFrom || undefined,
+    date_to: filters.dateTo || undefined,
+  };
+}
+
+const TRADES_PAGE_SIZE = 20;
+const LIFECYCLES_LIMIT = 10;
+
+const EMPTY_FILTERS: TradesFilterState = {
+  symbol: "",
+  side: "",
+  decisionType: "",
+  dateFrom: "",
+  dateTo: "",
+};
 
 export function Detail() {
   const { name: rawName } = useParams<{ name: string }>();
@@ -45,17 +72,25 @@ export function Detail() {
   const { cards: liveCards } = useCardsSocket();
   const positionsSignatureRef = useRef<string | null>(null);
 
+  // 거래내역: 페이지네이션+필터+뷰 상태는 별도로 관리(전체 페이지 스피너와 무관하게
+  // 자체적으로 재조회). TradesTable은 순수 표시 컴포넌트라 이 상태를 props로 주입한다.
+  const [tradesView, setTradesView] = useState<TradesView>("flat");
+  const [tradesFilters, setTradesFilters] = useState<TradesFilterState>(EMPTY_FILTERS);
+  const [tradesPageNum, setTradesPageNum] = useState(1);
+  const [trades, setTrades] = useState<TradeOut[]>([]);
+  const [tradesTotal, setTradesTotal] = useState(0);
+  const [lifecycles, setLifecycles] = useState<LifecycleOut[]>([]);
+
   const load = useCallback((targetName: string, showSpinner: boolean) => {
     if (showSpinner) setLoading(true);
     return Promise.all([
       getDetail(targetName),
       getEquity(targetName),
       getPositions(targetName),
-      getTrades(targetName, TRADES_LIMIT),
       getCandidates(targetName),
     ])
-      .then(([metrics, equity, positions, trades, candidates]) => {
-        setData({ metrics, equity, positions, trades, candidates });
+      .then(([metrics, equity, positions, candidates]) => {
+        setData({ metrics, equity, positions, candidates });
         setError(null);
       })
       .catch((err: unknown) => {
@@ -76,6 +111,9 @@ export function Detail() {
     setData(null);
     setError(null);
     positionsSignatureRef.current = null;
+    setTradesView("flat");
+    setTradesFilters(EMPTY_FILTERS);
+    setTradesPageNum(1);
     void load(name, true);
   }, [name, load]);
 
@@ -93,6 +131,51 @@ export function Detail() {
     positionsSignatureRef.current = signature;
     void load(name, false);
   }, [liveCards, name, load]);
+
+  // 거래내역(플랫 뷰): 페이지·필터 변경 시 재조회.
+  useEffect(() => {
+    if (!name) return;
+    let cancelled = false;
+    getTrades(name, {
+      limit: TRADES_PAGE_SIZE,
+      offset: (tradesPageNum - 1) * TRADES_PAGE_SIZE,
+      ...filtersToQuery(tradesFilters),
+    })
+      .then((page) => {
+        if (cancelled) return;
+        setTrades(page.items);
+        setTradesTotal(page.total);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTrades([]);
+        setTradesTotal(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [name, tradesPageNum, tradesFilters]);
+
+  // 포지션 생애 뷰: 토글 시에만 조회(불필요한 요청 방지).
+  useEffect(() => {
+    if (!name || tradesView !== "lifecycle") return;
+    let cancelled = false;
+    getLifecycles(name, LIFECYCLES_LIMIT)
+      .then((life) => {
+        if (!cancelled) setLifecycles(life);
+      })
+      .catch(() => {
+        if (!cancelled) setLifecycles([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [name, tradesView]);
+
+  const handleTradesFilterChange = useCallback((patch: Partial<TradesFilterState>) => {
+    setTradesFilters((prev) => ({ ...prev, ...patch }));
+    setTradesPageNum(1);
+  }, []);
 
   const liveCard = liveCards.find((c) => c.name === name);
   const mood = liveCard ? moodFromPnl(liveCard.today_pnl_pct * 100) : "neutral";
@@ -176,9 +259,18 @@ export function Detail() {
           <section className="detail-panel">
             <h2 className="detail-panel__title">
               거래내역
-              <span className="detail-panel__count num">{data.trades.length}</span>
+              <span className="detail-panel__count num">{tradesTotal}</span>
             </h2>
-            <TradesTable trades={data.trades} />
+            <TradesTable
+              trades={trades}
+              view={tradesView}
+              onViewChange={setTradesView}
+              lifecycles={lifecycles}
+              filters={tradesFilters}
+              onFilterChange={handleTradesFilterChange}
+              pagination={{ page: tradesPageNum, pageSize: TRADES_PAGE_SIZE, total: tradesTotal }}
+              onPageChange={setTradesPageNum}
+            />
           </section>
         </div>
       )}
