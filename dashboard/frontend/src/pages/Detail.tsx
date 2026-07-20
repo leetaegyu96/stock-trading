@@ -2,17 +2,25 @@
 // 보유종목 → 거래내역. 카드 브로드캐스트에서 이 캐릭터 값이 바뀌면 조용히 재조회.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ApiError, getDetail, getEquity, getPositions, getTrades } from "../api";
+import {
+  ApiError,
+  getCandidates,
+  getDetail,
+  getEquity,
+  getPositions,
+  getTrades,
+} from "../api";
 import { useCardsSocket } from "../ws";
 import { Avatar } from "../components/Avatar";
 import { moodFromPnl } from "../components/mood";
 import { EquityChart } from "../components/EquityChart";
+import { CandidatesTable } from "../components/CandidatesTable";
 import { PositionsTable } from "../components/PositionsTable";
 import { TradesTable } from "../components/TradesTable";
 import { MetricsPanel } from "../components/MetricsPanel";
 import { FlowModal } from "../components/FlowModal";
 import type { FlowMode } from "../components/FlowModal";
-import type { EquityPoint, Metrics, PositionOut, TradeOut } from "../types";
+import type { CandidateOut, EquityPoint, Metrics, PositionOut, TradeOut } from "../types";
 import "../components/theme.css";
 import "../components/detail.css";
 
@@ -21,6 +29,7 @@ interface DetailData {
   equity: EquityPoint[];
   positions: PositionOut[];
   trades: TradeOut[];
+  candidates: CandidateOut[];
 }
 
 const TRADES_LIMIT = 100;
@@ -43,9 +52,10 @@ export function Detail() {
       getEquity(targetName),
       getPositions(targetName),
       getTrades(targetName, TRADES_LIMIT),
+      getCandidates(targetName),
     ])
-      .then(([metrics, equity, positions, trades]) => {
-        setData({ metrics, equity, positions, trades });
+      .then(([metrics, equity, positions, trades, candidates]) => {
+        setData({ metrics, equity, positions, trades, candidates });
         setError(null);
       })
       .catch((err: unknown) => {
@@ -145,6 +155,14 @@ export function Detail() {
           <section className="detail-panel">
             <h2 className="detail-panel__title">자산곡선</h2>
             <EquityChart points={data.equity} />
+          </section>
+
+          <section className="detail-panel">
+            <h2 className="detail-panel__title">
+              오늘의 후보
+              <span className="detail-panel__count num">{data.candidates.length}</span>
+            </h2>
+            <CandidatesTable candidates={data.candidates} />
           </section>
 
           <section className="detail-panel">
