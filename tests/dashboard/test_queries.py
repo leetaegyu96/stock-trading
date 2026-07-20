@@ -366,6 +366,155 @@ def test_market_status_handles_null_dates(sf):
 
 
 @needs_db
+def test_signal_status_filters_by_character_and_kind(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        _seed_character(s, "해외형", "USD")
+        s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="005930",
+                                  market="KR", kind="후보", green_score=5, red_score=0,
+                                  buy_gate=True, status="예약", block_reason=""))
+        s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="000660",
+                                  market="KR", kind="보유", green_score=0, red_score=3,
+                                  buy_gate=False, status="", block_reason="",
+                                  stop_px=9500.0, trail_px=None, close=10000.0))
+        s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="해외형", symbol="AAPL",
+                                  market="US", kind="후보", green_score=2, red_score=0,
+                                  buy_gate=False, status="차단", block_reason="점수부족"))
+        s.commit()
+
+    rows = q.signal_status(sf, "국내형")
+    assert {r["symbol"] for r in rows} == {"005930", "000660"}
+
+    candidates = q.signal_status(sf, "국내형", kind="후보")
+    assert len(candidates) == 1
+    assert candidates[0]["symbol"] == "005930"
+
+    held = q.signal_status(sf, "국내형", kind="보유")
+    assert len(held) == 1
+    assert held[0]["symbol"] == "000660"
+    assert held[0]["stop_px"] == 9500.0
+
+
+@needs_db
+def test_candidates_maps_signal_status_candidate_rows(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="005930",
+                                  market="KR", kind="후보", green_score=5, red_score=1,
+                                  buy_gate=True, status="예약", block_reason=""))
+        s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="000660",
+                                  market="KR", kind="후보", green_score=1, red_score=0,
+                                  buy_gate=False, status="차단", block_reason="점수부족"))
+        s.commit()
+
+    rows = q.candidates(sf, "국내형")
+    assert len(rows) == 2
+    by_symbol = {r["symbol"]: r for r in rows}
+    assert by_symbol["005930"]["name"] == "삼성전자"
+    assert by_symbol["005930"]["green_score"] == 5
+    assert by_symbol["005930"]["red_score"] == 1
+    assert by_symbol["005930"]["buy_gate"] is True
+    assert by_symbol["005930"]["status"] == "예약"
+    assert by_symbol["005930"]["block_reason"] == ""
+    assert by_symbol["005930"]["as_of"] == date(2026, 1, 5)
+    assert by_symbol["000660"]["status"] == "차단"
+    assert by_symbol["000660"]["block_reason"] == "점수부족"
+
+
+@needs_db
+def test_last_buy_triggers_returns_most_recent_trigger_per_symbol(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="005930", market="KOSPI", side="BUY",
+                           quantity=5, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           trigger_rule="R1"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 2, 9, 30), date=date(2026, 1, 2),
+                           character="국내형", symbol="005930", market="KOSPI", side="SELL",
+                           quantity=2, price=1100.0, fee=0.0, tax=0.0, reason="SIGNAL_SELL",
+                           green_count=0, red_count=0, fired=[], realized_pnl=100.0,
+                           trigger_rule="R2"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 3, 9, 30), date=date(2026, 1, 3),
+                           character="국내형", symbol="005930", market="KOSPI", side="BUY",
+                           quantity=3, price=1050.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           trigger_rule="R3"))
+        s.commit()
+
+    triggers = q.last_buy_triggers(sf, "국내형")
+    assert triggers == {"005930": "R3"}  # SELL(R2) 무시, 마지막 BUY(R3) 채택
+
+
+@needs_db
+def test_pending_sell_symbols_returns_only_sell_side(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.PendingOrder(character="국내형", side="SELL", symbol="005930", market="KR",
+                               created_date=date(2026, 1, 5)))
+        s.add(db.PendingOrder(character="국내형", side="BUY", symbol="000660", market="KR",
+                               created_date=date(2026, 1, 5)))
+        s.commit()
+
+    assert q.pending_sell_symbols(sf, "국내형") == {"005930"}
+
+
+@needs_db
+def test_pending_orders_returns_rows_for_character(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.PendingOrder(character="국내형", side="BUY", symbol="005930", market="KR",
+                               green_score=5, decision_type="BUY", trigger_rule="R1",
+                               created_date=date(2026, 1, 5)))
+        s.add(db.PendingOrder(character="해외형", side="BUY", symbol="AAPL", market="US",
+                               created_date=date(2026, 1, 5)))
+        s.commit()
+
+    rows = q.pending_orders(sf, "국내형")
+    assert len(rows) == 1
+    assert rows[0]["symbol"] == "005930"
+    assert rows[0]["side"] == "BUY"
+    assert rows[0]["decision_type"] == "BUY"
+    assert rows[0]["trigger_rule"] == "R1"
+
+
+@needs_db
+def test_forced_sell_alerts_only_latest_date(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="005930", market="KOSPI", side="SELL",
+                           quantity=1, price=1000.0, fee=0.0, tax=0.0, reason="FORCED_SELL",
+                           green_count=0, red_count=0, fired=[], realized_pnl=-100.0,
+                           decision_type="FORCED_SELL", trigger_rule="R9"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 2, 9, 30), date=date(2026, 1, 2),
+                           character="국내형", symbol="000660", market="KOSPI", side="SELL",
+                           quantity=1, price=1000.0, fee=0.0, tax=0.0, reason="FORCED_SELL",
+                           green_count=0, red_count=0, fired=[], realized_pnl=-200.0,
+                           decision_type="FORCED_SELL", trigger_rule="R9"))
+        s.add(db.TradeRow(ts=datetime(2026, 1, 2, 9, 45), date=date(2026, 1, 2),
+                           character="국내형", symbol="035420", market="KOSPI", side="BUY",
+                           quantity=1, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           decision_type="BUY", trigger_rule="R1"))
+        s.commit()
+
+    rows = q.forced_sell_alerts(sf, "국내형")
+    assert len(rows) == 1  # 최신일(1/2)의 FORCED_SELL 만, 1/1 은 제외 · BUY 는 제외
+    assert rows[0]["symbol"] == "000660"
+    assert rows[0]["date"] == date(2026, 1, 2)
+    assert rows[0]["realized_pnl"] == -200.0
+
+
+@needs_db
+def test_forced_sell_alerts_empty_when_no_trades(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        s.commit()
+    assert q.forced_sell_alerts(sf, "국내형") == []
+
+
+@needs_db
 def test_cash_roundtrip(sf):
     with sf() as s:
         _seed_character(s, "국내형", "KRW")

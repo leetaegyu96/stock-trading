@@ -285,6 +285,102 @@ def market_status(sf) -> list[dict]:
                 for r in rows]
 
 
+def signal_status(sf, name: str, kind: str | None = None) -> list[dict]:
+    """캐릭터의 SignalStatusRow 목록(관찰 전용, 마감 시점 저장 데이터만 읽는다).
+    kind("후보"|"보유")를 주면 그 종류만 필터한다."""
+    rows = Repository(sf).signal_status(character=name)
+    if kind is not None:
+        rows = [r for r in rows if r["kind"] == kind]
+    return rows
+
+
+def candidates(sf, name: str) -> list[dict]:
+    """캐릭터의 오늘 매수후보 상태(SignalStatusRow kind=후보) — CandidateOut 매핑용."""
+    return [
+        {
+            "symbol": r["symbol"],
+            "name": display_name(r["symbol"], r["market"]),
+            "green_score": r["green_score"],
+            "red_score": r["red_score"],
+            "buy_gate": r["buy_gate"],
+            "status": r["status"],
+            "block_reason": r["block_reason"],
+            "as_of": r["date"],
+        }
+        for r in signal_status(sf, name, kind="후보")
+    ]
+
+
+def last_buy_triggers(sf, name: str) -> dict[str, str]:
+    """캐릭터의 종목별 마지막 BUY 거래 trigger_rule (positions.entry_trigger 용)."""
+    with sf() as s:
+        rows = s.execute(
+            select(db.TradeRow)
+            .where(db.TradeRow.character == name, db.TradeRow.side == "BUY")
+            .order_by(db.TradeRow.ts, db.TradeRow.id)
+        ).scalars().all()
+    result: dict[str, str] = {}
+    for r in rows:
+        result[r.symbol] = r.trigger_rule  # 시간순 정렬이므로 마지막 것으로 덮어써짐
+    return result
+
+
+def pending_sell_symbols(sf, name: str) -> set[str]:
+    """SELL 대기주문이 있는 종목 집합(positions.pending_sell 용)."""
+    with sf() as s:
+        rows = s.execute(
+            select(db.PendingOrder.symbol)
+            .where(db.PendingOrder.character == name, db.PendingOrder.side == "SELL")
+        ).scalars().all()
+        return set(rows)
+
+
+def pending_orders(sf, name: str) -> list[dict]:
+    """캐릭터의 대기주문(BUY/SELL) 목록 — today_actions 용."""
+    with sf() as s:
+        rows = s.execute(
+            select(db.PendingOrder).where(db.PendingOrder.character == name)
+        ).scalars().all()
+        return [
+            {
+                "symbol": r.symbol,
+                "market": r.market,
+                "side": r.side,
+                "decision_type": r.decision_type,
+                "trigger_rule": r.trigger_rule,
+                "reason": r.reason,
+            }
+            for r in rows
+        ]
+
+
+def forced_sell_alerts(sf, name: str) -> list[dict]:
+    """캐릭터의 최신 거래일에 발생한 FORCED_SELL 경보(today_actions 용).
+    거래 이력이 없으면 빈 리스트."""
+    with sf() as s:
+        latest_date = s.execute(
+            select(func.max(db.TradeRow.date)).where(db.TradeRow.character == name)
+        ).scalar_one_or_none()
+        if latest_date is None:
+            return []
+        rows = s.execute(
+            select(db.TradeRow).where(
+                db.TradeRow.character == name,
+                db.TradeRow.date == latest_date,
+                db.TradeRow.decision_type == "FORCED_SELL",
+            )
+        ).scalars().all()
+        return [
+            {
+                "symbol": r.symbol,
+                "market": r.market,
+                "date": r.date,
+                "realized_pnl": r.realized_pnl,
+            }
+            for r in rows
+        ]
+
+
 def cash(sf, name: str) -> dict[str, float]:
     """캐릭터의 통화별 현금 잔고."""
     with sf() as s:
