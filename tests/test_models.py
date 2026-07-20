@@ -47,3 +47,9 @@ def test_trade_has_decision_fields():
               realized_pnl=0.0, decision_type=DecisionType.FORCED_SELL, trigger_rule="R18")
     assert t.decision_type == DecisionType.FORCED_SELL and t.trigger_rule == "R18"
     assert list(DecisionType) and DecisionType.BUY.value == "BUY"
+
+
+def test_intraday_decision_types_exist():
+    from simcore.models import DecisionType
+    assert DecisionType.INTRADAY_BUY.value == "INTRADAY_BUY"
+    assert DecisionType.INTRADAY_SELL.value == "INTRADAY_SELL"
