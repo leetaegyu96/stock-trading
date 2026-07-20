@@ -22,8 +22,13 @@ class ApiError extends Error {
   }
 }
 
+// Vite base(서브패스 배포시 VITE_BASE_PATH)를 그대로 API prefix로 재사용한다.
+// 루트("/") 배포면 빈 문자열이라 기존 동작과 동일.
+const BASE_PATH =
+  import.meta.env.BASE_URL === "/" ? "" : import.meta.env.BASE_URL.replace(/\/$/, "");
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(BASE_PATH + path, {
     headers: init?.body ? { "Content-Type": "application/json" } : undefined,
     ...init,
   });
