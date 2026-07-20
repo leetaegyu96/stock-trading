@@ -3,6 +3,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field, replace as dc_replace
 from datetime import date as Date
+from datetime import datetime
 
 from simcore.config import Config
 from simcore import costs as costmod
@@ -60,6 +61,11 @@ class CharacterState:
     pending_buys: list[PendingBuy] = field(default_factory=list)
     pending_sells: list[PendingSell] = field(default_factory=list)
     cooldowns: dict[str, list] = field(default_factory=dict)  # sym -> [Market, remaining_days]
+    intraday_day: "date | None" = None
+    intraday_buys: dict = field(default_factory=dict)
+    intraday_sells: dict = field(default_factory=dict)
+    intraday_last_sell_ts: dict = field(default_factory=dict)
+    intraday_day_start_equity: "float | None" = None
 
 
 class Engine:
@@ -275,6 +281,33 @@ class Engine:
         if peak_gain >= r.trailing_top:             # 최고가 대비 트레일
             trail = pos.peak_price * (1 - r.trail_pct) / pos.avg_price - 1.0
             pos.locked_stop_pct = max(pos.locked_stop_pct, trail)
+
+    # ---- 장중: 가드 헬퍼 (휩쏘 캡·재매수 쿨다운·킬스위치) ----
+    def _intraday_roll_day(self, st: CharacterState, d: Date, day_equity: float) -> None:
+        if st.intraday_day != d:
+            st.intraday_day = d
+            st.intraday_buys = {}
+            st.intraday_sells = {}
+            st.intraday_last_sell_ts = {}
+            st.intraday_day_start_equity = day_equity
+
+    def _intraday_can_buy(self, st: CharacterState, symbol: str, now: datetime,
+                          cur_equity: float) -> bool:
+        r = self.config.rules
+        if st.intraday_buys.get(symbol, 0) >= r.intraday_max_buys_per_symbol:
+            return False
+        last = st.intraday_last_sell_ts.get(symbol)
+        if last is not None:
+            mins = (now - last).total_seconds() / 60.0
+            if mins < r.intraday_reentry_cooldown_min:
+                return False
+        start = st.intraday_day_start_equity
+        if start and (cur_equity / start - 1.0) <= r.intraday_daily_loss_halt_pct:
+            return False   # 킬스위치: 당일 손실 한도 도달 → 신규 매수 중단
+        return True
+
+    def _intraday_can_sell(self, st: CharacterState, symbol: str) -> bool:
+        return st.intraday_sells.get(symbol, 0) < self.config.rules.intraday_max_sells_per_symbol
 
     # ---- 장중: 트레일링 스탑 (리플레이 = 당일 OHLC 근사, 라이브 = 현재가 bar) ----
     def check_stops(self, d: Date, market: Market, bars: dict[str, DailyBar],
