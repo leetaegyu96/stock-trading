@@ -229,10 +229,12 @@ def _position_decision_fields(
         trail_px = signal["trail_px"]
         current_red_score = signal["red_score"]
         as_of = signal["date"]
-        price = pos["current_price"]
-        if stop_px is not None and price:
-            stop_distance_pct = (price - stop_px) / price
-            loss_native = pos["quantity"] * (price - stop_px)
+        # 요청 경로는 저장 데이터만 사용한다(실시간 KIS 조회값 아님) — 마감 시점
+        # SignalStatusRow.close 를 기준으로 계산해 as_of 와 출처를 일치시킨다.
+        close = signal["close"]
+        if stop_px is not None and close:
+            stop_distance_pct = (close - stop_px) / close
+            loss_native = pos["quantity"] * (close - stop_px)
             potential_loss = (loss_native * _FALLBACK_FX_RATE
                               if pos["market"] == Market.US.value else loss_native)
     return {

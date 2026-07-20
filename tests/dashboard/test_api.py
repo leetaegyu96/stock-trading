@@ -339,7 +339,9 @@ def test_character_positions_includes_decision_fields_from_signal_status(sf):
         s.commit()
 
     app.dependency_overrides[get_sf] = lambda: sf
-    app.dependency_overrides[get_kis] = lambda: _FakeKis(prices={("US", "AAPL"): 160.0})
+    # 실시간(KIS) 가격은 저장된 signal["close"](160.0)와 다르게 두어, 파생필드가
+    # 저장 마감가 기준으로 계산되는지(실시간 가격을 쓰지 않는지) 구분한다.
+    app.dependency_overrides[get_kis] = lambda: _FakeKis(prices={("US", "AAPL"): 170.0})
     try:
         r = TestClient(app).get("/api/characters/테스트형/positions")
     finally:
@@ -350,13 +352,15 @@ def test_character_positions_includes_decision_fields_from_signal_status(sf):
     [pos] = r.json()
 
     cash_krw = 500_000.0 + 1_000.0 * 1300.0
-    positions_krw = 5 * 160.0 * 1300.0
+    positions_krw = 5 * 170.0 * 1300.0
     total_krw = cash_krw + positions_krw
 
     assert pos["entry_trigger"] == "R7"
     assert pos["current_red_score"] == 4
     assert pos["stop_px"] == 140.0
     assert pos["trail_px"] is None
+    # stop_distance_pct/potential_loss는 실시간가(170.0)가 아니라
+    # SignalStatusRow.close(160.0) 기준으로 계산되어야 한다.
     assert pos["stop_distance_pct"] == pytest.approx((160.0 - 140.0) / 160.0)
     assert pos["potential_loss"] == pytest.approx(5 * (160.0 - 140.0) * 1300.0)
     assert pos["pending_sell"] is True
