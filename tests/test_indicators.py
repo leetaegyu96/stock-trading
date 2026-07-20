@@ -105,3 +105,22 @@ def test_ichimoku_cloud_below_price_in_uptrend():
     top = pd.concat([span_a, span_b], axis=1).max(axis=1)
     assert close.iloc[-1] > top.iloc[-1]             # 상승추세 → 구름 위
     assert tenkan.iloc[-1] > kijun.iloc[-1]
+
+
+def test_disparity_matches_manual():
+    close = pd.Series([10.0, 11.0, 12.0, 13.0, 14.0])
+    out = ind.disparity(close, period=3)
+    # 마지막 시점 SMA(3) = (12+13+14)/3 = 13.0, 괴리율 = (14-13)/13
+    assert out.iloc[-1] == (14.0 - 13.0) / 13.0
+    assert np.isnan(out.iloc[0])  # 워밍업
+
+
+def test_support_resistance_prev_window_excludes_current():
+    high = pd.Series([10.0, 12.0, 11.0, 15.0, 9.0])
+    low = pd.Series([5.0, 6.0, 4.0, 7.0, 3.0])
+    close = pd.Series([8.0, 9.0, 8.5, 12.0, 6.0])
+    sup, res = ind.support_resistance(high, low, close, lookback=3)
+    # index 3 기준 직전 3봉(0,1,2): 최고 high=12, 최저 low=4
+    assert res.iloc[3] == 12.0
+    assert sup.iloc[3] == 4.0
+    assert np.isnan(sup.iloc[0])
