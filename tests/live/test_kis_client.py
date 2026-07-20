@@ -87,3 +87,24 @@ def test_overseas_price():
         return_value=httpx.Response(200, json={"output": {"last": "191.24"}}))
     c = _client()
     assert c.current_price("US", "NAS:AAPL") == 191.24
+
+
+def _client_with_stub(monkeypatch, payload):
+    c = KisClient.__new__(KisClient)  # __init__ 우회(네트워크·토큰 없음)
+    monkeypatch.setattr(c, "_get", lambda path, tr_id, params: payload)
+    return c
+
+
+def test_execution_strength_kr_parses_cttr(monkeypatch):
+    c = _client_with_stub(monkeypatch, {"output": {"cttr": "123.45"}})
+    assert c.execution_strength("KR", "005930") == 123.45
+
+
+def test_execution_strength_us_returns_none(monkeypatch):
+    c = _client_with_stub(monkeypatch, {"output": {"cttr": "123.45"}})
+    assert c.execution_strength("US", "AAPL") is None
+
+
+def test_execution_strength_missing_field_returns_none(monkeypatch):
+    c = _client_with_stub(monkeypatch, {"output": {}})
+    assert c.execution_strength("KR", "005930") is None

@@ -86,6 +86,20 @@ class KisClient:
             return float(j["output"]["stck_prpr"])
         return self._overseas_price(symbol)   # Task 4
 
+    def execution_strength(self, market: str, symbol: str) -> "float | None":
+        """체결강도(매수/매도 체결 비율, 100 기준). KR 만 지원, US 는 None.
+        조회·파싱 실패 시 None(호출부가 이 조건을 스킵)."""
+        if market != "KR":
+            return None
+        try:
+            j = self._get("/uapi/domestic-stock/v1/quotations/inquire-price",
+                           _TR[("price", "KR")],
+                           {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": symbol})
+            raw = j.get("output", {}).get("cttr")
+            return float(raw) if raw not in (None, "") else None
+        except Exception:
+            return None
+
     def daily_bars(self, market: str, symbol: str, start: date, end: date) -> pd.DataFrame:
         if market == "KR":
             j = self._get(
