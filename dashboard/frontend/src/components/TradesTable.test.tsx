@@ -83,6 +83,23 @@ describe("TradesTable decision-based display (P0-1)", () => {
     expect(html).toContain("전량매도");
   });
 
+  it("shows a 장중 매수 chip for INTRADAY_BUY", () => {
+    const trade = makeTrade({
+      side: "BUY",
+      decision_type: "INTRADAY_BUY",
+      signal_summary: "골든크로스 → 매수 신호 (20점/A등급)",
+      realized_pnl: 0,
+    });
+    const html = renderToStaticMarkup(<TradesTable trades={[trade]} />);
+    expect(html).toContain("장중 매수");
+  });
+
+  it("shows a 장중 매도 chip for INTRADAY_SELL", () => {
+    const trade = makeTrade({ decision_type: "INTRADAY_SELL", signal_summary: "적신호 → 전량 매도" });
+    const html = renderToStaticMarkup(<TradesTable trades={[trade]} />);
+    expect(html).toContain("장중 매도");
+  });
+
   it("does not render a decision chip for a plain BUY row", () => {
     const trade = makeTrade({
       side: "BUY",

@@ -204,3 +204,10 @@ def test_card_summary_and_detail_metrics_defaults_when_no_history(sf):
     assert m.n_trades == 0
     assert m.win_rate == 0.0
     assert m.pnl_krw == 0.0
+
+
+def test_intraday_decision_labels_present():
+    """감사: DecisionType.INTRADAY_BUY/SELL(장중 매매)도 기존 결정유형 표시 매핑에
+    한국어 라벨을 가져야 한다 — BUY/PARTIAL_SELL/FULL_SELL/FORCED_SELL과 동일 취급."""
+    assert summary._DECISION_LABEL["INTRADAY_BUY"] == "장중 매수"
+    assert summary._DECISION_LABEL["INTRADAY_SELL"] == "장중 매도"
