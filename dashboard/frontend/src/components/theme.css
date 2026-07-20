@@ -281,6 +281,7 @@ body {
 .movers__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .movers__item { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
 .movers__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.movers__price { color: var(--color-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .movers__empty { color: var(--color-text-muted); font-size: 12.5px; margin: 0; }
 .movers__note { font-size: 11.5px; color: var(--color-text-muted); margin: 4px 0 0; }
 
