@@ -112,6 +112,37 @@ export interface TradeOut {
   trigger_rule: string;
 }
 
+/** 거래 내역 페이지 — items(현재 페이지)와 total(필터 기준 전체 건수). */
+export interface TradesPage {
+  items: TradeOut[];
+  total: number;
+}
+
+/** 거래 조회 필터/페이지네이션 쿼리 파라미터. */
+export interface TradesQuery {
+  limit?: number;
+  offset?: number;
+  symbol?: string;
+  side?: string;
+  decision_type?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+/** 포지션 생애(진입→청산) — 종목별 보유수량 0→BUY 시작, 0 도달 SELL로 종료. */
+export interface LifecycleOut {
+  symbol: string;
+  name: string;
+  market: string;
+  entry_date: string;
+  exit_date: string | null;
+  open: boolean;
+  trades: TradeOut[];
+  qty_peak: number;
+  realized_pnl_sum: number;
+  entry_trigger: string;
+}
+
 export interface FlowOut {
   date: string;
   amount_krw: number;
