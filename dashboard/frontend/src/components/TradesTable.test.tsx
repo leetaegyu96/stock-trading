@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { TradesTable } from "./TradesTable";
-import type { TradeOut } from "../types";
+import type { LifecycleOut, TradeOut } from "../types";
 
 function makeTrade(overrides: Partial<TradeOut>): TradeOut {
   return {
@@ -94,5 +94,100 @@ describe("TradesTable decision-based display (P0-1)", () => {
     expect(html).not.toContain("chip--forced");
     expect(html).not.toContain("chip--partial");
     expect(html).not.toContain("chip--full");
+  });
+});
+
+describe("TradesTable realized-pnl accessibility idiom", () => {
+  it("pairs the pnl color with a ▲/▼ arrow (aria-hidden), not color alone", () => {
+    const lossTrade = makeTrade({ realized_pnl: -100 });
+    const html = renderToStaticMarkup(<TradesTable trades={[lossTrade]} />);
+    expect(html).toContain('aria-hidden="true">▼');
+  });
+
+  it("shows ▲ for a gain and no arrow for a BUY row (—)", () => {
+    const gainTrade = makeTrade({ realized_pnl: 250 });
+    const html = renderToStaticMarkup(<TradesTable trades={[gainTrade]} />);
+    expect(html).toContain('aria-hidden="true">▲');
+
+    const buyTrade = makeTrade({ side: "BUY", decision_type: "BUY", realized_pnl: 0 });
+    const buyHtml = renderToStaticMarkup(<TradesTable trades={[buyTrade]} />);
+    expect(buyHtml).toContain("—");
+  });
+});
+
+describe("TradesTable pagination", () => {
+  const trades = [makeTrade({})];
+
+  it("shows the page position and total count", () => {
+    const html = renderToStaticMarkup(
+      <TradesTable trades={trades} pagination={{ page: 2, pageSize: 20, total: 45 }} />
+    );
+    expect(html).toContain("2 / 3");
+    expect(html).toContain("45");
+  });
+
+  it("disables the 이전 button on the first page", () => {
+    const html = renderToStaticMarkup(
+      <TradesTable trades={trades} pagination={{ page: 1, pageSize: 20, total: 45 }} />
+    );
+    expect(html).toMatch(/aria-label="이전 페이지"[^>]*disabled/);
+    expect(html).not.toMatch(/aria-label="다음 페이지"[^>]*disabled/);
+  });
+
+  it("disables the 다음 button on the last page", () => {
+    const html = renderToStaticMarkup(
+      <TradesTable trades={trades} pagination={{ page: 3, pageSize: 20, total: 45 }} />
+    );
+    expect(html).toContain("3 / 3");
+    expect(html).toMatch(/aria-label="다음 페이지"[^>]*disabled/);
+    expect(html).not.toMatch(/aria-label="이전 페이지"[^>]*disabled/);
+  });
+});
+
+describe("TradesTable 포지션 생애 view", () => {
+  function makeLifecycle(overrides: Partial<LifecycleOut>): LifecycleOut {
+    return {
+      symbol: "005930",
+      name: "삼성전자",
+      market: "KR",
+      entry_date: "2026-06-01",
+      exit_date: null,
+      open: true,
+      trades: [makeTrade({ side: "BUY", decision_type: "BUY", realized_pnl: 0 })],
+      qty_peak: 10,
+      realized_pnl_sum: -50000,
+      entry_trigger: "R1",
+      ...overrides,
+    };
+  }
+
+  it("shows 진행중 for an open lifecycle and the bundled realized pnl sum", () => {
+    const life = makeLifecycle({ open: true, exit_date: null, realized_pnl_sum: -50000 });
+    const html = renderToStaticMarkup(
+      <TradesTable trades={[]} view="lifecycle" lifecycles={[life]} />
+    );
+    expect(html).toContain("진행중");
+    expect(html).toContain("-₩50,000");
+  });
+
+  it("does not show 진행중 for a closed lifecycle and shows the exit date instead", () => {
+    const life = makeLifecycle({
+      open: false,
+      exit_date: "2026-06-20",
+      realized_pnl_sum: 12000,
+    });
+    const html = renderToStaticMarkup(
+      <TradesTable trades={[]} view="lifecycle" lifecycles={[life]} />
+    );
+    expect(html).not.toContain("진행중");
+    expect(html).toContain("2026-06-20");
+    expect(html).toContain("+₩12,000");
+  });
+
+  it("shows an empty state when there are no lifecycles", () => {
+    const html = renderToStaticMarkup(
+      <TradesTable trades={[]} view="lifecycle" lifecycles={[]} />
+    );
+    expect(html).toContain("포지션 생애");
   });
 });

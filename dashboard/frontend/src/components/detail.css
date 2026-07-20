@@ -96,6 +96,46 @@
 }
 :root[data-theme="dark"] .benchmark-lead__warn { background: rgba(224, 167, 19, 0.22); color: #e0a713; }
 
+/* ── 거래내역 필터 바 ── */
+.trades-filter-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-bottom: 12px;
+}
+.trades-filter-bar input,
+.trades-filter-bar select {
+  font-family: inherit; font-size: 12.5px;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-ctl);
+  padding: 5px 9px;
+}
+.trades-filter-bar__symbol { width: 110px; }
+
+/* ── 페이지네이션 ── */
+.trades-pagination {
+  display: flex; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; gap: 10px;
+  margin-top: 14px;
+}
+.trades-pagination__controls { display: flex; align-items: center; gap: 10px; }
+.trades-pagination__pos { font-size: 13px; font-weight: 700; }
+
+/* ── 포지션 생애 뷰 ── */
+.lifecycle-list { display: flex; flex-direction: column; gap: 14px; }
+.lifecycle-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+}
+.lifecycle-card__head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-bottom: 10px;
+}
+.lifecycle-card__entry { font-size: 12px; }
+.lifecycle-card__sum { margin-left: auto; font-size: 14px; }
+.lifecycle-card__trades { min-width: 480px; }
+
 /* 신호 표시 상단 고지(P0-2): 라벨 + "기술적 축만 계산됨" + 뉴스·공시·수급 미반영 고지. */
 .signal-notice {
   display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
@@ -129,6 +169,7 @@
   font-size: 21px; font-weight: 800; letter-spacing: -0.02em;
 }
 .equity-chart__range { font-size: 12px; color: var(--color-text-muted); }
+.equity-chart__period-label { font-size: 12px; color: var(--color-text-muted); }
 
 .equity-chart__plot { position: relative; width: 100%; }
 
