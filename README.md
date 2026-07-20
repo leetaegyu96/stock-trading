@@ -59,6 +59,22 @@ KIS는 **데이터 피드 전용**(주문하지 않음)이며 3캐릭터는 엔�
     python dashboard/scripts/seed_from_replay.py --force
     # 옵션: --start/--end (기본 최근 6개월) --kr-top 50 --us-top 50 --cache data/cache
 
+### 의사결정판 (감사 Phase B)
+
+매 마감마다 엔진이 남긴 관찰 전용 기록(`SignalStatusRow`, 매매 판정 로직 자체는 무변경)을
+읽어 세 화면을 제공한다:
+
+- **`GET /api/characters/{name}/candidates`** — 오늘 마감의 매수후보 평가 전체(예약/차단 +
+  차단 사유 7종). 신규 매수 결정 근거를 있는 그대로 노출한다.
+- **`GET /api/characters/{name}/positions`**(확장) — 보유 종목별 `stop_px`·`trail_px`·
+  `stop_distance_pct`·`potential_loss`·`weight_pct` 등 리스크 파생 필드.
+- **`GET /api/characters/{name}/lifecycles`** — 포지션 생애(진입→청산) 그룹핑. 진행중인
+  생애는 `limit`과 무관하게 항상 전부 반환된다.
+- **`GET /api/dashboard`**(확장) — `today_actions`(캐릭터별 대기주문·강제청산 경보) ·
+  `risk`(현금비중·총노출·최대 보유 비중·일 손익) 포함.
+
+값의 출처·정확한 차단 사유 목록·생애 정의는 `docs/trading-rules.md` §16 참고.
+
 ## 테스트
     .venv\Scripts\python -m pytest
 
