@@ -164,6 +164,8 @@ class HoldingRank(BaseModel):
     """캐릭터 보유 베스트/워스트 종목."""
     symbol: str
     name: str
+    market: str
+    close: float
     pnl_pct: float
 
 

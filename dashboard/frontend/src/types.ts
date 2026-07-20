@@ -167,6 +167,8 @@ export interface Mover {
 export interface HoldingRank {
   symbol: string;
   name: string;
+  market: string;
+  close: number;
   pnl_pct: number;
 }
 

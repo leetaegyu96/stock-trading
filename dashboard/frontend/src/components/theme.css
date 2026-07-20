@@ -299,6 +299,7 @@ body {
 .holdings-preview__rank { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; min-width: 0; }
 .holdings-preview__rank-label { font-size: 11px; color: var(--color-text-muted); }
 .holdings-preview__rank-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.holdings-preview__rank-price { color: var(--color-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .holdings-preview__rank-pct { font-weight: 700; }
 
 @media (max-width: 520px) {

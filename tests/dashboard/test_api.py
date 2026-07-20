@@ -640,6 +640,9 @@ def test_dashboard_endpoint_shape(sf):
     assert kr_char["n_positions"] == 1
     assert kr_char["best"]["symbol"] == "005930"
     assert kr_char["best"]["name"] == "삼성전자"
+    # 베스트/워스트 종목도 가격(현재가)·시장 노출 — pnl_pct 계산과 동일한 가격(daily_bars 최신 종가)
+    assert kr_char["best"]["close"] == pytest.approx(73500.0)
+    assert kr_char["best"]["market"] == "KR"
     assert kr_char["today_pnl_pct"] == pytest.approx(10_300_000.0 / 10_000_000.0 - 1.0)
     # 보유 없는 캐릭터는 best/worst 없음
     assert by_name["해외형"]["n_positions"] == 0
