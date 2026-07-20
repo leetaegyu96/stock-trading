@@ -54,6 +54,29 @@ export interface PositionOut {
   eval_value: number | null;
   pnl_pct: number | null;
   stale: boolean | null;
+  // 의사결정판 확장 필드(감사 Phase B) — SignalStatusRow(kind=보유)가 없는 종목/캐릭터는
+  // 신호 관련 필드가 전부 null 이다(500 방지, "관찰 데이터 없음"을 있는 그대로 노출).
+  weight_pct: number | null;
+  entry_trigger: string;
+  current_red_score: number | null;
+  stop_px: number | null;
+  trail_px: number | null;
+  stop_distance_pct: number | null;
+  potential_loss: number | null;
+  pending_sell: boolean;
+  as_of: string | null;
+}
+
+/** 오늘의 매수후보(SignalStatusRow kind=후보) — 의사결정판(감사 Phase B). */
+export interface CandidateOut {
+  symbol: string;
+  name: string;
+  green_score: number;
+  red_score: number;
+  buy_gate: boolean;
+  status: string; // "예약" | "차단"
+  block_reason: string; // "점수부족"|"게이트미충족"|"보유중"|"쿨다운"|"슬롯부족"|"현금부족"|"가격없음"|""
+  as_of: string;
 }
 
 export interface SignalDetail {
@@ -133,10 +156,50 @@ export interface RecentTrade {
   date: string;
 }
 
+/** 대기주문(BUY/SELL 결정) — today_actions 용. */
+export interface PendingOrderOut {
+  symbol: string;
+  name: string;
+  market: string;
+  side: string;
+  decision_type: string;
+  trigger_rule: string;
+  reason: string;
+}
+
+/** 최신 거래일에 발생한 강제청산 경보 — today_actions 용. */
+export interface ForcedSellAlertOut {
+  symbol: string;
+  name: string;
+  market: string;
+  date: string;
+  realized_pnl: number;
+}
+
+/** 캐릭터별 오늘의 결정(대기주문) + 최신일 강제청산 경보. */
+export interface TodayActionsOut {
+  character: string;
+  pending_orders: PendingOrderOut[];
+  forced_sell_alerts: ForcedSellAlertOut[];
+}
+
+/** 캐릭터별 포트폴리오 위험: 현금비중·총노출·최대 보유 비중(종목 집중)·일 손익.
+ * "업종 집중"이 아니다 — 업종/실적일 데이터가 없다. */
+export interface CharacterRiskOut {
+  character: string;
+  cash_ratio: number;
+  total_exposure_pct: number;
+  max_position_weight_pct: number;
+  daily_pnl_krw: number;
+}
+
 export interface Dashboard {
   movers: Record<string, { up: Mover[]; down: Mover[] }>;
   characters: CharPortfolio[];
   recent_trades: RecentTrade[];
+  // 의사결정판 확장(감사 Phase B) — 필드 추가 방식이라 기존 소비처는 영향 없음.
+  today_actions: TodayActionsOut[];
+  risk: CharacterRiskOut[];
 }
 
 /** 시장별 데이터 기준(run_state 미러) — as-of 표시용(P0). */

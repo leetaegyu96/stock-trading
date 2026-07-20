@@ -1,6 +1,7 @@
 // FastAPI 백엔드(`/api/...`)용 fetch 래퍼. base URL은 상대 경로로 두어
 // FastAPI가 정적 빌드를 서빙할 때(같은 오리진)와 `vite dev`(프록시 경유) 모두 동작한다.
 import type {
+  CandidateOut,
   CardSummary,
   Dashboard,
   EquityPoint,
@@ -54,6 +55,13 @@ export function getEquity(name: string): Promise<EquityPoint[]> {
 export function getPositions(name: string): Promise<PositionOut[]> {
   return request<PositionOut[]>(
     `/api/characters/${encodeURIComponent(name)}/positions`
+  );
+}
+
+/** 오늘의 매수후보(의사결정판, 감사 Phase B). */
+export function getCandidates(name: string): Promise<CandidateOut[]> {
+  return request<CandidateOut[]>(
+    `/api/characters/${encodeURIComponent(name)}/candidates`
   );
 }
 
