@@ -97,6 +97,16 @@ class TradeRules:
     trailing_top: float = 0.40          # 이 이상이면 최고가 대비 trail_pct 트레일
     max_positions: int = 5
     cooldown_days: int = 2
+    # ── 장중 자동매매(인트라데이) — 기본 OFF, OFF면 기존 동작 100% 불변 ──
+    intraday_enabled: bool = False
+    intraday_scan_minutes: int = 10
+    intraday_max_buys_per_symbol: int = 3
+    intraday_max_sells_per_symbol: int = 3
+    intraday_reentry_cooldown_min: int = 30
+    intraday_daily_loss_halt_pct: float = -0.05
+    intraday_disparity_period: int = 20
+    intraday_sr_lookback: int = 20
+    intraday_strength_buy_min: float = 100.0
     # 하락장 가드 적용 캐릭터(빈 집합=전체 off). 스윕+12개월 검증 결과 기본 off 확정:
     # docs/experiments/bear_guard_tuning_sweep_2026-01-09_2026-07-09.md
     bear_guard_characters: frozenset = frozenset()

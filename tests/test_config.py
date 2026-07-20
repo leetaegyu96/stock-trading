@@ -70,3 +70,16 @@ def test_v1_fields_removed():
     assert not hasattr(r, "buy_threshold")
     assert not hasattr(r, "sell_threshold")
     assert not hasattr(r, "take_profit_pct")
+
+
+def test_intraday_defaults_off_and_conservative():
+    r = Config().rules
+    assert r.intraday_enabled is False
+    assert r.intraday_scan_minutes == 10
+    assert r.intraday_max_buys_per_symbol == 3
+    assert r.intraday_max_sells_per_symbol == 3
+    assert r.intraday_reentry_cooldown_min == 30
+    assert r.intraday_daily_loss_halt_pct == -0.05
+    assert r.intraday_disparity_period == 20
+    assert r.intraday_sr_lookback == 20
+    assert r.intraday_strength_buy_min == 100.0
