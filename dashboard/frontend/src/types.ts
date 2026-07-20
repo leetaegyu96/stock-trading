@@ -71,12 +71,14 @@ export interface PositionOut {
 export interface CandidateOut {
   symbol: string;
   name: string;
+  market: string;
   green_score: number;
   red_score: number;
   buy_gate: boolean;
   status: string; // "예약" | "차단"
   block_reason: string; // "점수부족"|"게이트미충족"|"보유중"|"쿨다운"|"슬롯부족"|"현금부족"|"가격없음"|""
   as_of: string;
+  close: number | null;
 }
 
 export interface SignalDetail {
@@ -165,6 +167,8 @@ export interface Mover {
 export interface HoldingRank {
   symbol: string;
   name: string;
+  market: string;
+  close: number;
   pnl_pct: number;
 }
 

@@ -28,9 +28,15 @@ function AppShellBar() {
   );
 }
 
+// 서브패스 배포(VITE_BASE_PATH)시 라우터도 그 프리픽스를 알아야 매칭된다.
+// api.ts/ws.ts 와 동일하게 Vite의 base 를 그대로 재사용 — 루트("/") 배포면 undefined
+// 라 기존과 동일하게 동작.
+const ROUTER_BASENAME =
+  import.meta.env.BASE_URL === "/" ? undefined : import.meta.env.BASE_URL.replace(/\/$/, "");
+
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={ROUTER_BASENAME}>
       <AppShellBar />
       <Routes>
         <Route path="/" element={<Main />} />

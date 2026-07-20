@@ -300,12 +300,14 @@ def candidates(sf, name: str) -> list[dict]:
         {
             "symbol": r["symbol"],
             "name": display_name(r["symbol"], r["market"]),
+            "market": r["market"],
             "green_score": r["green_score"],
             "red_score": r["red_score"],
             "buy_gate": r["buy_gate"],
             "status": r["status"],
             "block_reason": r["block_reason"],
             "as_of": r["date"],
+            "close": r["close"],
         }
         for r in signal_status(sf, name, kind="후보")
     ]

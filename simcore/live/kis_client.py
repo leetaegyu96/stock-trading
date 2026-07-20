@@ -122,8 +122,14 @@ class KisClient:
     def _split_us(self, symbol: str) -> "list[tuple[str, str]]":
         if ":" in symbol:
             exch, tkr = symbol.split(":", 1)
-            return [(exch, tkr)]
-        return [("NAS", symbol), ("NYS", symbol)]
+            return [(exch, self._to_kis_ticker(tkr))]
+        tkr = self._to_kis_ticker(symbol)
+        return [("NAS", tkr), ("NYS", tkr)]
+
+    @staticmethod
+    def _to_kis_ticker(ticker: str) -> str:
+        """클래스주 표기(BRK-B)를 KIS 해외 API가 요구하는 형식(BRK/B)으로 변환."""
+        return ticker.replace("-", "/")
 
     def _overseas_price(self, symbol: str) -> float:
         for excd, tkr in self._split_us(symbol):

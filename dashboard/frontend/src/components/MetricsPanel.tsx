@@ -61,7 +61,14 @@ export function MetricsPanel({ metrics, className }: MetricsPanelProps) {
     { label: "승률", value: `${winRatePct.toFixed(1)}%` },
     // 승률만으로는 맥락이 부족하므로 바로 옆에 평균이익·평균손실·손익비를 함께 보여준다.
     { label: "평균이익", value: formatSignedKrw(metrics.avg_win), cls: signClass(metrics.avg_win) },
-    { label: "평균손실", value: formatSignedKrw(metrics.avg_loss), cls: signClass(metrics.avg_loss) },
+    // avg_loss는 저장상 절대값(abs(losses.mean()), simcore/metrics.py:137)이므로 그대로
+    // formatSignedKrw에 넣으면 "+₩..."로 이익처럼 보인다. 손실이므로 부호·색상을 뒤집어
+    // "−₩..."(loss 색)로 표기한다. 0이면 부호 없이 중립.
+    {
+      label: "평균손실",
+      value: formatSignedKrw(metrics.avg_loss > 0 ? -metrics.avg_loss : 0),
+      cls: signClass(metrics.avg_loss > 0 ? -metrics.avg_loss : 0),
+    },
     { label: "손익비", value: metrics.win_loss_ratio.toFixed(2) },
   ];
 

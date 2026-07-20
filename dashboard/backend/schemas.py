@@ -123,12 +123,14 @@ class CandidateOut(BaseModel):
     """오늘의 매수후보(SignalStatusRow kind=후보) — 의사결정판(감사 Phase B)."""
     symbol: str
     name: str
+    market: str
     green_score: int
     red_score: int
     buy_gate: bool
     status: str          # "예약" | "차단"
     block_reason: str    # "점수부족"|"게이트미충족"|"보유중"|"쿨다운"|"슬롯부족"|"현금부족"|"가격없음"|""
     as_of: date
+    close: float | None = None
 
 
 class MarketStatusOut(BaseModel):
@@ -162,6 +164,8 @@ class HoldingRank(BaseModel):
     """캐릭터 보유 베스트/워스트 종목."""
     symbol: str
     name: str
+    market: str
+    close: float
     pnl_pct: float
 
 

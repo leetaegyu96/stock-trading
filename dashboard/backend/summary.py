@@ -135,9 +135,12 @@ def character_portfolios(sf, fx_rate, last_prices_by_char) -> list[dict]:
         eq = _equity_series(sf, name)
         positions = queries.positions(sf, name)
         lp = last_prices_by_char.get(name, {})
-        # 보유 베스트/워스트: 각 종목 현재가 vs 평단
+        # 보유 베스트/워스트: 각 종목 현재가 vs 평단.
+        # close는 pnl_pct 계산과 동일한 가격(lp의 최신 종가, 없으면 avg_price 폴백) —
+        # 별도 가격 소스를 새로 끌어오지 않고 이미 손익률에 쓰인 값을 그대로 노출한다.
         ranked = sorted(
-            ({"symbol": p["symbol"], "name": p["name"],
+            ({"symbol": p["symbol"], "name": p["name"], "market": p["market"],
+              "close": lp.get(p["symbol"], p["avg_price"]),
               "pnl_pct": (lp.get(p["symbol"], p["avg_price"]) / p["avg_price"] - 1.0)}
              for p in positions), key=lambda x: x["pnl_pct"])
         out.append({

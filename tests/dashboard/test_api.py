@@ -289,7 +289,8 @@ def test_character_candidates_endpoint_returns_rows(sf):
         s.merge(db.CharacterRow(name="국내형", base_currency="KRW"))
         s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="005930",
                                   market="KR", kind="후보", green_score=5, red_score=1,
-                                  buy_gate=True, status="예약", block_reason=""))
+                                  buy_gate=True, status="예약", block_reason="", close=70000.0))
+        # close 가 없는(None) 후보 행 — 마감 종가 미기록이어도 응답이 500 나면 안 된다.
         s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="000660",
                                   market="KR", kind="후보", green_score=1, red_score=0,
                                   buy_gate=False, status="차단", block_reason="점수부족"))
@@ -314,8 +315,12 @@ def test_character_candidates_endpoint_returns_rows(sf):
     assert by_symbol["005930"]["buy_gate"] is True
     assert by_symbol["005930"]["status"] == "예약"
     assert by_symbol["005930"]["as_of"] == "2026-01-05"
+    assert by_symbol["005930"]["market"] == "KR"
+    assert by_symbol["005930"]["close"] == 70000.0
     assert by_symbol["000660"]["status"] == "차단"
     assert by_symbol["000660"]["block_reason"] == "점수부족"
+    assert by_symbol["000660"]["market"] == "KR"
+    assert by_symbol["000660"]["close"] is None
 
 
 @needs_db
@@ -635,6 +640,9 @@ def test_dashboard_endpoint_shape(sf):
     assert kr_char["n_positions"] == 1
     assert kr_char["best"]["symbol"] == "005930"
     assert kr_char["best"]["name"] == "삼성전자"
+    # 베스트/워스트 종목도 가격(현재가)·시장 노출 — pnl_pct 계산과 동일한 가격(daily_bars 최신 종가)
+    assert kr_char["best"]["close"] == pytest.approx(73500.0)
+    assert kr_char["best"]["market"] == "KR"
     assert kr_char["today_pnl_pct"] == pytest.approx(10_300_000.0 / 10_000_000.0 - 1.0)
     # 보유 없는 캐릭터는 best/worst 없음
     assert by_name["해외형"]["n_positions"] == 0

@@ -87,3 +87,40 @@ def test_overseas_price():
         return_value=httpx.Response(200, json={"output": {"last": "191.24"}}))
     c = _client()
     assert c.current_price("US", "NAS:AAPL") == 191.24
+
+
+@respx.mock
+def test_overseas_price_class_share_ticker_converted_to_kis_format():
+    respx.post(f"{BASE}/oauth2/tokenP").mock(return_value=httpx.Response(
+        200, json={"access_token": "T", "expires_in": 86400}))
+    route = respx.get(f"{BASE}/uapi/overseas-price/v1/quotations/price").mock(
+        return_value=httpx.Response(200, json={"output": {"last": "455.10"}}))
+    c = _client()
+    assert c.current_price("US", "BRK-B") == 455.10
+    assert route.calls.last.request.url.params["SYMB"] == "BRK/B"
+
+
+@respx.mock
+def test_overseas_daily_class_share_ticker_converted_to_kis_format():
+    respx.post(f"{BASE}/oauth2/tokenP").mock(return_value=httpx.Response(
+        200, json={"access_token": "T", "expires_in": 86400}))
+    route = respx.get(f"{BASE}/uapi/overseas-price/v1/quotations/dailyprice").mock(
+        return_value=httpx.Response(200, json={"output2": [
+            {"xymd": "20260707", "open": "450", "high": "460",
+             "low": "445", "clos": "455", "tvol": "1000"},
+        ]}))
+    c = _client()
+    df = c.daily_bars("US", "BRK-B", date(2026, 7, 1), date(2026, 7, 7))
+    assert df.iloc[0]["close"] == 455.0
+    assert route.calls.last.request.url.params["SYMB"] == "BRK/B"
+
+
+@respx.mock
+def test_overseas_price_explicit_exchange_ticker_also_converted():
+    respx.post(f"{BASE}/oauth2/tokenP").mock(return_value=httpx.Response(
+        200, json={"access_token": "T", "expires_in": 86400}))
+    route = respx.get(f"{BASE}/uapi/overseas-price/v1/quotations/price").mock(
+        return_value=httpx.Response(200, json={"output": {"last": "455.10"}}))
+    c = _client()
+    assert c.current_price("US", "NYS:BRK-B") == 455.10
+    assert route.calls.last.request.url.params["SYMB"] == "BRK/B"
