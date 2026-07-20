@@ -173,12 +173,14 @@ def position_lifecycles(sf, name: str, limit: int = 10) -> list[dict]:
                 del open_by_symbol[symbol]
             qty_by_symbol[symbol] = current_qty
 
-    # 최근 생애 limit 개(entry_date desc)를 먼저 고르고, 그 안에서 진행중인 생애를
-    # 앞으로 옮긴다(entry_date desc 순서는 stable sort로 그룹 내에서 유지됨).
+    # 진행중(open) 생애는 오래된 것이라도 limit에 밀려 누락되면 안 되므로,
+    # truncate 전에 open/closed로 분리한다 — open은 전부 선택하고(최신 entry_date
+    # 우선), 남은 자리를 가장 최근에 진입한 closed 생애로 채운다.
     lifecycles.sort(key=lambda life: life["entry_date"], reverse=True)
-    selected = lifecycles[:limit]
-    selected.sort(key=lambda life: not life["open"])
-    return selected
+    open_lifecycles = [life for life in lifecycles if life["open"]]
+    closed_lifecycles = [life for life in lifecycles if not life["open"]]
+    remaining = max(limit - len(open_lifecycles), 0)
+    return open_lifecycles + closed_lifecycles[:remaining]
 
 
 def flows(sf, name: str) -> list[dict]:

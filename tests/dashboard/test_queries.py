@@ -209,6 +209,42 @@ def test_position_lifecycles_groups_entry_to_exit_and_reentry(sf):
 
 
 @needs_db
+def test_position_lifecycles_keeps_old_open_position_within_limit(sf):
+    with sf() as s:
+        _seed_character(s, "국내형", "KRW")
+        # 오래된 진행중 생애(청산 안 됨) — entry_date가 가장 과거
+        s.add(db.TradeRow(ts=datetime(2026, 1, 1, 9, 30), date=date(2026, 1, 1),
+                           character="국내형", symbol="OLDOPEN", market="KOSPI", side="BUY",
+                           quantity=1, price=1000.0, fee=0.0, tax=0.0, reason="SIGNAL_BUY",
+                           green_count=0, red_count=0, fired=[], realized_pnl=0.0,
+                           decision_type="BUY", trigger_rule="R1"))
+        # limit(2)보다 많은, 더 최근에 진입한 청산 완료 생애들(다른 종목)
+        for i, symbol in enumerate(["CLOSEDA", "CLOSEDB", "CLOSEDC"]):
+            entry = date(2026, 2, i + 1)
+            exit_ = date(2026, 2, i + 2)
+            s.add(db.TradeRow(ts=datetime(entry.year, entry.month, entry.day, 9, 30),
+                               date=entry, character="국내형", symbol=symbol, market="KOSPI",
+                               side="BUY", quantity=1, price=1000.0, fee=0.0, tax=0.0,
+                               reason="SIGNAL_BUY", green_count=0, red_count=0, fired=[],
+                               realized_pnl=0.0, decision_type="BUY", trigger_rule="R1"))
+            s.add(db.TradeRow(ts=datetime(exit_.year, exit_.month, exit_.day, 9, 30),
+                               date=exit_, character="국내형", symbol=symbol, market="KOSPI",
+                               side="SELL", quantity=1, price=1100.0, fee=0.0, tax=0.0,
+                               reason="SIGNAL_SELL", green_count=0, red_count=0, fired=[],
+                               realized_pnl=100.0, decision_type="SELL", trigger_rule="R2"))
+        s.commit()
+
+    lifecycles = q.position_lifecycles(sf, "국내형", limit=2)
+    assert len(lifecycles) == 2
+    # 진행중인 오래된 포지션이 limit에 밀려 누락되면 안 된다
+    assert lifecycles[0]["open"] is True
+    assert lifecycles[0]["symbol"] == "OLDOPEN"
+    # 나머지 한 자리는 가장 최근에 진입한 청산 완료 생애가 채운다
+    assert lifecycles[1]["open"] is False
+    assert lifecycles[1]["symbol"] == "CLOSEDC"
+
+
+@needs_db
 def test_position_lifecycles_skips_orphan_sell_without_crashing(sf):
     with sf() as s:
         _seed_character(s, "국내형", "KRW")
