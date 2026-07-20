@@ -302,7 +302,16 @@ def test_on_close_passes_bearish_dict_to_engine(session, monkeypatch):
 
 
 class _IntradayFakeKis(FakeKis):
-    """on_close 용 FakeKis 확장: 체결강도(None=조건 스킵) + 추세 지속 현재가(게이트 통과)."""
+    """on_close 용 FakeKis 확장: 체결강도(None=조건 스킵) + 추세 지속 현재가(게이트 통과).
+
+    daily_bars 는 실제 KIS 동작을 모사한다 — 조회 구간(end)이 `today` 이상이면
+    당일자 "잠정"(장중 진행 중) 봉을 확정 히스토리에 덧붙여 반환한다. 이를 통해
+    on_intraday 이 실수로 당일자(d)까지 확정 히스토리를 조회/캐시하면 그 잠정봉이
+    그대로 DB에 영속되는 회귀 리스크를 테스트가 재현할 수 있다."""
+    def __init__(self, bars, today):
+        super().__init__(bars)
+        self.today = today
+
     def execution_strength(self, market, symbol):
         return None
 
@@ -310,6 +319,18 @@ class _IntradayFakeKis(FakeKis):
         # 마지막 확정 종가보다 한 걸음 더 오른 값 — 잠정봉이 상승 추세를 이어가야
         # G7(신고가 돌파) 등 게이트 신호가 유지된다(평탄 종가는 게이트 미통과).
         return float(self.bars[(market, symbol)].iloc[-1]["close"]) + 1.0
+
+    def daily_bars(self, market, symbol, start, end):
+        base = self.bars[(market, symbol)]
+        if pd.Timestamp(end) >= pd.Timestamp(self.today):
+            last = base.iloc[-1]
+            partial = pd.DataFrame({
+                "open": [last["open"]], "high": [last["high"]],
+                "low": [last["low"]], "close": [float(last["close"]) + 1.0],
+                "volume": [last["volume"]],
+            }, index=[pd.Timestamp(self.today)])
+            return pd.concat([base, partial])
+        return base
 
 
 @pytest.fixture
@@ -322,7 +343,7 @@ def intraday_orch_setup(session):
     eng.start(date(2026, 1, 1), 1300.0)
     # 확정 히스토리: 2026-07-20(테스트 당일) 이전 영업일까지의 상승 추세(매수 게이트 통과 조건).
     hist = _uptrend(80, end=pd.Timestamp("2026-07-17"))
-    kis = _IntradayFakeKis({("KR", "005930"): hist})
+    kis = _IntradayFakeKis({("KR", "005930"): hist}, today=date(2026, 7, 20))
     orch = Orchestrator(eng, kis, repo, cfg, fx_provider=lambda d: 1300.0)
     return orch, repo, "KR", "005930"
 
@@ -339,3 +360,27 @@ def test_on_intraday_buys_and_persists(intraday_orch_setup):
     # 거래가 DB에 append 되었는지
     with repo.sf() as s:
         assert s.query(db.TradeRow).count() > 0
+
+
+@needs_db
+def test_on_intraday_never_persists_today_daily_bar(intraday_orch_setup):
+    """Critical 회귀 가드: on_intraday 은 장중 잠정봉을 당일(d)자 확정 일봉으로
+    DB 에 영속시켜서는 안 된다. 그렇게 되면 이후 on_close(d, ...) 이 캐시 커트오프
+    (cached.index.max()==d) 때문에 재조회를 건너뛰고, 잠정가가 그대로 당일 확정
+    종가로 굳어버린다(신호 평가·record_equity·이후 이력 오염)."""
+    from simcore.live import db
+    orch, repo, market, sym = intraday_orch_setup
+    d = date(2026, 7, 20)
+    now = datetime(d.year, d.month, d.day, 10, 0, 0)
+    orch.on_intraday(now, d, market, [sym])
+    with repo.sf() as s:
+        rows = (s.query(db.DailyBarRow)
+                 .filter_by(market=market, symbol=sym, date=d).all())
+        assert rows == [], (
+            "on_intraday 이 당일(d)자 잠정봉을 확정 일봉으로 DB에 저장했다 — "
+            "on_close 캐시 커트오프가 그 이후 재조회를 영구히 건너뛴다."
+        )
+        max_date = (s.query(db.DailyBarRow)
+                     .filter_by(market=market, symbol=sym)
+                     .order_by(db.DailyBarRow.date.desc()).first())
+        assert max_date is not None and max_date.date < d

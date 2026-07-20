@@ -213,9 +213,15 @@ class Orchestrator:
                 vol = float(today["volume"].iloc[-1]) if not today.empty else 0.0
             except Exception:
                 vol = 0.0
-            # 확정 히스토리(어제까지) + 잠정 오늘 봉(open/high/low 추적, close=현재가)
+            # 확정 히스토리(어제까지만 조회/캐시) + 잠정 오늘 봉(open/high/low 추적, close=현재가).
+            # KIS 일봉 조회는 장중에 당일(d)까지 요청하면 장중 진행 중인 "잠정" 봉을 반환하는데,
+            # _refresh_bars 는 조회 결과를 그대로 DB 캐시에 upsert 한다. upto=d 로 부르면 그
+            # 잠정봉이 d 자 확정 일봉으로 영속되고, 캐시 커트오프(cached.index.max()+1)
+            # 때문에 이후(진짜 장마감의 on_close 포함) 재조회가 영구히 스킵되어 잠정가가
+            # 그대로 당일 확정 종가로 굳어버린다. 그래서 확정 히스토리는 반드시 d-1까지만
+            # 조회/캐시하고, 당일(d) 잠정봉은 아래에서 메모리상으로만 구성한다.
             try:
-                df = self._refresh_bars(market, sym, d)
+                df = self._refresh_bars(market, sym, d - timedelta(days=1))
             except Exception as exc:
                 print(f"[intraday] {market} {sym} 일봉 실패 스킵: {exc}")
                 continue
