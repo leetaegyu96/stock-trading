@@ -107,7 +107,8 @@ class Orchestrator:
                 if pos.market != m:
                     continue
                 snap = snaps.get(sym)
-                red_score = snap.red_score if snap is not None else 0
+                red_score = (snap.red_score if snap is not None
+                             else self._prior_held_red_score(name, sym))
                 stop_px = pos.avg_price * (1 + pos.locked_stop_pct)
                 peak_gain = pos.peak_price / pos.avg_price - 1.0
                 trail_px = (pos.peak_price * (1 - self.cfg.rules.trail_pct)
@@ -121,6 +122,14 @@ class Orchestrator:
                     "close": self._last_price.get(sym),
                 })
         return rows
+
+    def _prior_held_red_score(self, character: str, symbol: str) -> int:
+        """이번 마감의 universe 프레임에 스냅이 없는 보유 종목(랭킹 이탈 등)에 대해,
+        red_score=0(무위험 오인)으로 리셋하지 않고 직전 signal_status(kind=보유) 행의
+        값을 승계한다. 직전 행이 없으면(첫 마감 등) 0."""
+        prior = [r for r in self.repo.signal_status(character)
+                 if r["symbol"] == symbol and r["kind"] == "보유"]
+        return prior[-1]["red_score"] if prior else 0
 
     def _bearish_by_market(self, d: date) -> dict | None:
         """가드 대상 캐릭터가 있을 때만 양 시장 지수로 하락장 dict 계산 (리플레이와 동일 판정식).
