@@ -297,3 +297,33 @@
   padding: 1px 6px; border-radius: 999px;
   background: var(--tint-neutral); color: var(--color-text-muted);
 }
+
+/* ── 오늘의 행동(대기주문·강제매도 경보, 의사결정판) ── */
+.today-actions { display: flex; flex-direction: column; gap: 14px; }
+.today-actions__group + .today-actions__group {
+  border-top: 1px solid var(--color-border); padding-top: 14px;
+}
+.today-actions__char { font-size: 13px; font-weight: 700; color: var(--color-text-sub); margin: 0 0 8px; }
+.today-actions__alerts, .today-actions__orders {
+  list-style: none; margin: 0 0 8px; padding: 0;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.today-actions__alerts:last-child, .today-actions__orders:last-child { margin-bottom: 0; }
+.today-actions__alert, .today-actions__order {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px;
+}
+.today-actions__name { font-weight: 600; margin-right: auto; }
+
+/* ── 포트폴리오 위험 스트립(의사결정판) ── */
+.risk-overview { display: flex; flex-direction: column; gap: 14px; }
+.risk-overview__item + .risk-overview__item {
+  border-top: 1px solid var(--color-border); padding-top: 14px;
+}
+.risk-overview__char { font-size: 13px; font-weight: 700; color: var(--color-text-sub); }
+.risk-overview__metrics {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px; margin-top: 8px;
+}
+.risk-overview__metric { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.risk-overview__label { font-size: 11px; color: var(--color-text-muted); }
+.risk-overview__value { font-size: 15px; font-weight: 700; color: var(--color-text); }
