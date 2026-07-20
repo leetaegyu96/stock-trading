@@ -401,7 +401,7 @@ def test_candidates_maps_signal_status_candidate_rows(sf):
         _seed_character(s, "국내형", "KRW")
         s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="005930",
                                   market="KR", kind="후보", green_score=5, red_score=1,
-                                  buy_gate=True, status="예약", block_reason=""))
+                                  buy_gate=True, status="예약", block_reason="", close=70000.0))
         s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="000660",
                                   market="KR", kind="후보", green_score=1, red_score=0,
                                   buy_gate=False, status="차단", block_reason="점수부족"))
@@ -417,6 +417,10 @@ def test_candidates_maps_signal_status_candidate_rows(sf):
     assert by_symbol["005930"]["status"] == "예약"
     assert by_symbol["005930"]["block_reason"] == ""
     assert by_symbol["005930"]["as_of"] == date(2026, 1, 5)
+    assert by_symbol["005930"]["market"] == "KR"
+    assert by_symbol["005930"]["close"] == 70000.0
+    # close 가 없는(None) 후보 행도 그대로 None 으로 노출되어야 한다(누락을 조용히 숨기지 않음).
+    assert by_symbol["000660"]["close"] is None
     assert by_symbol["000660"]["status"] == "차단"
     assert by_symbol["000660"]["block_reason"] == "점수부족"
 

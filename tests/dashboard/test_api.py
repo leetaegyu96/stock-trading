@@ -289,7 +289,8 @@ def test_character_candidates_endpoint_returns_rows(sf):
         s.merge(db.CharacterRow(name="국내형", base_currency="KRW"))
         s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="005930",
                                   market="KR", kind="후보", green_score=5, red_score=1,
-                                  buy_gate=True, status="예약", block_reason=""))
+                                  buy_gate=True, status="예약", block_reason="", close=70000.0))
+        # close 가 없는(None) 후보 행 — 마감 종가 미기록이어도 응답이 500 나면 안 된다.
         s.add(db.SignalStatusRow(date=date(2026, 1, 5), character="국내형", symbol="000660",
                                   market="KR", kind="후보", green_score=1, red_score=0,
                                   buy_gate=False, status="차단", block_reason="점수부족"))
@@ -314,8 +315,12 @@ def test_character_candidates_endpoint_returns_rows(sf):
     assert by_symbol["005930"]["buy_gate"] is True
     assert by_symbol["005930"]["status"] == "예약"
     assert by_symbol["005930"]["as_of"] == "2026-01-05"
+    assert by_symbol["005930"]["market"] == "KR"
+    assert by_symbol["005930"]["close"] == 70000.0
     assert by_symbol["000660"]["status"] == "차단"
     assert by_symbol["000660"]["block_reason"] == "점수부족"
+    assert by_symbol["000660"]["market"] == "KR"
+    assert by_symbol["000660"]["close"] is None
 
 
 @needs_db

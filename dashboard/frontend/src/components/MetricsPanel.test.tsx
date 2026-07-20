@@ -17,7 +17,7 @@ function makeMetrics(overrides: Partial<Metrics>): Metrics {
     calmar: 0.5,
     profit_factor: 2.0,
     avg_win: 1000,
-    avg_loss: -500,
+    avg_loss: 500, // 저장상 절대값(양수) — simcore/metrics.py:137
     win_loss_ratio: 2.0,
     expectancy: 300,
     max_consecutive_losses: 3,
@@ -69,7 +69,8 @@ describe("MetricsPanel MDD phrasing", () => {
 describe("MetricsPanel 승률 옆 평균이익·평균손실·손익비", () => {
   it("shows avg win/avg loss/손익비 alongside 승률", () => {
     const html = renderToStaticMarkup(
-      <MetricsPanel metrics={makeMetrics({ win_rate: 0.6, avg_win: 12345, avg_loss: -6789, win_loss_ratio: 1.82 })} />
+      // avg_loss는 실제 저장상 절대값(양수)이다(simcore/metrics.py:137).
+      <MetricsPanel metrics={makeMetrics({ win_rate: 0.6, avg_win: 12345, avg_loss: 6789, win_loss_ratio: 1.82 })} />
     );
     expect(html).toContain("승률");
     expect(html).toContain("60.0%");
@@ -79,6 +80,35 @@ describe("MetricsPanel 승률 옆 평균이익·평균손실·손익비", () => 
     expect(html).toContain("-₩6,789");
     expect(html).toContain("손익비");
     expect(html).toContain("1.82");
+  });
+});
+
+describe("MetricsPanel 평균손실 부호 표기(avg_loss는 저장상 절대값)", () => {
+  // simcore/metrics.py:137 — avg_loss는 abs(losses.mean())로 저장되는 "손실 크기"(양수)다.
+  // 그대로 formatSignedKrw에 넣으면 "+₩..."로 이익처럼 보이므로, 손실 부호(−)와
+  // 손실 색상(down)으로 렌더해야 한다.
+  it("renders a positive-magnitude avg_loss with a minus sign and loss color", () => {
+    const html = renderToStaticMarkup(
+      <MetricsPanel metrics={makeMetrics({ avg_loss: 257 })} />
+    );
+    expect(html).toContain("평균손실");
+    expect(html).toContain("-₩257");
+    expect(html).not.toContain("+₩257");
+  });
+
+  it("renders zero avg_loss as neutral (no sign)", () => {
+    const html = renderToStaticMarkup(
+      <MetricsPanel metrics={makeMetrics({ avg_loss: 0 })} />
+    );
+    expect(html).toContain("₩0");
+  });
+
+  it("keeps 평균이익(avg_win) rendering unaffected (still + / up color)", () => {
+    const html = renderToStaticMarkup(
+      <MetricsPanel metrics={makeMetrics({ avg_win: 1000 })} />
+    );
+    expect(html).toContain("평균이익");
+    expect(html).toContain("+₩1,000");
   });
 });
 
