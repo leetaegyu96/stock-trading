@@ -12,9 +12,13 @@ interface CardsMessage {
 const MIN_RECONNECT_DELAY_MS = 500;
 const MAX_RECONNECT_DELAY_MS = 15_000;
 
+// api.ts 와 동일한 base-path 규칙(서브패스 배포 지원).
+const BASE_PATH =
+  import.meta.env.BASE_URL === "/" ? "" : import.meta.env.BASE_URL.replace(/\/$/, "");
+
 function wsUrl(path: string): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${window.location.host}${path}`;
+  return `${proto}//${window.location.host}${BASE_PATH}${path}`;
 }
 
 /** 자동 재연결(지수 백오프)이 붙은 최소 WebSocket 클라이언트. */
