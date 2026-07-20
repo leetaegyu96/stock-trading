@@ -24,6 +24,8 @@ class Orchestrator:
         # 이게 없으면 이번 사이클 universe 에 없는 보유 종목(예: 범용형의 반대 시장 leg)이
         # equity 평가 시 평단가(원가)로 폴백되어 equity_curve/TWR 가 오염된다.
         self._last_price: dict[str, float] = {}
+        # 장중 잠정봉 시가·고저 추적: symbol -> (open, high, low, day). 일자 바뀌면 리셋.
+        self._intraday_hl: dict[str, tuple] = {}
 
     def _refresh_bars(self, market: str, symbol: str, upto: date) -> pd.DataFrame:
         cached = self.repo.load_daily_bars(market, symbol)
@@ -193,6 +195,56 @@ class Orchestrator:
             self.repo.persist_state(self.engine, session=s)
             self.repo.append_new_trades(self.engine, session=s)
             self.repo.mark_open(market, d, fx, session=s)
+
+    def on_intraday(self, now, d, market: str, universe: list[str]) -> None:
+        m = Market(market)
+        fx = self.fx(d)
+        snaps: dict[str, SymbolSnapshot] = {}
+        strengths: dict[str, float | None] = {}
+        for sym in universe:
+            try:
+                px = self.kis.current_price(market, sym)
+            except Exception:
+                continue                            # 이번 사이클 스킵, 다음 틱 재시도
+            self._last_price[sym] = px
+            # 당일 누적거래량(실패 시 히스토리 마지막 거래량 대용)
+            try:
+                today = self.kis.daily_bars(market, sym, d, d)
+                vol = float(today["volume"].iloc[-1]) if not today.empty else 0.0
+            except Exception:
+                vol = 0.0
+            # 확정 히스토리(어제까지) + 잠정 오늘 봉(open/high/low 추적, close=현재가)
+            try:
+                df = self._refresh_bars(market, sym, d)
+            except Exception as exc:
+                print(f"[intraday] {market} {sym} 일봉 실패 스킵: {exc}")
+                continue
+            o, hi, lo, hl_day = self._intraday_hl.get(sym, (px, px, px, d))
+            if hl_day != d:
+                o, hi, lo = px, px, px             # 일자 바뀜 → 당일 시가·고저 리셋
+            hi, lo = max(hi, px), min(lo, px)
+            self._intraday_hl[sym] = (o, hi, lo, d)
+            ts = pd.Timestamp(d)
+            df = df.copy()
+            df.loc[ts] = {"open": o, "high": hi, "low": lo, "close": px,
+                          "volume": vol if vol else df["volume"].iloc[-1]}
+            df = df.sort_index()
+            frame = sigmod.evaluate_frame(df, self.cfg.signals)
+            green, red = sigmod.fired_at(frame, ts)
+            gs, rs, gate = sigmod.snapshot_scores(green, red, self.cfg.scores)
+            loc = df.index.get_loc(ts)
+            prev_close = float(df["close"].iloc[loc - 1]) if loc > 0 else px
+            snaps[sym] = SymbolSnapshot(sym, m, green, red, px, px / prev_close - 1.0,
+                                        vol, green_score=gs, red_score=rs, buy_gate=gate)
+            strengths[sym] = self.kis.execution_strength(market, sym)
+        if not snaps:
+            return
+        eq = self.engine.snapshot(self._last_price, fx)
+        self.engine.evaluate_intraday(d, m, snaps, strengths, fx, now,
+                                      day_equity=eq, cur_equity=eq)
+        with self.repo.transaction() as s:
+            self.repo.persist_state(self.engine, session=s)
+            self.repo.append_new_trades(self.engine, session=s)
 
     def on_tick(self, d: date, market: str) -> None:
         m = Market(market)

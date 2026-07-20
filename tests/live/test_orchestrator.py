@@ -1,5 +1,5 @@
 import os, pandas as pd, pytest
-from datetime import date
+from datetime import date, datetime
 from tests.live.conftest import needs_db
 from simcore.config import Config
 from simcore.engine import Engine
@@ -15,8 +15,8 @@ class FakeKis:
     def market_cap_ranking(self, n): return ["005930"]
 
 
-def _uptrend(n=80):
-    idx = pd.bdate_range("2026-01-01", periods=n)
+def _uptrend(n=80, end=None):
+    idx = pd.bdate_range(end=end, periods=n) if end else pd.bdate_range("2026-01-01", periods=n)
     base = pd.Series(range(n), index=idx) * 1.0 + 100
     return pd.DataFrame({"open": base, "high": base + 2, "low": base - 1,
                          "close": base + 1, "volume": [1e6] * n}, index=idx)
@@ -299,3 +299,43 @@ def test_on_close_passes_bearish_dict_to_engine(session, monkeypatch):
     monkeypatch.setattr(eng, "evaluate_close", spy)
     orch.on_close(_uptrend().index[-1].date(), "KR", ["005930"])
     assert captured["bear"] == {Market.KR: True, Market.US: False}
+
+
+class _IntradayFakeKis(FakeKis):
+    """on_close 용 FakeKis 확장: 체결강도(None=조건 스킵) + 추세 지속 현재가(게이트 통과)."""
+    def execution_strength(self, market, symbol):
+        return None
+
+    def current_price(self, market, symbol):
+        # 마지막 확정 종가보다 한 걸음 더 오른 값 — 잠정봉이 상승 추세를 이어가야
+        # G7(신고가 돌파) 등 게이트 신호가 유지된다(평탄 종가는 게이트 미통과).
+        return float(self.bars[(market, symbol)].iloc[-1]["close"]) + 1.0
+
+
+@pytest.fixture
+def intraday_orch_setup(session):
+    from dataclasses import replace
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    cfg = Config(rules=replace(Config().rules, intraday_enabled=True))
+    eng = Engine(cfg)
+    eng.start(date(2026, 1, 1), 1300.0)
+    # 확정 히스토리: 2026-07-20(테스트 당일) 이전 영업일까지의 상승 추세(매수 게이트 통과 조건).
+    hist = _uptrend(80, end=pd.Timestamp("2026-07-17"))
+    kis = _IntradayFakeKis({("KR", "005930"): hist})
+    orch = Orchestrator(eng, kis, repo, cfg, fx_provider=lambda d: 1300.0)
+    return orch, repo, "KR", "005930"
+
+
+@needs_db
+def test_on_intraday_buys_and_persists(intraday_orch_setup):
+    """게이트 통과 종목이 장중에 즉시 체결되고 상태가 영속된다."""
+    from simcore.live import db
+    orch, repo, market, sym = intraday_orch_setup   # fixture가 신호=매수 상태로 구성
+    now = datetime(2026, 7, 20, 10, 0, 0)
+    orch.on_intraday(now, date(2026, 7, 20), market, [sym])
+    # 엔진 포지션에 체결 반영
+    assert any(sym in st.portfolio.positions for st in orch.engine.states.values())
+    # 거래가 DB에 append 되었는지
+    with repo.sf() as s:
+        assert s.query(db.TradeRow).count() > 0
