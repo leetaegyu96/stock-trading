@@ -63,12 +63,31 @@ class KisClient:
                 "appkey": self.s.kis_app_key, "appsecret": self.s.kis_app_secret,
                 "tr_id": tr_id, "custtype": "P"}
 
+    @staticmethod
+    def _is_expired_token(resp: httpx.Response) -> bool:
+        """토큰 만료 응답 판정. KIS는 만료를 HTTP 401 뿐 아니라 HTTP 500(또는 200)+
+        본문으로도 알린다: {"rt_cd":"1","msg_cd":"EGW00123","msg1":"기간이 만료된 token 입니다."}.
+        상태코드만으로는 일반 서버오류(500)와 구분되지 않으므로 본문을 파싱해 판정한다."""
+        try:
+            j = resp.json()
+        except Exception:
+            return False
+        if not isinstance(j, dict):
+            return False
+        if str(j.get("rt_cd")) == "1" and j.get("msg_cd") == "EGW00123":
+            return True
+        return "만료된 token" in str(j.get("msg1", ""))
+
     def _get(self, path: str, tr_id: str, params: dict) -> dict:
+        reissued = False                        # 발급폭주(EGW00133) 방지: 요청당 재발급 1회
         for attempt in range(3):
             self.limiter.acquire()
             r = self.http.get(path, headers=self._headers(tr_id), params=params)
-            if r.status_code == 401:            # 토큰 만료 → 무효화 후 1회 재발급
-                self.store.save("", 0.0)
+            if r.status_code == 401 or self._is_expired_token(r):  # 토큰 만료
+                if reissued:                    # 재발급 후에도 만료면 포기(무한재시도 방지)
+                    break
+                self.store.save("", 0.0)        # 캐시 무효화 → 다음 _headers 에서 재발급
+                reissued = True
                 continue
             if r.status_code in (429, 500, 502, 503):
                 self.sleep(2 ** attempt)
