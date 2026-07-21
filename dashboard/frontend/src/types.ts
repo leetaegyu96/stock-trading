@@ -74,6 +74,7 @@ export interface CandidateOut {
   market: string;
   green_score: number;
   red_score: number;
+  confidence: number; // 정규화 신호 강도 [0,1] — green_score / 도달가능 최대(#31, 표시 전용)
   buy_gate: boolean;
   status: string; // "예약" | "차단"
   block_reason: string; // "점수부족"|"게이트미충족"|"보유중"|"쿨다운"|"슬롯부족"|"현금부족"|"가격없음"|""

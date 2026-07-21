@@ -37,7 +37,7 @@ v1(청신호 개수 ≥ 7 / 적신호 개수 ≥ 3 카운트 방식)은 폐기�
 - **VWAP(롤링)** — 거래량 가중 평균가 (`vwap_period=20`)
 - **ATR(Average True Range)** — 변동성 (`atr_period=14`)
 
-## 3. 청신호 17개 구현 + 5개 스텁 (매수 신호)
+## 3. 청신호 19개 구현 + 3개 스텁 (매수 신호)
 
 카테고리·점수는 `SignalScores.category` / `SignalScores.points` 와 1:1. 판정 조건은 당일 = 방금
 확정된 일봉 기준. 스텁 신호는 점수표에 등록되지 않으며(0점 취급) 항상 False다.
@@ -54,21 +54,21 @@ v1(청신호 개수 ≥ 7 / 적신호 개수 ≥ 3 카운트 방식)은 폐기�
 | G7 | 전고점 돌파 | 종가 > 직전 60거래일 최고 종가(당일 제외) | 돌파 | 5 | 구현 |
 | G18 | 박스권 상단 돌파 | 직전 20일 (고가−저가)/저가 < 15%(박스권) 이고 종가 > 직전 20일 최고 종가 | 돌파 | 5 | 구현 |
 | G23 | 신고가 + 거래량 증가 | G7 조건(신고가 돌파) 이고 거래량 급증(≥20일평균×1.5) | 돌파 | 5 | 구현 |
+| G9 | 저항 돌파 | 전일 종가 ≤ 직전 20거래일 저항(고가, 당일 제외) 이고 당일 종가 > 저항 | 돌파 | 5 | 구현(#27) |
 | G5 | 거래량 급증 양봉 | 거래량 ≥ 20일 평균 거래량 × 1.5 이고 종가 > 시가 | 거래량 | 4 | 구현 |
 | G13 | OBV 상승 | OBV > 1거래일 전 OBV | 거래량 | 4 | 구현 |
 | G14 | VWAP 상향 돌파 | 전일 종가 ≤ VWAP(20) 이고 당일 종가 > VWAP(20) | 거래량 | 4 | 구현 |
 | G10 | 스토캐스틱 반등 | 전일 %K(14,3) < 20 이고 전일 %K ≤ %D(3), 당일 %K > %D | 모멘텀 | 4 | 구현 |
 | G3 | RSI 50 상향 돌파 | 전일 RSI(14) ≤ 50 이고 당일 RSI(14) > 50 | 모멘텀 | 3 | 구현 |
+| G8 | 괴리율 과매도 반등 | 전일 괴리율((종가−SMA20)/SMA20) ≤ −10% 이고 당일 괴리율 > −10% | 모멘텀 | 3 | 구현(#27) |
 | G17 | ATR 감소 후 돌파 | 전일 ATR(14) < ATR 20일 평균 이고 당일 종가 > 직전 10일 최고 종가 | 변동성 | 4 | 구현 |
 | G6 | 볼린저 중심 돌파 | 전일 종가 ≤ BB(20,2) 중심선 이고 당일 종가 > 중심선 | 변동성 | 3 | 구현 |
-| G8 | 긍정 심리 급증 | 뉴스·커뮤니티 감정분석 | — | — | **미구현(항상 꺼짐)** |
-| G9 | 외인·기관 순매수 | 수급 데이터 | — | — | **미구현(항상 꺼짐)** |
 | G19 | 눌림목 재상승 | 차트 패턴 인식 | — | — | **미구현(항상 꺼짐)** |
 | G21 | 피보나치 61.8 반등 | 피보나치 되돌림 | — | — | **미구현(항상 꺼짐)** |
 | G24 | 다이버전스(상승) | 차트 패턴 인식 | — | — | **미구현(항상 꺼짐)** |
 | G25~30 | 차트패턴(컵앤핸들·삼각형·플래그 등) | 차트 패턴 인식 | — | — | **미구현(항상 꺼짐)** |
 
-## 4. 적신호 17개 구현 + 5개 스텁 + 강제 2개 (매도 신호 — 보유 종목에만 적용)
+## 4. 적신호 18개 구현 + 4개 스텁 + 강제 2개 (매도 신호 — 보유 종목에만 적용)
 
 롱 온리: 미보유 종목의 적신호는 무시한다. 숏 진입 없음.
 
@@ -89,9 +89,9 @@ v1(청신호 개수 ≥ 7 / 적신호 개수 ≥ 3 카운트 방식)은 폐기�
 | R23 | 장대 음봉 | 종가 < 시가 이고 (시가−종가)/시가 ≥ 3% | 거래량 | 4 | 구현 |
 | R24 | 거래량 감소 상승(주의) | 종가 > 전일 종가 이고 거래량 < 전일 거래량 이고 거래량 < 20일 평균 | 거래량 | 4 | 구현 |
 | R17 | ATR 급증 | ATR(14) > 20일 평균 ATR × 1.5 | 변동성 | 4 | 구현 |
+| R20 | 괴리율 과열 확장 | 당일 괴리율((종가−SMA20)/SMA20) ≥ 15% | 변동성 | 4 | 구현(#27) |
 | R6 | 볼린저 하단 이탈 | 종가 < BB(20,2) 하단밴드 | 변동성 | 3 | 구현 |
 | R19 | 갭 하락 | 시가 < 전일 종가 × (1 − 2%) | 변동성 | 3 | 구현 |
-| R20 | 피보나치 이탈 | 피보나치 되돌림 | — | — | **미구현(항상 꺼짐)** |
 | R22 | 하락 다이버전스 | 차트 패턴 인식 | — | — | **미구현(항상 꺼짐)** |
 | R25~30 | 하락 차트패턴(헤드앤숄더 등) | 차트 패턴 인식 | — | — | **미구현(항상 꺼짐)** |
 | R7 | 잠금 손절 도달 | 현재가 ≤ 잠금 손절선 — **강제 전량 청산**(§6 트레일링 스탑 참조) | 강제 | — | 엔진(포지션) |
@@ -110,6 +110,24 @@ v1(청신호 개수 ≥ 7 / 적신호 개수 ≥ 3 카운트 방식)은 폐기�
 | 거래량 | 8 |
 | 모멘텀 | 8 |
 | 변동성 | 6 |
+
+### 5-1. 신뢰도(confidence) — 정규화 신호 강도 (#31)
+
+의사결정판(후보 테이블)에는 `green_score`/`red_score` 원점수 외에 **신뢰도**를 함께
+표시한다. `signal_confidence(score, scores, side)`(`simcore/signals.py`)가 계산하며,
+정의는 다음과 같다.
+
+- `MAX(side) = Σ caps[cat]` — 해당 side(청/적)의 코드가 속한 **카테고리들의 상한 합**
+  (하드코딩 아님, `SignalScores.category`/`caps`에서 매 호출 시 동적 계산). 현재 설정값
+  기준 청/적 모두 추세10 + 돌파(또는 하락패턴)10 + 거래량8 + 모멘텀8 + 변동성6 = 42.
+- `confidence = round(min(1.0, max(0.0, score / MAX)), 2)` — 0~1로 클램프 후 반올림.
+- 저장된 `green_score`/`red_score`(이미 DB에 기록된 값)로부터 **읽기 시점에만 계산하는
+  순수 파생값**이다. 새 DB 컬럼 없음, 엔진·매수/매도 판정에는 전혀 관여하지 않는다(표시
+  전용).
+- **고정 익절 타깃(예: "목표수익률 r*")은 제공하지 않는다** — 본 전략은 §8 트레일링
+  스탑 기반이라 고정 타깃 개념이 없고, 없는 것을 지어내면 정직 라벨링 원칙에 어긋난다.
+  진입 손절폭(`stop_loss_pct`)과 보유 종목의 `stop_px`/`stop_distance_pct`(§16-5)는 이미
+  노출되어 있으므로 confidence는 그 외에 "신호가 얼마나 강하게 발화했는가"만 보여준다.
 
 ## 6. 매수 규칙 (다중 게이팅) — `buy_score_min=18`
 
@@ -319,7 +337,8 @@ CAGR·변동성·Sharpe·Sortino·Calmar는 자산곡선(equity)의 일간수익
 화면에 노출하는 신호 표기는 항상 **"기술적 매수/매도 신호"**로 통일한다. 내부 용어인
 "청신호/적신호"는 사용자 화면에 그대로 노출하지 않는다.
 
-뉴스·공시·수급·거시 지표는 이 시뮬레이터가 계산하지 않는다(§3의 G8/G9, §4의 미구현 스텁 참고).
+뉴스·공시·수급·거시 지표는 이 시뮬레이터가 계산하지 않는다(§3/§4의 미구현 스텁 참고. G8/G9는
+#27에서 가격 지표(괴리율·지지저항) 기반 실신호로 전환되어 더 이상 뉴스·수급 스텁이 아니다).
 신호가 보이는 모든 화면에는 "뉴스·공시·수급은 현재 판단에 반영되지 않음" 고지와, 계산되지 않은
 축은 0점으로 위장하지 않고 **"미수집/판단 불가"** 레전드로 함께 표시한다.
 
@@ -430,16 +449,16 @@ CAGR·변동성·Sharpe·Sortino·Calmar는 자산곡선(equity)의 일간수익
 `snapshot_scores`에 그대로 통과시켜 청/적신호·점수·게이트를 계산한다 — **일봉 매매와 동일한
 신호 계산 로직을 재사용**하며 별도 신호 체계를 만들지 않는다.
 
-**신규 지표(가격괴리율·지지/저항) — 라이브러리 함수만 존재, 아직 어디서도 호출되지 않음**:
-`simcore/indicators.py`에 `disparity(close, period)`(괴리율 = (종가−이동평균)/이동평균)와
-`support_resistance(high, low, close, lookback)`(직전 구간 최저/최고 → 지지/저항)를 추가했다.
-**정직한 한계**: 이 두 함수는 계산 로직만 구현된 라이브러리 함수이며, `evaluate_frame`도
-그 어떤 라이브 경로(마감·장중)도 아직 이 함수들을 호출하지 않는다 — `SignalScores`/청·적신호
-목록(§3·§4) 배점에 편입되지 않은 것은 물론, 신호 계산 자체에 전혀 관여하지 않는다는 뜻이다.
-관련 설정 `intraday_disparity_period`/`intraday_sr_lookback`(`Config().rules`) 역시 **현재
-미사용(reserved)** 값으로, 어떤 계산에도 실제로 소비되지 않는다. 함수·설정 모두 향후 신호로
-승격시키기 위해 남겨둔 것(reserved)이며, 지금 시점에는 계산되지도 판단에 쓰이지도 않는다는
-점을 화면·문서 어디서도 숨기지 않는다.
+**가격괴리율·지지/저항 지표(#27 배선 완료)**: `simcore/indicators.py`의 `disparity(close, period)`
+(괴리율 = (종가−이동평균)/이동평균)와 `support_resistance(high, low, close, lookback)`(직전 구간
+최저/최고 → 지지/저항)는 `evaluate_frame`(`simcore/signals.py`)에서 `SignalParams.disparity_period`
+/`disparity_oversold`/`disparity_overbought`/`sr_lookback`으로 호출되어 G9(저항 돌파)·G8(괴리율
+과매도 반등)·R20(괴리율 과열 확장)을 계산한다(§3·§4). 일봉 리플레이·장중(잠정봉) 양쪽 모두 같은
+`evaluate_frame`을 통과하므로 두 경로가 동일하게 반영한다.
+
+**미사용(reserved) 설정**: `TradeRules.intraday_disparity_period`/`intraday_sr_lookback`
+(`Config().rules`)은 위 `SignalParams` 필드와 별개의 예약 필드로, 여전히 어떤 계산에도 소비되지
+않는다(향후 장중 전용 튜닝을 위해 남겨둔 것).
 
 **체결강도(execution strength) — KR 전용, 실서버 검증 전제**: `KisClient.execution_strength
 (market, symbol)`는 KIS `inquire-price`(`FHKST01010100`) 응답의 `cttr` 필드를 매수 게이트에
@@ -484,11 +503,19 @@ walk-forward 검증은 이 구현 범위 밖이며, 현재는 **실시간 라이
 하니스다. `simcore/walkforward.py`. 신규 의존성 없이 기존 `replay.run_replay`와
 `metrics.risk_metrics`를 그대로 재사용한다.
 
-**정직한 범위 한정(non-goal)**: 엔진 파라미터(`Config`)는 **전 폴드 공통 고정**이며 폴드별
-재적합을 하지 않는다 — 이는 엄밀한 워크포워드 최적화(WFO)가 아니라 **롤링 OOS 평가**다.
-폴드별 파라미터 최적화·CPCV·과적합확률(PBO)·Deflated Sharpe는 후속 과제로 남는다. 신호는
-인과적(과거만 참조)이라 번들 전체 히스토리를 워밍업으로 써도 lookahead가 없으며, 각 폴드의
-시뮬레이션은 test 구간에서 콜드스타트(초기자금)로 시작한다.
+**정직한 범위 한정(non-goal)**: 아래 `run_walkforward`는 엔진 파라미터(`Config`)를 **전 폴드
+공통 고정**하고 폴드별 재적합을 하지 않는다 — 이는 엄밀한 워크포워드 최적화(WFO)가 아니라
+**롤링 OOS 평가**다. 신호는 인과적(과거만 참조)이라 번들 전체 히스토리를 워밍업으로 써도
+lookahead가 없으며, 각 폴드의 시뮬레이션은 test 구간에서 콜드스타트(초기자금)로 시작한다.
+
+**진짜 WFO + 과적합확률(PBO) — 구현됨(#30)**: 폴드별 train 구간에서 파라미터를 그리드
+탐색(IS)하고, 선택된 파라미터로 test 구간을 평가(OOS)하는 진짜 워크포워드 최적화와, IS에서
+최적이던 파라미터가 OOS에서도 우수한지 폴드 이분 조합으로 검증하는 과적합확률(PBO, CSCV
+경량판)이 `simcore/walkforward.py`의 `generate_opt_folds`/`run_wfo`/
+`probability_of_backtest_overfitting`으로 구현되어 있다. 자세한 내용은 아래 "워크포워드
+최적화(WFO) + PBO" 절 참조. **여전히 후속 과제로 남는 것**: purge/embargo와 ≥100개 폴드
+분할 경로를 갖춘 완전한 CPCV(현재 PBO는 폴드 이분 조합만 쓰는 경량판), Deflated/Probabilistic
+Sharpe Ratio(DSR/PSR).
 
 **폴드 생성**(`generate_folds(start, end, test_days=63, step_days=63, warmup_days=120)`):
 `[start, end]`를 `step_days` 간격으로 타일링해 `test_days` 길이의 test 구간을 만든다. 첫
@@ -507,3 +534,30 @@ fold.test_start, fold.test_end)`를 호출해 캐릭터별 `{twr, mdd, sharpe, w
 **CLI**: `python -m simcore.walkforward --start YYYY-MM-DD --end YYYY-MM-DD [--test-days
 --step-days --warmup-days --kr-top --us-top --cache --out]` — 번들을 전체 구간으로 1회 로드
 후 폴드별·집계 표를 콘솔에 출력하고, `--out` 지정 시 마크다운 리포트로도 저장한다.
+
+### 18.1 워크포워드 최적화(WFO) + 과적합확률(PBO) — #30
+
+`--wfo` 플래그로 위 롤링 OOS 검증과 별도 모드를 켠다. 폴드는 `generate_opt_folds(start, end,
+train_days, test_days, step_days)`로 train(파라미터 탐색용)+test(OOS 평가용) 쌍으로
+타일링한다(첫 `test_start = start + train_days`, `train_start = test_start - train_days`).
+
+`run_wfo(config, bundle, folds, grid, objective="twr", character="국내형")`은 폴드마다
+① train 구간에서 `grid`(현재는 `buy_score_min` 단일 축)를 전수 탐색해 objective(`twr` 또는
+`sharpe`) 기준 최적값을 고르고(IS), ② 그 값으로 test 구간을 평가한다(OOS). 그리드값 평가 중
+`run_replay`가 `ValueError`(거래일 없음 등)를 던지면 그 값은 `-inf`로 기록하고 로그를 남긴
+뒤 계속 진행한다(그리드 전체가 실패하지 않는 한 폴드 자체는 건너뛰지 않는다).
+
+**WFO 효율**(`mean(OOS) / mean(IS-best)`)은 `is_best_perf`와 `oos_perf`가 **둘 다 유한한
+폴드만 페어링**해서 평균 낸다(`_wfo_efficiency` 순수 헬퍼) — 한쪽만 그리드 전체 실패로
+`-inf`가 된 폴드를 분자·분모에서 서로 다른 폴드 집합으로 독립 필터링하면 비율이 무의미해지기
+때문이다. 페어링된 폴드가 없거나 `mean(IS-best) == 0`이면 `float("nan")`을 반환한다(0.0이
+아님 — PBO의 "계산 불가 시 nan" 관례와 일관).
+
+**과적합확률(PBO)**은 `probability_of_backtest_overfitting(is_matrix, oos_matrix)`로
+계산한다 — López de Prado CSCV(Combinatorially Symmetric Cross-Validation)의 경량판으로,
+폴드를 두 동일 크기 그룹으로 나누는 모든 조합에서 "IS 최적 파라미터가 OOS 순위 하위 절반에
+드는 빈도"를 잰다. 폴드 수·그리드 수가 2 미만이면 `nan`.
+
+**CLI**: `python -m simcore.walkforward --start YYYY-MM-DD --end YYYY-MM-DD --wfo
+[--train-days --grid 12,14,16,18,20 --objective twr|sharpe --character 국내형 --test-days
+--step-days --kr-top --us-top --cache --out]`.

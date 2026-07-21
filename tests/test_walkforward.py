@@ -7,7 +7,11 @@ import pytest
 
 from simcore.config import Config
 from simcore.replay import DataBundle
-from simcore.walkforward import Fold, generate_folds, run_walkforward, _aggregate
+from simcore.walkforward import (
+    Fold, generate_folds, run_walkforward, _aggregate,
+    OptFold, generate_opt_folds, run_wfo, WfoResult,
+    probability_of_backtest_overfitting, _wfo_efficiency,
+)
 
 
 # ---------------------------------------------------------------- generate_folds
@@ -172,3 +176,191 @@ def test_run_walkforward_skips_fold_with_no_trading_days_and_continues():
     result = run_walkforward(CFG, bundle, folds)
     assert len(result.folds) == 1
     assert result.folds[0]["index"] == 0
+
+
+# ---------------------------------------------------------------- generate_opt_folds (WFO train+test)
+
+def test_generate_opt_folds_first_test_start_at_train_days_offset():
+    start, end = date(2020, 1, 1), date(2023, 1, 1)
+    folds = generate_opt_folds(start, end, train_days=252, test_days=63, step_days=63)
+    assert folds[0].test_start == start + timedelta(days=252)
+
+
+def test_generate_opt_folds_train_window_precedes_test_start():
+    start, end = date(2020, 1, 1), date(2023, 1, 1)
+    folds = generate_opt_folds(start, end, train_days=252, test_days=63, step_days=63)
+    f0 = folds[0]
+    assert f0.train_start == f0.test_start - timedelta(days=252)
+    assert f0.train_end == f0.test_start
+    assert f0.train_start < f0.train_end <= f0.test_start
+
+
+def test_generate_opt_folds_test_end_clipped_to_end():
+    start, end = date(2020, 1, 1), date(2023, 1, 1)
+    folds = generate_opt_folds(start, end, train_days=252, test_days=63, step_days=63)
+    assert folds[-1].test_end <= end
+
+
+def test_generate_opt_folds_step_spacing_between_consecutive_starts():
+    start, end = date(2020, 1, 1), date(2024, 1, 1)
+    folds = generate_opt_folds(start, end, train_days=252, test_days=63, step_days=63)
+    for a, b in zip(folds, folds[1:]):
+        assert b.test_start - a.test_start == timedelta(days=63)
+
+
+def test_generate_opt_folds_index_sequential():
+    start, end = date(2020, 1, 1), date(2023, 1, 1)
+    folds = generate_opt_folds(start, end, train_days=252, test_days=63, step_days=63)
+    assert [f.index for f in folds] == list(range(len(folds)))
+    assert all(isinstance(f, OptFold) for f in folds)
+
+
+def test_generate_opt_folds_drops_windows_shorter_than_half_test_days():
+    start = date(2020, 1, 1)
+    train_days, test_days, step_days = 252, 63, 63
+    first_test_start = start + timedelta(days=train_days)
+    second_test_start = first_test_start + timedelta(days=step_days)
+    end = second_test_start + timedelta(days=(test_days // 2) - 1)
+    folds = generate_opt_folds(start, end, train_days=train_days, test_days=test_days,
+                                step_days=step_days)
+    assert len(folds) == 1
+    assert folds[0].test_start == first_test_start
+
+
+def test_generate_opt_folds_pure_function_deterministic():
+    start, end = date(2020, 1, 1), date(2022, 1, 1)
+    f1 = generate_opt_folds(start, end, train_days=100, test_days=30, step_days=30)
+    f2 = generate_opt_folds(start, end, train_days=100, test_days=30, step_days=30)
+    assert f1 == f2
+
+
+# ---------------------------------------------------------------- probability_of_backtest_overfitting
+
+def _const_matrix(values_by_config, folds):
+    """config별 값이 폴드 전체에서 동일한 성과 행렬(dict-of-dict) 생성 헬퍼."""
+    return {c: {f: v for f in folds} for c, v in values_by_config.items()}
+
+
+def test_pbo_is_best_always_oos_worst_gives_pbo_near_one():
+    folds = list(range(4))
+    is_matrix = _const_matrix({0: 1.0, 1: 2.0, 2: 3.0}, folds)   # config 2가 항상 IS 1등
+    oos_matrix = _const_matrix({0: 3.0, 1: 2.0, 2: 1.0}, folds)  # config 2가 항상 OOS 꼴찌
+    pbo = probability_of_backtest_overfitting(is_matrix, oos_matrix)
+    assert pbo == pytest.approx(1.0)
+
+
+def test_pbo_is_ranking_matches_oos_ranking_gives_pbo_near_zero():
+    folds = list(range(4))
+    is_matrix = _const_matrix({0: 1.0, 1: 2.0, 2: 3.0}, folds)
+    oos_matrix = _const_matrix({0: 1.0, 1: 2.0, 2: 3.0}, folds)  # IS 순위 == OOS 순위
+    pbo = probability_of_backtest_overfitting(is_matrix, oos_matrix)
+    assert pbo == pytest.approx(0.0)
+
+
+def test_pbo_guarded_for_fewer_than_two_folds():
+    is_matrix = {0: {0: 1.0}, 1: {0: 2.0}}
+    oos_matrix = {0: {0: 1.0}, 1: {0: 2.0}}
+    pbo = probability_of_backtest_overfitting(is_matrix, oos_matrix)
+    assert math.isnan(pbo)
+
+
+def test_pbo_guarded_for_fewer_than_two_configs():
+    is_matrix = {0: {0: 1.0, 1: 2.0}}
+    oos_matrix = {0: {0: 1.0, 1: 2.0}}
+    pbo = probability_of_backtest_overfitting(is_matrix, oos_matrix)
+    assert math.isnan(pbo)
+
+
+def test_pbo_result_bounded_in_unit_interval_for_mixed_matrix():
+    is_matrix = {0: {0: 1.0, 1: 3.0, 2: 2.0, 3: 4.0},
+                 1: {0: 4.0, 1: 1.0, 2: 3.0, 3: 2.0},
+                 2: {0: 2.0, 1: 2.0, 2: 4.0, 3: 1.0}}
+    oos_matrix = {0: {0: 2.0, 1: 1.0, 2: 3.0, 3: 3.0},
+                  1: {0: 1.0, 1: 4.0, 2: 1.0, 3: 4.0},
+                  2: {0: 3.0, 1: 3.0, 2: 2.0, 3: 2.0}}
+    pbo = probability_of_backtest_overfitting(is_matrix, oos_matrix)
+    assert 0.0 <= pbo <= 1.0
+
+
+def test_pbo_caps_large_combination_count_and_logs(capsys):
+    folds = list(range(12))  # C(12,6)=924 > 200 캡
+    is_matrix = _const_matrix({c: float(c) for c in range(3)}, folds)
+    oos_matrix = _const_matrix({c: float(c) for c in range(3)}, folds)
+    pbo = probability_of_backtest_overfitting(is_matrix, oos_matrix)
+    assert 0.0 <= pbo <= 1.0
+    captured = capsys.readouterr()
+    assert "200" in captured.out
+
+
+# ---------------------------------------------------------------- _wfo_efficiency (순수 헬퍼: 폴드 페어링)
+
+def test_wfo_efficiency_pairs_folds_and_ignores_partial_failures():
+    # 폴드 1은 train(IS)은 성공했지만 test(OOS) 구간에서 run_replay가 ValueError를 던져
+    # oos_perf가 -inf로 기록된 경우 — is_best_perf와 oos_perf가 서로 다른 폴드 집합을
+    # 평균내면 안 되고, 두 값이 모두 유한한 폴드만 페어링해서 사용해야 한다.
+    fold_dicts = [
+        {"index": 0, "is_best_perf": 0.10, "oos_perf": 0.05},
+        {"index": 1, "is_best_perf": 0.20, "oos_perf": float("-inf")},  # test 실패
+        {"index": 2, "is_best_perf": 0.30, "oos_perf": 0.15},
+    ]
+    result = _wfo_efficiency(fold_dicts)
+    # 폴드 0, 2만 페어링됨 (폴드 1은 oos_perf가 비유한이라 제외)
+    expected_mean_is = (0.10 + 0.30) / 2
+    expected_mean_oos = (0.05 + 0.15) / 2
+    assert result == pytest.approx(expected_mean_oos / expected_mean_is)
+
+
+def test_wfo_efficiency_ignores_is_side_failures_too():
+    # 반대 경우: train(IS)이 실패해 is_best_perf가 -inf인 폴드도 페어링에서 제외돼야 한다.
+    fold_dicts = [
+        {"index": 0, "is_best_perf": float("-inf"), "oos_perf": 0.05},
+        {"index": 1, "is_best_perf": 0.20, "oos_perf": 0.10},
+    ]
+    result = _wfo_efficiency(fold_dicts)
+    assert result == pytest.approx(0.10 / 0.20)
+
+
+def test_wfo_efficiency_all_degenerate_returns_nan():
+    fold_dicts = [
+        {"index": 0, "is_best_perf": float("-inf"), "oos_perf": 0.05},
+        {"index": 1, "is_best_perf": 0.20, "oos_perf": float("-inf")},
+    ]
+    result = _wfo_efficiency(fold_dicts)
+    assert math.isnan(result)
+
+
+def test_wfo_efficiency_empty_fold_list_returns_nan():
+    assert math.isnan(_wfo_efficiency([]))
+
+
+def test_wfo_efficiency_zero_mean_is_returns_nan_not_zero():
+    fold_dicts = [
+        {"index": 0, "is_best_perf": 0.0, "oos_perf": 0.05},
+    ]
+    result = _wfo_efficiency(fold_dicts)
+    assert math.isnan(result)
+
+
+# ---------------------------------------------------------------- 통합: run_wfo (진짜 워크포워드 최적화)
+
+def test_run_wfo_selects_better_is_param_and_produces_finite_oos_and_pbo():
+    bundle, idx = make_uptrend_bundle(500)
+    start, end = idx[0].date(), idx[-1].date()
+    opt_folds = generate_opt_folds(start, end, train_days=150, test_days=90, step_days=90)
+    opt_folds = opt_folds[:2]
+    assert len(opt_folds) == 2
+
+    cfg = Config()
+    grid = [1, 100]  # 1: 사실상 상시 매수, 100: 매수 게이트 봉쇄(무거래)
+    result = run_wfo(cfg, bundle, opt_folds, grid, objective="twr", character="국내형")
+
+    assert isinstance(result, WfoResult)
+    assert len(result.folds) == 2
+    for fold in result.folds:
+        assert set(fold["is_perf"].keys()) == set(grid)
+        assert fold["is_best"] == 1  # 상승장에서 낮은 임계값이 IS 성과 최고
+        assert math.isfinite(fold["is_best_perf"])
+        assert math.isfinite(fold["oos_perf"])
+        assert set(fold["oos_all"].keys()) == set(grid)
+    assert math.isfinite(result.wfo_efficiency)
+    assert math.isnan(result.pbo) or 0.0 <= result.pbo <= 1.0

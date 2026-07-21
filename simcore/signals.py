@@ -1,5 +1,6 @@
 """청/적신호 판정. 계산식은 docs/trading-rules.md v2 와 1:1 대응.
-스텁(항상 False): G8·G9·G19·G21·G24·G25~30, R20·R22·R25~30 — 후속에서 대체.
+스텁(항상 False): G19·G21·G24·G25~30, R22·R25~30 — 후속에서 대체.
+G8(괴리율 과매도 반등)·G9(저항 돌파)·R20(괴리율 과열 확장)은 #27 에서 실신호로 전환.
 R7(손절)/R10(트레일링)은 포지션 상태에 의존하므로 engine 이 판정한다."""
 from __future__ import annotations
 import pandas as pd
@@ -7,12 +8,12 @@ import pandas as pd
 from simcore.config import SignalParams, SignalScores
 from simcore import indicators as ind
 
-GREEN_COLS = ["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G10", "G11", "G12",
+GREEN_COLS = ["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12",
               "G13", "G14", "G15", "G16", "G17", "G18", "G23"]
 RED_COLS = ["R1", "R2", "R3", "R4", "R5", "R6", "R11", "R12", "R13", "R14",
-            "R15", "R16", "R17", "R18", "R19", "R23", "R24"]
-STUB_GREEN = ["G8", "G9", "G19", "G21", "G24"]
-STUB_RED = ["R20", "R22"]
+            "R15", "R16", "R17", "R18", "R19", "R20", "R23", "R24"]
+STUB_GREEN = ["G19", "G21", "G24"]
+STUB_RED = ["R22"]
 
 
 def min_history(p: SignalParams) -> int:
@@ -48,6 +49,8 @@ def evaluate_frame(df: pd.DataFrame, p: SignalParams) -> pd.DataFrame:
     _, _, span_a, span_b = ind.ichimoku(high, low, close, p.ichimoku_tenkan,
                                         p.ichimoku_kijun, p.ichimoku_senkou_b)
     atr_ = ind.atr(high, low, close, p.atr_period)
+    disp = ind.disparity(close, p.disparity_period)
+    sup, res = ind.support_resistance(high, low, close, p.sr_lookback)
 
     surge = vol >= vol_avg * p.volume_surge_ratio
     prev_high = close.rolling(p.breakout_lookback).max().shift(1)     # 신고가(60일)
@@ -79,6 +82,8 @@ def evaluate_frame(df: pd.DataFrame, p: SignalParams) -> pd.DataFrame:
     out["G17"] = (atr_.shift(1) < atr_avg.shift(1)) & (close > atr_bo_high)
     out["G18"] = boxed & (close > box_high)
     out["G23"] = (close > prev_high) & surge
+    out["G9"] = (close.shift(1) <= res.shift(1)) & (close > res)
+    out["G8"] = (disp.shift(1) <= p.disparity_oversold) & (disp > p.disparity_oversold)
     # ── 적신호 ──
     out["R1"] = sma_f < sma_s
     out["R2"] = close < sma_s
@@ -97,6 +102,7 @@ def evaluate_frame(df: pd.DataFrame, p: SignalParams) -> pd.DataFrame:
     out["R19"] = open_ < close.shift(1) * (1 + p.gap_down_pct)
     out["R23"] = (close < open_) & ((open_ - close) / open_ >= p.big_body_pct)
     out["R24"] = (close > close.shift(1)) & (vol < vol.shift(1)) & (vol < vol_avg)
+    out["R20"] = disp >= p.disparity_overbought
     # ── 스텁(항상 False) ──
     for stub in STUB_GREEN + STUB_RED:
         out[stub] = False
@@ -137,3 +143,17 @@ def snapshot_scores(green, red, scores: SignalScores) -> tuple[int, int, bool]:
     gs, _ = score(green, scores)
     rs, _ = score(red, scores)
     return gs, rs, buy_gate_ok(green, scores)
+
+
+def signal_confidence(score: int, scores: SignalScores, side: str = "green") -> float:
+    """저장된 green_score/red_score 를 [0,1] 로 정규화(순수 표시용 파생값, read-only).
+
+    MAX 는 하드코딩하지 않고 side(코드가 "G"/"R" 로 시작)에 해당하는 카테고리들의
+    caps 합으로 매 호출마다 동적으로 계산한다(config.py 의 category/caps 가 바뀌면
+    자동 반영). 매매 판정에는 쓰이지 않는다."""
+    prefix = "G" if side == "green" else "R"
+    categories = {cat for c, cat in scores.category.items() if c.startswith(prefix)}
+    max_score = sum(scores.caps.get(cat, 0) for cat in categories)
+    if max_score <= 0:
+        return 0.0
+    return round(min(1.0, max(0.0, score / max_score)), 2)

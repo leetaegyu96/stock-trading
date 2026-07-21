@@ -52,10 +52,11 @@ def test_g7_breakout_over_60d_high():
     assert "G7" in green
 
 def test_stub_columns_always_false():
-    # v2: 스텁은 STUB_GREEN/STUB_RED 로 이동 (R8/R9 는 v2 에서 제거됨)
+    # v2: 스텁은 STUB_GREEN/STUB_RED 로 이동. G8/G9 는 #27 에서 실신호로 전환됨 —
+    # 남은 스텁(G19/G21/G24)만 항상 False 여야 한다.
     df = make_df(np.linspace(100, 160, 100))
     frame = evaluate_frame(df, P)
-    for col in ["G8", "G9"]:
+    for col in ["G19", "G21", "G24"]:
         assert col in frame.columns
         assert not frame[col].any()
 
@@ -80,10 +81,10 @@ def _frame(closes, highs=None, lows=None, opens=None, vols=None):
 def test_new_columns_present_and_stubs_false():
     df = _frame(list(np.linspace(10, 30, 120)))
     out = sig.evaluate_frame(df, SignalParams())
-    for col in ["G11","G12","G13","G14","G15","G16","G17","G18","G23",
-                "R11","R12","R13","R14","R15","R16","R17","R18","R19","R23","R24"]:
+    for col in ["G8","G9","G11","G12","G13","G14","G15","G16","G17","G18","G23",
+                "R11","R12","R13","R14","R15","R16","R17","R18","R19","R20","R23","R24"]:
         assert col in out.columns
-    for stub in ["G8","G9","G19","G21","G24","R20","R22"]:
+    for stub in ["G19","G21","G24","R22"]:
         assert col in out.columns or True  # 스텁은 존재하되 전부 False
         if stub in out.columns:
             assert not out[stub].any()
@@ -146,3 +147,89 @@ def test_snapshot_scores_helper():
     assert gs == 5 + 5 + 4
     assert rs == 5
     assert gate is True
+
+
+def test_g9_resistance_breakout():
+    # 100봉 평탄(고가 100.5) 후 마지막 봉이 직전 20일 저항(100.5)을 돌파.
+    closes = [100.0] * 100 + [105.0]
+    df = _frame(closes)
+    out = sig.evaluate_frame(df, SignalParams())
+    assert out["G9"].iloc[-1]
+
+
+def test_g9_does_not_fire_without_breakout():
+    closes = [100.0] * 101
+    df = _frame(closes)
+    out = sig.evaluate_frame(df, SignalParams())
+    assert not out["G9"].iloc[-1]
+
+
+def test_g8_disparity_oversold_rebound():
+    # 평탄(100) 구간 후 급락(80)으로 괴리율이 -10% 이하로 진입, 다음 봉에 95 로
+    # 반등하며 괴리율이 -10% 위로 회복 → G8 발화.
+    closes = [100.0] * 100 + [80.0, 95.0]
+    df = _frame(closes)
+    out = sig.evaluate_frame(df, SignalParams())
+    assert out["G8"].iloc[-1]
+    assert not out["G8"].iloc[-2]  # 급락 당일은 이미 과매도 상태 진입(반등 아님)
+
+
+def test_r20_disparity_overheat():
+    # 평탄(100) 구간 후 마지막 봉이 130 으로 급등 → 괴리율(약 28%) >= 과열 임계(15%).
+    closes = [100.0] * 100 + [130.0]
+    df = _frame(closes)
+    out = sig.evaluate_frame(df, SignalParams())
+    assert out["R20"].iloc[-1]
+
+
+def test_r20_does_not_fire_when_disparity_below_overbought():
+    closes = [100.0] * 101
+    df = _frame(closes)
+    out = sig.evaluate_frame(df, SignalParams())
+    assert not out["R20"].iloc[-1]
+
+
+def test_new_signal_scores_wired():
+    sc = SignalScores()
+    total, by_cat = sig.score(["G9"], sc)
+    assert by_cat["돌파"] == 5
+    assert total == 5
+
+    total, by_cat = sig.score(["G8"], sc)
+    assert by_cat["모멘텀"] == 3
+    assert total == 3
+
+    total, by_cat = sig.score(["R20"], sc)
+    assert by_cat["변동성"] == 4
+    assert total == 4
+
+    gs, rs, _ = sig.snapshot_scores(("G9", "G8"), ("R20",), sc)
+    assert gs == 5 + 3
+    assert rs == 4
+
+
+def test_signal_confidence_bounds_and_midpoint():
+    sc = SignalScores()
+    # green: 추세10+돌파10+거래량8+모멘텀8+변동성6 = 42 (동적 계산, 하드코딩 아님)
+    green_max = sum(
+        sc.caps[cat]
+        for cat in {sc.category[c] for c in sc.category if c.startswith("G")}
+    )
+    assert green_max == 42
+    assert sig.signal_confidence(0, sc, "green") == 0.0
+    assert sig.signal_confidence(green_max, sc, "green") == 1.0
+    # buy_score_min(18) 부근 — 손계산: 18/42 = 0.4286 -> round(2) = 0.43
+    assert sig.signal_confidence(18, sc, "green") == 0.43
+    # 상한 초과분은 1.0 으로 클램프
+    assert sig.signal_confidence(green_max + 10, sc, "green") == 1.0
+    # 음수 점수는 0.0 으로 클램프
+    assert sig.signal_confidence(-5, sc, "green") == 0.0
+
+    red_max = sum(
+        sc.caps[cat]
+        for cat in {sc.category[c] for c in sc.category if c.startswith("R")}
+    )
+    assert red_max == 42
+    assert sig.signal_confidence(0, sc, "red") == 0.0
+    assert sig.signal_confidence(red_max, sc, "red") == 1.0
+    assert sig.signal_confidence(21, sc, "red") == 0.5
