@@ -184,6 +184,21 @@ class SignalStatusRow(Base):
     close: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
+class IntradayScanRow(Base):
+    """장중 스캔 하트비트 — 시장별 최신 1행. 매 스캔(0건 매매·전건 실패 포함)마다 upsert 되어
+    '언제/몇 종목/게이트 통과 몇/매수·매도 몇'을 남긴다. 요청 경로는 이 행만 읽는다(관찰 전용)."""
+    __tablename__ = "intraday_scan"
+    market: Mapped[str] = mapped_column(String, primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime)      # 마지막 스캔 시각(시장 tz)
+    universe_size: Mapped[int] = mapped_column(Integer, default=0)  # 시도 종목 수
+    evaluated: Mapped[int] = mapped_column(Integer, default=0)      # 신호계산 성공 종목 수
+    failed: Mapped[int] = mapped_column(Integer, default=0)         # 조회/계산 실패 스킵 수
+    gate_pass: Mapped[int] = mapped_column(Integer, default=0)      # 매수게이트 통과 종목 수
+    buys: Mapped[int] = mapped_column(Integer, default=0)           # 이번 스캔 매수 건수
+    sells: Mapped[int] = mapped_column(Integer, default=0)          # 이번 스캔 매도 건수
+    scan_minutes: Mapped[int] = mapped_column(Integer, default=0)   # 스캔 주기(분)
+
+
 class IntradayGuardRow(Base):
     """장중 가드(휩쏘 캡·킬스위치) 영속 스냅샷(#26). CharacterState 의
     intraday_day/intraday_day_start_equity/intraday_buys/intraday_sells/

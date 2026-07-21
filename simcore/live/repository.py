@@ -180,6 +180,28 @@ class Repository:
             rs.last_close_date, rs.last_fx_rate = d, fx
             s.merge(rs)
 
+    def record_scan(self, market: str, ts, universe_size: int, evaluated: int,
+                    failed: int, gate_pass: int, buys: int, sells: int,
+                    scan_minutes: int, session=None) -> None:
+        """장중 스캔 하트비트 upsert — 시장별 최신 1행(`mark_close` 와 동일 패턴)."""
+        with self._session(session) as s:
+            row = s.get(db.IntradayScanRow, market) or db.IntradayScanRow(market=market)
+            row.ts, row.universe_size, row.evaluated = ts, universe_size, evaluated
+            row.failed, row.gate_pass = failed, gate_pass
+            row.buys, row.sells, row.scan_minutes = buys, sells, scan_minutes
+            s.merge(row)
+
+    def scan_status(self) -> list[dict]:
+        """시장별 장중 스캔 하트비트 전체 행(관찰 전용)."""
+        with self.sf() as s:
+            rows = s.execute(select(db.IntradayScanRow)
+                             .order_by(db.IntradayScanRow.market)).scalars().all()
+            return [{
+                "market": r.market, "ts": r.ts, "universe_size": r.universe_size,
+                "evaluated": r.evaluated, "failed": r.failed, "gate_pass": r.gate_pass,
+                "buys": r.buys, "sells": r.sells, "scan_minutes": r.scan_minutes,
+            } for r in rows]
+
     def append_new_trades(self, engine, session=None) -> None:
         with self._session(session) as s:
             for name, st in engine.states.items():

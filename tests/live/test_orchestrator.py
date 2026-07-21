@@ -421,6 +421,59 @@ def test_on_intraday_skips_symbol_that_raises_and_still_buys_good_one(session):
         assert s.query(db.TradeRow).count() > 0
 
 
+@needs_db
+def test_on_intraday_refreshes_signal_status(intraday_orch_setup):
+    """장중 스캔이 의사결정판(signal_status)을 매 스캔마다 갱신한다(마감 때만 갱신 X)."""
+    orch, repo, market, sym = intraday_orch_setup
+    now = datetime(2026, 7, 20, 10, 0, 0)
+    orch.on_intraday(now, date(2026, 7, 20), market, [sym])
+    rows = repo.signal_status()
+    assert rows, "장중 스캔이 signal_status 를 갱신해야 한다"
+    assert any(r["symbol"] == sym and r["market"] == "KR" for r in rows)
+    assert any(r["kind"] == "후보" for r in rows)   # 후보 평가가 장중에 기록됨
+
+
+@needs_db
+def test_on_intraday_records_heartbeat(intraday_orch_setup):
+    """스캔 하트비트(intraday_scan)가 남는다 — 몇 종목 평가/게이트 통과/매수 몇."""
+    orch, repo, market, sym = intraday_orch_setup
+    now = datetime(2026, 7, 20, 10, 0, 0)
+    orch.on_intraday(now, date(2026, 7, 20), market, [sym])
+    scans = {r["market"]: r for r in repo.scan_status()}
+    assert "KR" in scans
+    r = scans["KR"]
+    assert r["universe_size"] == 1 and r["evaluated"] == 1 and r["failed"] == 0
+    assert r["scan_minutes"] == orch.cfg.rules.intraday_scan_minutes
+    assert r["gate_pass"] >= 1
+    assert r["buys"] >= 1        # fixture 는 매수 성사 조건
+
+
+@needs_db
+def test_on_intraday_records_heartbeat_even_when_all_symbols_fail(session):
+    """전 종목 현재가 조회가 실패해도(토큰 만료 등) 조용히 빠지지 않고 하트비트를 남긴다(#48 계열)."""
+    from dataclasses import replace
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    cfg = Config(rules=replace(Config().rules, intraday_enabled=True))
+    eng = Engine(cfg)
+    eng.start(date(2026, 1, 1), 1300.0)
+
+    class DeadKis(FakeKis):
+        def __init__(self):
+            pass
+        def current_price(self, market, symbol):
+            raise RuntimeError("토큰 만료 — 전건 실패 모의")
+
+    orch = Orchestrator(eng, DeadKis(), repo, cfg, fx_provider=lambda d: 1300.0)
+    now = datetime(2026, 7, 20, 10, 0, 0)
+    orch.on_intraday(now, date(2026, 7, 20), "KR", ["005930", "000660", "035720"])
+    scans = {r["market"]: r for r in repo.scan_status()}
+    assert "KR" in scans, "전건 실패에도 스캔 하트비트가 남아야 한다"
+    r = scans["KR"]
+    assert r["universe_size"] == 3 and r["evaluated"] == 0 and r["failed"] == 3
+    assert r["buys"] == 0 and r["sells"] == 0
+
+
 def test_orchestrator_lock_is_reentrant_rlock():
     """안전 감사 Fix 1: Orchestrator 는 __init__ 에서 재진입 가능한 락(threading.RLock)을
     만들어야 한다 — 같은 스레드에서 두 번 acquire 해도 데드락 없이 통과해야 각 핸들러
