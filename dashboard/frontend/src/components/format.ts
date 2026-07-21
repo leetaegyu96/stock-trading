@@ -130,7 +130,7 @@ export const UNCOMPUTED_AXIS_LABEL = "미수집/판단 불가";
 // ── 결정 기반 표시(P0-1): TradeOut.decision_type → 칩 라벨/색 구분.
 // signal_summary는 이미 백엔드가 decision_type을 반영해 만든 문구이므로 프론트는
 // red_score 등으로 이를 다시 계산하지 않고 그대로 렌더한다 — 이 칩은 부가 표시일 뿐이다.
-export type DecisionKind = "buy" | "partial" | "full" | "forced" | "unknown";
+export type DecisionKind = "buy" | "partial" | "full" | "forced" | "intraday" | "unknown";
 
 export interface DecisionInfo {
   label: string;
@@ -142,6 +142,9 @@ const DECISION_MAP: Record<string, DecisionInfo> = {
   PARTIAL_SELL: { label: "부분매도", kind: "partial" },
   FULL_SELL: { label: "전량매도", kind: "full" },
   FORCED_SELL: { label: "강제매도", kind: "forced" },
+  // 장중 자동매매(인트라데이, §17) — 일봉 결정과 구분되도록 별도 kind로 칩을 그린다.
+  INTRADAY_BUY: { label: "장중 매수", kind: "intraday" },
+  INTRADAY_SELL: { label: "장중 매도", kind: "intraday" },
 };
 
 export function decisionInfo(decisionType: string): DecisionInfo {

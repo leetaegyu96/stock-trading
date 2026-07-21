@@ -25,6 +25,18 @@ from dashboard.backend.schemas import CardSummary, Metrics
 _SPARK_POINTS = 30
 _SPEC_BY_NAME = {s.name: s for s in DEFAULT_CHARACTERS}
 
+# 결정유형(DecisionType) → 한국어 표시 라벨. 프론트 DECISION_MAP(format.ts)과 라벨
+# 문구를 맞춘다 — 백엔드가 새 결정유형을 추가할 때 화면 어느 쪽도 raw 값을 그대로
+# 노출하지 않도록 여기서 먼저 정의해 둔다(감사: 장중 매매 INTRADAY_BUY/SELL 추가).
+_DECISION_LABEL: dict[str, str] = {
+    "BUY": "매수",
+    "PARTIAL_SELL": "부분매도",
+    "FULL_SELL": "전량매도",
+    "FORCED_SELL": "강제매도",
+    "INTRADAY_BUY": "장중 매수",
+    "INTRADAY_SELL": "장중 매도",
+}
+
 
 def _character_identity(name: str) -> tuple[str, list[str]]:
     """DEFAULT_CHARACTERS(국내형/해외형/범용형)에서 base_currency/markets 매핑.

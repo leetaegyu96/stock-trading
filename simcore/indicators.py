@@ -127,3 +127,17 @@ def ichimoku(high: pd.Series, low: pd.Series, close: pd.Series,
     span_a = ((tenkan_line + kijun_line) / 2.0).shift(kijun)   # 현재 봉에 정렬
     span_b = mid(senkou_b).shift(kijun)
     return tenkan_line, kijun_line, span_a, span_b
+
+
+def disparity(close: pd.Series, period: int) -> pd.Series:
+    """가격괴리율 = (종가 − 이동평균) / 이동평균. 워밍업 구간 NaN."""
+    ma = sma(close, period)
+    return (close - ma) / ma
+
+
+def support_resistance(high: pd.Series, low: pd.Series, close: pd.Series,
+                       lookback: int) -> tuple[pd.Series, pd.Series]:
+    """직전 lookback 구간(현재 봉 제외) 최저가=지지, 최고가=저항."""
+    support = low.shift(1).rolling(lookback).min()
+    resistance = high.shift(1).rolling(lookback).max()
+    return support, resistance

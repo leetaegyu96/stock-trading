@@ -226,6 +226,8 @@ function FilterBar({
         <option value="PARTIAL_SELL">부분매도</option>
         <option value="FULL_SELL">전량매도</option>
         <option value="FORCED_SELL">강제매도</option>
+        <option value="INTRADAY_BUY">장중 매수</option>
+        <option value="INTRADAY_SELL">장중 매도</option>
       </select>
       <input
         type="date"
