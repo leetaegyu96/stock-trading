@@ -3,6 +3,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field, replace as dc_replace
 from datetime import date as Date
+from datetime import datetime
 
 from simcore.config import Config
 from simcore import costs as costmod
@@ -60,6 +61,11 @@ class CharacterState:
     pending_buys: list[PendingBuy] = field(default_factory=list)
     pending_sells: list[PendingSell] = field(default_factory=list)
     cooldowns: dict[str, list] = field(default_factory=dict)  # sym -> [Market, remaining_days]
+    intraday_day: "date | None" = None
+    intraday_buys: dict = field(default_factory=dict)
+    intraday_sells: dict = field(default_factory=dict)
+    intraday_last_sell_ts: dict = field(default_factory=dict)
+    intraday_day_start_equity: "float | None" = None
 
 
 class Engine:
@@ -275,6 +281,97 @@ class Engine:
         if peak_gain >= r.trailing_top:             # 최고가 대비 트레일
             trail = pos.peak_price * (1 - r.trail_pct) / pos.avg_price - 1.0
             pos.locked_stop_pct = max(pos.locked_stop_pct, trail)
+
+    # ---- 장중: 가드 헬퍼 (휩쏘 캡·재매수 쿨다운·킬스위치) ----
+    def _intraday_roll_day(self, st: CharacterState, d: Date, day_equity: float) -> None:
+        if st.intraday_day != d:
+            st.intraday_day = d
+            st.intraday_buys = {}
+            st.intraday_sells = {}
+            st.intraday_last_sell_ts = {}
+            st.intraday_day_start_equity = day_equity
+
+    def _intraday_can_buy(self, st: CharacterState, symbol: str, now: datetime,
+                          cur_equity: float) -> bool:
+        r = self.config.rules
+        if st.intraday_buys.get(symbol, 0) >= r.intraday_max_buys_per_symbol:
+            return False
+        last = st.intraday_last_sell_ts.get(symbol)
+        if last is not None:
+            mins = (now - last).total_seconds() / 60.0
+            if mins < r.intraday_reentry_cooldown_min:
+                return False
+        start = st.intraday_day_start_equity
+        if start and (cur_equity / start - 1.0) <= r.intraday_daily_loss_halt_pct:
+            return False   # 킬스위치: 당일 손실 한도 도달 → 신규 매수 중단
+        return True
+
+    def _intraday_can_sell(self, st: CharacterState, symbol: str) -> bool:
+        return st.intraday_sells.get(symbol, 0) < self.config.rules.intraday_max_sells_per_symbol
+
+    # ---- 장중: 현재가 즉시 체결 (evaluate_close 규칙 재사용 + 체결강도 게이팅) ----
+    def evaluate_intraday(self, d, market, snaps, strengths, fx_rate, now,
+                          day_equity, cur_equity):
+        r = self.config.rules
+        for st in self.states.values():
+            if market not in st.spec.markets:
+                continue
+            self._intraday_roll_day(st, d, day_equity.get(st.spec.name, 0.0))
+            eq = cur_equity.get(st.spec.name, st.intraday_day_start_equity or 0.0)
+            # 1) 매도 (보유 종목 규칙 발동 시 현재가 즉시 매도)
+            for sym in list(st.portfolio.positions):
+                # 방어: 같은 락 구간 안이라도 이 루프 도중 포지션이 사라지는 경우(예: 향후
+                # 리팩터로 인한 재진입)에 KeyError 를 내지 않고 조용히 스킵한다.
+                pos = st.portfolio.positions.get(sym)
+                if pos is None:
+                    continue
+                if pos.market != market or sym not in snaps:
+                    continue
+                s = snaps[sym]
+                red = set(s.red)
+                forced = ("R18" in red or ({"R5", "R23"} <= red))
+                if forced:
+                    trig = "R18" if "R18" in red else "R5+R23"
+                    self._sell(st, d, sym, s.close, TradeReason.SIGNAL_SELL, fx_rate,
+                               red_count=len(red), red_score=s.red_score, fired=tuple(s.red),
+                               decision_type=DecisionType.INTRADAY_SELL, trigger_rule=trig)
+                    st.intraday_sells[sym] = st.intraday_sells.get(sym, 0) + 1
+                    st.intraday_last_sell_ts[sym] = now
+                    continue
+                full = s.red_score >= r.sell_full_min
+                partial = s.red_score >= r.sell_partial_min
+                if (full or partial) and self._intraday_can_sell(st, sym):
+                    qty = (max(1, int(pos.quantity * r.partial_sell_fraction))
+                           if partial and not full else None)
+                    self._sell(st, d, sym, s.close, TradeReason.SIGNAL_SELL, fx_rate,
+                               quantity=qty, red_count=len(red), red_score=s.red_score,
+                               fired=tuple(s.red), decision_type=DecisionType.INTRADAY_SELL,
+                               trigger_rule="+".join(s.red))
+                    st.intraday_sells[sym] = st.intraday_sells.get(sym, 0) + 1
+                    if sym not in st.portfolio.positions:
+                        st.intraday_last_sell_ts[sym] = now
+            # 2) 매수 (미보유 종목이 게이트+조건 충족 시 현재가 즉시 매수)
+            held = set(st.portfolio.positions)
+            cands = sorted(
+                (s for sym, s in snaps.items()
+                 if sym not in held and sym not in st.cooldowns
+                 and s.green_score >= r.buy_score_min and s.buy_gate),
+                key=lambda s: (-s.green_score, -s.change_pct, -s.volume))
+            for s in cands:
+                slots = r.max_positions - len(st.portfolio.positions)
+                if slots <= 0:
+                    break
+                strength = strengths.get(s.symbol)
+                if strength is not None and strength < r.intraday_strength_buy_min:
+                    continue
+                if not self._intraday_can_buy(st, s.symbol, now, eq):
+                    continue
+                b = PendingBuy(s.symbol, market, len(s.green), s.green_score, s.green,
+                               s.change_pct, s.volume,
+                               decision_type=DecisionType.INTRADAY_BUY,
+                               trigger_rule=f"장중 게이트+{s.green_score}점")
+                if self._buy(st, d, b, s.close, fx_rate, slots):
+                    st.intraday_buys[s.symbol] = st.intraday_buys.get(s.symbol, 0) + 1
 
     # ---- 장중: 트레일링 스탑 (리플레이 = 당일 OHLC 근사, 라이브 = 현재가 bar) ----
     def check_stops(self, d: Date, market: Market, bars: dict[str, DailyBar],

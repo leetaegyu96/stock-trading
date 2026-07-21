@@ -140,10 +140,15 @@ body {
 .chip--partial { background: var(--tint-neutral); color: var(--color-text-sub); }
 .chip--full { background: rgba(224, 167, 19, 0.16); color: #a9720c; }
 .chip--forced { background: var(--tint-up); color: var(--color-up); font-weight: 800; }
+/* 장중 자동매매(인트라데이, §17) — 일봉 결정(부분/전량/강제매도)과는 다른 축임을
+ * 색으로도 구분한다(보라 계열, 시장 구분 색 --color-mixed와 동일 계열). */
+.chip--intraday { background: rgba(106, 27, 154, 0.12); color: #6a1b9a; }
 @media (prefers-color-scheme: dark) {
   .chip--full { background: rgba(224, 167, 19, 0.22); color: #e0a713; }
+  .chip--intraday { background: rgba(186, 104, 200, 0.2); color: #ce93d8; }
 }
 :root[data-theme="dark"] .chip--full { background: rgba(224, 167, 19, 0.22); color: #e0a713; }
+:root[data-theme="dark"] .chip--intraday { background: rgba(186, 104, 200, 0.2); color: #ce93d8; }
 
 /* ── 운영모드 바(PAPER) ── 모든 화면 상단에 고정 표시(audit §4/§5). */
 .mode-bar-shell {

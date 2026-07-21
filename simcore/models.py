@@ -37,6 +37,8 @@ class DecisionType(str, Enum):
     PARTIAL_SELL = "PARTIAL_SELL"
     FULL_SELL = "FULL_SELL"
     FORCED_SELL = "FORCED_SELL"
+    INTRADAY_BUY = "INTRADAY_BUY"
+    INTRADAY_SELL = "INTRADAY_SELL"
 
 
 @dataclass(frozen=True)

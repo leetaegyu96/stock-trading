@@ -3,11 +3,12 @@
 스케줄러는 '언제'만 담당하고, '무엇을'은 orchestrator 가 한다. 각 트리거는 해당 시장의
 오늘이 거래일일 때만 orchestrator 를 호출한다(휴장일 가드)."""
 from __future__ import annotations
-from datetime import date, datetime
+from datetime import date, datetime, time as _time
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from simcore.config import Config
 from simcore.live import calendar as cal
 
 
@@ -24,15 +25,22 @@ _SESSIONS = {
 
 
 class LiveScheduler:
-    def __init__(self, orch, repo, holidays_provider, universe_provider, tick_minutes=5):
+    def __init__(self, orch, repo, holidays_provider, universe_provider,
+                 tick_minutes=5, cfg=None):
         self.orch = orch
         self.repo = repo
         self.holidays = holidays_provider
         self.universe = universe_provider
         self.tick_minutes = tick_minutes
+        self.cfg = cfg or Config()
 
     def _is_trading_today(self, market: str) -> bool:
         return cal.is_trading_day(_today(market), market, self.holidays(market))
+
+    def _in_session(self, market: str) -> bool:
+        tz, (oh, om), (ch, cm) = _SESSIONS[market]
+        nowt = datetime.now(tz).time()
+        return _time(oh, om) <= nowt <= _time(ch, cm)
 
     def _guarded_open(self, market: str) -> None:
         if self._is_trading_today(market):
@@ -46,6 +54,12 @@ class LiveScheduler:
         if self._is_trading_today(market):
             self.orch.on_tick(_today(market), market)
 
+    def _guarded_intraday(self, market: str) -> None:
+        if self._is_trading_today(market) and self._in_session(market):
+            tz = _SESSIONS[market][0]
+            self.orch.on_intraday(datetime.now(tz), _today(market), market,
+                                   self.universe(market))
+
     def build(self) -> BackgroundScheduler:
         sched = BackgroundScheduler(timezone="UTC")
         for market, (tz, (oh, om), (ch, cm)) in _SESSIONS.items():
@@ -55,4 +69,8 @@ class LiveScheduler:
                           args=[market], id=f"close_{market}")
             sched.add_job(self._guarded_tick, IntervalTrigger(minutes=self.tick_minutes),
                           args=[market], id=f"tick_{market}")
+            if self.cfg.rules.intraday_enabled:
+                sched.add_job(self._guarded_intraday,
+                              IntervalTrigger(minutes=self.cfg.rules.intraday_scan_minutes),
+                              args=[market], id=f"intraday_{market}")
         return sched
