@@ -184,6 +184,21 @@ class SignalStatusRow(Base):
     close: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
+class IntradayGuardRow(Base):
+    """장중 가드(휩쏘 캡·킬스위치) 영속 스냅샷(#26). CharacterState 의
+    intraday_day/intraday_day_start_equity/intraday_buys/intraday_sells/
+    intraday_last_sell_ts 를 캐릭터별 1행으로 저장한다 — 재시작(rehydrate) 시
+    이 값이 복원되지 않으면 _intraday_roll_day 가 재시작 시점 equity 로
+    day_start_equity 를 재기준해 킬스위치·매수/매도 캡이 조용히 리셋된다."""
+    __tablename__ = "intraday_guards"
+    character: Mapped[str] = mapped_column(String, primary_key=True)
+    intraday_day: Mapped[date | None] = mapped_column(Date, nullable=True)
+    day_start_equity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    buys_json: Mapped[str] = mapped_column(String, default="{}")
+    sells_json: Mapped[str] = mapped_column(String, default="{}")
+    last_sell_ts_json: Mapped[str] = mapped_column(String, default="{}")
+
+
 class UniverseRow(Base):
     __tablename__ = "universe"
     market: Mapped[str] = mapped_column(String, primary_key=True)
