@@ -1,4 +1,4 @@
-import httpx, respx
+import httpx, pytest, respx
 from datetime import date
 from simcore.live.kis_client import KisClient, InMemoryTokenStore
 from simcore.live.ratelimit import RateLimiter
@@ -12,7 +12,8 @@ def _client(clock_val=1000.0):
                      database_url="postgresql://x", kis_env="real")
     limiter = RateLimiter(1e9)  # 테스트에선 무제한
     return KisClient(s, InMemoryTokenStore(), limiter,
-                     client=httpx.Client(base_url=BASE), clock=lambda: clock_val)
+                     client=httpx.Client(base_url=BASE), clock=lambda: clock_val,
+                     sleep=lambda _s: None)  # 백오프 대기 없이 즉시 재시도
 
 
 @respx.mock
@@ -65,6 +66,76 @@ def test_reissues_token_on_401():
     c = _client()
     assert c.current_price("KR", "005930") == 5.0
     assert route.call_count == 2
+
+
+@respx.mock
+def test_reissues_token_on_expired_token_body_http500():
+    """KIS는 토큰 만료를 401이 아니라 HTTP 500 + 본문(EGW00123)으로 응답한다.
+    낡은 토큰으로는 계속 만료 에러가 나므로, 토큰을 재발급해야만 복구된다."""
+    tokens = iter(["OLD", "NEW", "NEW", "NEW"])
+    tok = respx.post(f"{BASE}/oauth2/tokenP").mock(side_effect=lambda req: httpx.Response(
+        200, json={"access_token": next(tokens), "expires_in": 86400}))
+
+    def handler(req):
+        if req.headers.get("authorization") == "Bearer NEW":
+            return httpx.Response(200, json={"output": {"stck_prpr": "5"}})
+        return httpx.Response(500, json={"rt_cd": "1", "msg_cd": "EGW00123",
+                                         "msg1": "기간이 만료된 token 입니다."})
+
+    respx.get(f"{BASE}/uapi/domestic-stock/v1/quotations/inquire-price").mock(side_effect=handler)
+    c = _client()
+    assert c.current_price("KR", "005930") == 5.0
+    assert tok.call_count == 2          # 최초 발급 + 만료 감지 후 1회 재발급
+
+
+@respx.mock
+def test_reissues_token_on_expired_token_body_http200():
+    """만료 응답이 HTTP 200 + 본문(msg1 "만료된 token")으로 오는 변형도 재발급으로 복구."""
+    tokens = iter(["OLD", "NEW", "NEW", "NEW"])
+    tok = respx.post(f"{BASE}/oauth2/tokenP").mock(side_effect=lambda req: httpx.Response(
+        200, json={"access_token": next(tokens), "expires_in": 86400}))
+
+    def handler(req):
+        if req.headers.get("authorization") == "Bearer NEW":
+            return httpx.Response(200, json={"output": {"stck_prpr": "7"}})
+        return httpx.Response(200, json={"rt_cd": "1", "msg_cd": "EGW00123",
+                                         "msg1": "기간이 만료된 token 입니다."})
+
+    respx.get(f"{BASE}/uapi/domestic-stock/v1/quotations/inquire-price").mock(side_effect=handler)
+    c = _client()
+    assert c.current_price("KR", "005930") == 7.0
+    assert tok.call_count == 2
+
+
+@respx.mock
+def test_generic_500_backs_off_without_reissuing_token():
+    """일반 서버오류(500)는 토큰 문제가 아니므로 재발급하지 않고 백오프 재시도만."""
+    tok = respx.post(f"{BASE}/oauth2/tokenP").mock(return_value=httpx.Response(
+        200, json={"access_token": "T", "expires_in": 86400}))
+    route = respx.get(f"{BASE}/uapi/domestic-stock/v1/quotations/inquire-price")
+    route.side_effect = [
+        httpx.Response(500, json={"rt_cd": "1", "msg_cd": "EGW00205", "msg1": "일시적 오류"}),
+        httpx.Response(200, json={"output": {"stck_prpr": "9"}}),
+    ]
+    c = _client()
+    assert c.current_price("KR", "005930") == 9.0
+    assert route.call_count == 2
+    assert tok.call_count == 1          # 일반 500엔 토큰 재발급 없음
+
+
+@respx.mock
+def test_expired_token_reissued_at_most_once_per_request():
+    """재발급 후에도 계속 만료 에러면 발급폭주(EGW00133) 방지를 위해 요청당 1회만 재발급하고 포기."""
+    tok = respx.post(f"{BASE}/oauth2/tokenP").mock(return_value=httpx.Response(
+        200, json={"access_token": "T", "expires_in": 86400}))
+    route = respx.get(f"{BASE}/uapi/domestic-stock/v1/quotations/inquire-price").mock(
+        return_value=httpx.Response(500, json={"rt_cd": "1", "msg_cd": "EGW00123",
+                                               "msg1": "기간이 만료된 token 입니다."}))
+    c = _client()
+    with pytest.raises(RuntimeError):
+        c.current_price("KR", "005930")
+    assert tok.call_count == 2          # 최초 발급 + 재발급 1회 (그 이상 재발급 안 함)
+    assert route.call_count == 2        # 재발급 1회 → 실패 확인 1회, 즉시 포기
 
 
 @respx.mock
