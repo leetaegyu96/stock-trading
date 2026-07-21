@@ -88,6 +88,9 @@ def boot(settings: LiveSettings) -> None:
     if not repo.rehydrate(eng):
         eng.start(date.today(), orch.fx(date.today()))     # 콜드스타트: 3캐릭터 1억
         repo.persist_state(eng)
+    # 장중 가드(킬스위치 기준선·휩쏘 캡)도 복원한다(#26). 콜드스타트면 테이블이
+    # 비어 있어 no-op — CharacterState 기본값(intraday_day=None 등)이 유지된다.
+    repo.rehydrate_intraday_guards(eng)
     holidays = _holidays_provider(kis)
     universe = _universe_provider(kis, repo)
     for market in _MARKETS:

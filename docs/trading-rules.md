@@ -477,3 +477,33 @@ CAGR·변동성·Sharpe·Sortino·Calmar는 자산곡선(equity)의 일간수익
 리플레이 엔진(`replay.run_replay`)·백테스트 경로에 연결되지 않는다. 장중 매매의 과거 재현·
 walk-forward 검증은 이 구현 범위 밖이며, 현재는 **실시간 라이브(PAPER)에서 실동작을 관측**하는
 것이 목적이다(감사 로드맵 3단계 전략 검증과는 별개 — 3단계 통과 전 실주문 코드는 여전히 없다).
+
+## 18. 워크포워드(롤링 아웃오브샘플) 검증 — 감사 로드맵 3단계
+
+전략 성과가 한 번의 운 좋은 구간이 아니라 여러 시간 구간에서 일관되는지 정직하게 보여주는
+하니스다. `simcore/walkforward.py`. 신규 의존성 없이 기존 `replay.run_replay`와
+`metrics.risk_metrics`를 그대로 재사용한다.
+
+**정직한 범위 한정(non-goal)**: 엔진 파라미터(`Config`)는 **전 폴드 공통 고정**이며 폴드별
+재적합을 하지 않는다 — 이는 엄밀한 워크포워드 최적화(WFO)가 아니라 **롤링 OOS 평가**다.
+폴드별 파라미터 최적화·CPCV·과적합확률(PBO)·Deflated Sharpe는 후속 과제로 남는다. 신호는
+인과적(과거만 참조)이라 번들 전체 히스토리를 워밍업으로 써도 lookahead가 없으며, 각 폴드의
+시뮬레이션은 test 구간에서 콜드스타트(초기자금)로 시작한다.
+
+**폴드 생성**(`generate_folds(start, end, test_days=63, step_days=63, warmup_days=120)`):
+`[start, end]`를 `step_days` 간격으로 타일링해 `test_days` 길이의 test 구간을 만든다. 첫
+`test_start`는 `start + warmup_days` 이상(지표 워밍업 확보). 마지막 폴드의 `test_end`는
+`end`를 넘지 않게 자르고, 잘려서 창 길이가 `test_days // 2` 미만이면 그 폴드는 제외한다.
+
+**평가**(`run_walkforward(config, bundle, folds)`): 폴드마다 `run_replay(config, bundle,
+fold.test_start, fold.test_end)`를 호출해 캐릭터별 `{twr, mdd, sharpe, win_rate, n_trades}`를
+기록한다(`sharpe`는 `risk_metrics`, `win_rate`는 `risk_metrics`에 키가 없어 SELL 행의
+`realized_pnl > 0` 비율로 직접 계산). 폴드 구간에 거래일이 없어 `run_replay`가
+`ValueError`를 던지면 그 폴드는 건너뛰고(로그) 계속 진행한다.
+
+**집계**(폴드 간 일관성, 캐릭터별): `mean_twr`/`std_twr`, `pct_profitable_folds`(twr>0 폴드
+비율), `mean_sharpe`, `worst_mdd`(폴드 중 최악의 낙폭 절대값), `n_folds`.
+
+**CLI**: `python -m simcore.walkforward --start YYYY-MM-DD --end YYYY-MM-DD [--test-days
+--step-days --warmup-days --kr-top --us-top --cache --out]` — 번들을 전체 구간으로 1회 로드
+후 폴드별·집계 표를 콘솔에 출력하고, `--out` 지정 시 마크다운 리포트로도 저장한다.
