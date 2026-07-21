@@ -6,7 +6,7 @@ import pandas as pd
 
 from simcore.config import Config
 from simcore.engine import Engine
-from simcore.models import CapitalFlow, DailyBar, Market, SymbolSnapshot
+from simcore.models import CapitalFlow, DailyBar, Market, Side, SymbolSnapshot
 from simcore import signals as sigmod
 from simcore import data as datamod
 from simcore.signal_status import holding_signal_row
@@ -213,15 +213,29 @@ class Orchestrator:
                 self.repo.append_new_trades(self.engine, session=s)
                 self.repo.mark_open(market, d, fx, session=s)
 
+    def _new_trade_counts(self, pre: dict[str, int]) -> tuple[int, int]:
+        """이번 스캔에서 새로 append 된 거래의 매수/매도 건수(하트비트용). pre 는 evaluate 직전
+        캐릭터별 trades 길이 스냅샷."""
+        buys = sells = 0
+        for name, st in self.engine.states.items():
+            for t in st.portfolio.trades[pre.get(name, 0):]:
+                if t.side == Side.BUY:
+                    buys += 1
+                else:
+                    sells += 1
+        return buys, sells
+
     def on_intraday(self, now, d, market: str, universe: list[str]) -> None:
         m = Market(market)
         fx = self.fx(d)
         snaps: dict[str, SymbolSnapshot] = {}
         strengths: dict[str, float | None] = {}
+        failed = 0                                  # 조회/계산 실패로 스킵한 종목 수(하트비트)
         for sym in universe:
             try:
                 px = self.kis.current_price(market, sym)
             except Exception:
+                failed += 1
                 continue                            # 이번 사이클 스킵, 다음 틱 재시도
             # 이 종목의 나머지 처리(거래량/일봉/신호 계산) 중 어디서든 예외가 나도
             # 이 종목만 스킵하고 나머지 유니버스·persist 는 계속되어야 한다(부분 실패 스킵).
@@ -268,8 +282,16 @@ class Orchestrator:
                 strengths[sym] = strength
             except Exception as exc:
                 print(f"[intraday] {market} {sym} 스킵: {exc}")
+                failed += 1
                 continue
+        gate_pass = sum(1 for s in snaps.values() if s.buy_gate)
+        scan_minutes = self.cfg.rules.intraday_scan_minutes
+        # 전건 실패(snaps 비어도) 조용히 빠지지 않고 스캔 하트비트를 남긴다(#48 계열 —
+        # 로그 없인 데몬이 도는지, 왜 아무것도 안 사는지 알 수 없던 문제).
         if not snaps:
+            with self._lock, self.repo.transaction() as s:
+                self.repo.record_scan(market, now, len(universe), 0, failed,
+                                      0, 0, 0, scan_minutes, session=s)
             return
         # 상태 조회(snapshot)+mutate(evaluate_intraday)+persist 를 한 락 구간으로 직렬화.
         # 위 유니버스 조회 루프(네트워크)는 락 밖에서 이미 끝났다. self._last_price/
@@ -277,8 +299,11 @@ class Orchestrator:
         # 멱등하게 덮어써서 락 밖에서 갱신해도 안전하다.
         with self._lock:
             eq = self.engine.snapshot(self._last_price, fx)
+            pre = {name: len(st.portfolio.trades) for name, st in self.engine.states.items()}
             self.engine.evaluate_intraday(d, m, snaps, strengths, fx, now,
                                           day_equity=eq, cur_equity=eq)
+            buys, sells = self._new_trade_counts(pre)
+            rows = self._signal_status_rows(d, m, snaps)
             with self.repo.transaction() as s:
                 self.repo.persist_state(self.engine, session=s)
                 self.repo.append_new_trades(self.engine, session=s)
@@ -286,6 +311,10 @@ class Orchestrator:
                 # 않으면 데몬이 장중에 재시작할 때 _intraday_roll_day 가 재시작 시점
                 # equity 로 day_start_equity 를 재기준해 -5% 킬스위치가 조용히 풀린다.
                 self.repo.persist_intraday_guards(self.engine, session=s)
+                # 의사결정판을 매 스캔마다 갱신(마감 때만 갱신하던 것을 장중에도) + 하트비트.
+                self.repo.replace_signal_status(rows, session=s, market=market)
+                self.repo.record_scan(market, now, len(universe), len(snaps), failed,
+                                      gate_pass, buys, sells, scan_minutes, session=s)
 
     def on_tick(self, d: date, market: str) -> None:
         m = Market(market)
