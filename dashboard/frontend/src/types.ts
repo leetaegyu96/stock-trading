@@ -249,6 +249,8 @@ export interface MarketStatus {
 export interface ScanStatus {
   market: string;
   ts: string;            // 마지막 스캔 시각(시장 벽시계, ISO)
+  tz: string;            // 시장 tz 라벨: "KST" | "ET"
+  ts_epoch_ms: number;   // 절대 시각(UTC epoch, ms) — "N분 전" 계산용
   universe_size: number; // 시도 종목 수
   evaluated: number;     // 신호계산 성공 종목 수
   failed: number;        // 조회/계산 실패 스킵 수

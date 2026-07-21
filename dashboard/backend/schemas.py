@@ -144,7 +144,9 @@ class MarketStatusOut(BaseModel):
 class ScanStatusOut(BaseModel):
     """장중 스캔 하트비트(시장별 최신 1건) — 스캔 상태 스트립용."""
     market: str
-    ts: str
+    ts: str                # 시장 벽시계 ISO(표시용)
+    tz: str                # 시장 tz 라벨: "KST" | "ET"
+    ts_epoch_ms: int       # 절대 시각(UTC epoch, ms) — "N분 전" 계산용
     universe_size: int
     evaluated: int
     failed: int
