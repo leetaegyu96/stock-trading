@@ -55,7 +55,7 @@ export function ModeBar({ connected, asOf, markets, initialMarketStatuses = [] }
         <span className="mode-bar__market-status">{formatMarketStatusLine(marketStatuses)}</span>
       )}
       <span className={`mode-bar__conn${connected ? " mode-bar__conn--on" : ""}`}>
-        {connected ? "실시간 연결" : "연결 끊김"}
+        {connected ? "연결됨" : "연결 끊김"}
       </span>
     </div>
   );

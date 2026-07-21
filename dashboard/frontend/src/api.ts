@@ -9,6 +9,7 @@ import type {
   MarketStatus,
   Metrics,
   PositionOut,
+  ScanStatus,
   TradesPage,
   TradesQuery,
 } from "./types";
@@ -124,6 +125,11 @@ export function getDashboard(): Promise<Dashboard> {
 /** 시장별 데이터 기준(run_state) — as-of 표시용(P0). */
 export function getMarketStatus(): Promise<MarketStatus[]> {
   return request<MarketStatus[]>("/api/status");
+}
+
+/** 시장별 장중 스캔 하트비트 — 스캔 상태 스트립용. */
+export function getScanStatus(): Promise<ScanStatus[]> {
+  return request<ScanStatus[]>("/api/scan-status");
 }
 
 export { ApiError };

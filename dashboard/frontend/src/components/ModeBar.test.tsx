@@ -15,7 +15,7 @@ describe("ModeBar (audit §4/§5)", () => {
     // as-of text is identical regardless of connection state — freshness != connection.
     expect(connectedHtml).toContain("데이터 기준");
     expect(disconnectedHtml).toContain("데이터 기준");
-    expect(connectedHtml).toContain("실시간 연결");
+    expect(connectedHtml).toContain("연결됨");
     expect(disconnectedHtml).toContain("연결 끊김");
   });
 
@@ -58,7 +58,7 @@ describe("ModeBar per-market data as-of (P0)", () => {
       expect(html).toContain("KR 데이터기준 2026-07-10");
       expect(html).toContain("US 데이터기준 2026-07-09");
     }
-    expect(connectedHtml).toContain("실시간 연결");
+    expect(connectedHtml).toContain("연결됨");
     expect(disconnectedHtml).toContain("연결 끊김");
   });
 });
