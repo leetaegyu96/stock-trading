@@ -194,6 +194,28 @@ def _objective(res: ReplayResult, character: str, objective: str) -> float:
     return res.summary[character]["twr"]
 
 
+def _wfo_efficiency(fold_dicts: list[dict]) -> float:
+    """WFO 효율(mean OOS / mean IS-best)을 폴드 단위로 페어링해서 계산하는 순수 헬퍼.
+
+    ``is_best_perf`` 와 ``oos_perf`` 를 독립적으로 필터링해 평균 내면, 한쪽만 실패한
+    폴드(train은 성공했지만 test 구간에서 ValueError 로 -inf가 기록된 경우 등) 때문에
+    분자·분모가 서로 다른 폴드 집합을 대표하게 되어 비율이 무의미해진다. 이를 막기 위해
+    두 값이 모두 유한(finite)한 폴드만 페어링해서 사용한다.
+
+    페어링된 폴드가 없거나 mean_is == 0 이면(비율 계산 불가) float("nan") 을 반환한다
+    (PBO의 "계산 불가 시 nan" 관례와 일관).
+    """
+    paired = [(f["is_best_perf"], f["oos_perf"]) for f in fold_dicts
+              if math.isfinite(f["is_best_perf"]) and math.isfinite(f["oos_perf"])]
+    if not paired:
+        return float("nan")
+    mean_is = statistics.mean(v for v, _ in paired)
+    mean_oos = statistics.mean(v for _, v in paired)
+    if mean_is == 0:
+        return float("nan")
+    return mean_oos / mean_is
+
+
 def run_wfo(config: Config, bundle: DataBundle, folds: list[OptFold], grid: list,
             objective: str = "twr", character: str = "국내형") -> WfoResult:
     """진짜 워크포워드 최적화: 폴드별 train 구간에서 ``grid`` 를 탐색해 최적 ``buy_score_min`` 을
@@ -213,7 +235,8 @@ def run_wfo(config: Config, bundle: DataBundle, folds: list[OptFold], grid: list
             try:
                 res_is = run_replay(cfg_v, bundle, fold.train_start, fold.train_end)
                 perf = _objective(res_is, character, objective)
-            except ValueError:
+            except ValueError as exc:
+                print(f"[wfo] fold {fold.index} buy_score_min={v} (train) 스킵: {exc}")
                 perf = float("-inf")
             is_perf[v] = perf
             is_matrix[v][fold.index] = perf
@@ -227,7 +250,8 @@ def run_wfo(config: Config, bundle: DataBundle, folds: list[OptFold], grid: list
             try:
                 res_oos = run_replay(cfg_v, bundle, fold.test_start, fold.test_end)
                 perf = _objective(res_oos, character, objective)
-            except ValueError:
+            except ValueError as exc:
+                print(f"[wfo] fold {fold.index} buy_score_min={v} (test) 스킵: {exc}")
                 perf = float("-inf")
             oos_all[v] = perf
             oos_matrix[v][fold.index] = perf
@@ -241,12 +265,7 @@ def run_wfo(config: Config, bundle: DataBundle, folds: list[OptFold], grid: list
         })
 
     pbo = probability_of_backtest_overfitting(is_matrix, oos_matrix)
-
-    is_vals = [f["is_best_perf"] for f in fold_dicts if math.isfinite(f["is_best_perf"])]
-    oos_vals = [f["oos_perf"] for f in fold_dicts if math.isfinite(f["oos_perf"])]
-    mean_is = statistics.mean(is_vals) if is_vals else 0.0
-    mean_oos = statistics.mean(oos_vals) if oos_vals else 0.0
-    wfo_efficiency = (mean_oos / mean_is) if mean_is != 0 else 0.0
+    wfo_efficiency = _wfo_efficiency(fold_dicts)
 
     return WfoResult(folds=fold_dicts, wfo_efficiency=wfo_efficiency, pbo=pbo,
                      grid=list(grid), objective=objective, character=character)

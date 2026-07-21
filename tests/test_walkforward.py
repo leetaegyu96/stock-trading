@@ -10,7 +10,7 @@ from simcore.replay import DataBundle
 from simcore.walkforward import (
     Fold, generate_folds, run_walkforward, _aggregate,
     OptFold, generate_opt_folds, run_wfo, WfoResult,
-    probability_of_backtest_overfitting,
+    probability_of_backtest_overfitting, _wfo_efficiency,
 )
 
 
@@ -290,6 +290,55 @@ def test_pbo_caps_large_combination_count_and_logs(capsys):
     assert 0.0 <= pbo <= 1.0
     captured = capsys.readouterr()
     assert "200" in captured.out
+
+
+# ---------------------------------------------------------------- _wfo_efficiency (순수 헬퍼: 폴드 페어링)
+
+def test_wfo_efficiency_pairs_folds_and_ignores_partial_failures():
+    # 폴드 1은 train(IS)은 성공했지만 test(OOS) 구간에서 run_replay가 ValueError를 던져
+    # oos_perf가 -inf로 기록된 경우 — is_best_perf와 oos_perf가 서로 다른 폴드 집합을
+    # 평균내면 안 되고, 두 값이 모두 유한한 폴드만 페어링해서 사용해야 한다.
+    fold_dicts = [
+        {"index": 0, "is_best_perf": 0.10, "oos_perf": 0.05},
+        {"index": 1, "is_best_perf": 0.20, "oos_perf": float("-inf")},  # test 실패
+        {"index": 2, "is_best_perf": 0.30, "oos_perf": 0.15},
+    ]
+    result = _wfo_efficiency(fold_dicts)
+    # 폴드 0, 2만 페어링됨 (폴드 1은 oos_perf가 비유한이라 제외)
+    expected_mean_is = (0.10 + 0.30) / 2
+    expected_mean_oos = (0.05 + 0.15) / 2
+    assert result == pytest.approx(expected_mean_oos / expected_mean_is)
+
+
+def test_wfo_efficiency_ignores_is_side_failures_too():
+    # 반대 경우: train(IS)이 실패해 is_best_perf가 -inf인 폴드도 페어링에서 제외돼야 한다.
+    fold_dicts = [
+        {"index": 0, "is_best_perf": float("-inf"), "oos_perf": 0.05},
+        {"index": 1, "is_best_perf": 0.20, "oos_perf": 0.10},
+    ]
+    result = _wfo_efficiency(fold_dicts)
+    assert result == pytest.approx(0.10 / 0.20)
+
+
+def test_wfo_efficiency_all_degenerate_returns_nan():
+    fold_dicts = [
+        {"index": 0, "is_best_perf": float("-inf"), "oos_perf": 0.05},
+        {"index": 1, "is_best_perf": 0.20, "oos_perf": float("-inf")},
+    ]
+    result = _wfo_efficiency(fold_dicts)
+    assert math.isnan(result)
+
+
+def test_wfo_efficiency_empty_fold_list_returns_nan():
+    assert math.isnan(_wfo_efficiency([]))
+
+
+def test_wfo_efficiency_zero_mean_is_returns_nan_not_zero():
+    fold_dicts = [
+        {"index": 0, "is_best_perf": 0.0, "oos_perf": 0.05},
+    ]
+    result = _wfo_efficiency(fold_dicts)
+    assert math.isnan(result)
 
 
 # ---------------------------------------------------------------- 통합: run_wfo (진짜 워크포워드 최적화)
