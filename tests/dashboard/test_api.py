@@ -1,5 +1,5 @@
 import shutil
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -306,6 +306,30 @@ def test_scan_status_endpoint_returns_rows(sf):
     assert row["gate_pass"] == 3 and row["buys"] == 1 and row["sells"] == 0
     assert row["scan_minutes"] == 10
     assert row["ts"].startswith("2026-07-21T13:43")
+    # 시장 tz 라벨 + 절대 시각(epoch, ms) — "N분 전"/KST·ET 표시용.
+    assert row["tz"] == "KST"
+    # KST 13:43:00 == UTC 04:43:00 (2026-07-21) → epoch 확인
+    expected_ms = int(datetime(2026, 7, 21, 4, 43, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    assert row["ts_epoch_ms"] == expected_ms
+
+
+def test_scan_status_us_market_tz_label_is_et(sf):
+    with sf() as s:
+        s.add(db.IntradayScanRow(market="US", ts=datetime(2026, 7, 21, 10, 0, 0),
+                                 universe_size=30, evaluated=30, failed=0,
+                                 gate_pass=1, buys=0, sells=0, scan_minutes=10))
+        s.commit()
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r = TestClient(app).get("/api/scan-status")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+    assert r.status_code == 200
+    row = r.json()[0]
+    assert row["tz"] == "ET"
+    # ET(America/New_York) 2026-07-21 10:00 (EDT, UTC-4) == UTC 14:00
+    expected_ms = int(datetime(2026, 7, 21, 14, 0, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    assert row["ts_epoch_ms"] == expected_ms
 
 
 def test_character_candidates_endpoint_returns_rows(sf):

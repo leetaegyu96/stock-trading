@@ -289,11 +289,27 @@ def market_status(sf) -> list[dict]:
                 for r in rows]
 
 
+_TZ_LABEL = {"KR": "KST", "US": "ET"}
+
+
 def scan_status(sf) -> list[dict]:
-    """시장별 장중 스캔 하트비트 — 스캔 상태 스트립용. ts 는 ISO 문자열로 직렬화."""
+    """시장별 장중 스캔 하트비트 — 스캔 상태 스트립용.
+
+    ts 는 시장 벽시계(naive) 로 저장돼 있다. 표시용 ISO 문자열 외에, "N분 전" 계산을 위한
+    절대 시각(ts_epoch_ms) 과 tz 라벨을 시장 tz(calendar._TZ) 로 복원해 함께 내려준다."""
     from simcore.live.repository import Repository
-    rows = Repository(sf).scan_status()
-    return [{**r, "ts": r["ts"].isoformat() if r["ts"] else None} for r in rows]
+    from simcore.live import calendar as cal
+    out = []
+    for r in Repository(sf).scan_status():
+        ts = r["ts"]
+        tzinfo = cal._TZ.get(r["market"])
+        epoch_ms = (int(ts.replace(tzinfo=tzinfo).timestamp() * 1000)
+                    if ts is not None and tzinfo is not None else 0)
+        out.append({**r,
+                    "ts": ts.isoformat() if ts else None,
+                    "tz": _TZ_LABEL.get(r["market"], r["market"]),
+                    "ts_epoch_ms": epoch_ms})
+    return out
 
 
 def signal_status(sf, name: str, kind: str | None = None) -> list[dict]:
