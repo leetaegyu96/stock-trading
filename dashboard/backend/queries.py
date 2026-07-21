@@ -289,6 +289,13 @@ def market_status(sf) -> list[dict]:
                 for r in rows]
 
 
+def scan_status(sf) -> list[dict]:
+    """시장별 장중 스캔 하트비트 — 스캔 상태 스트립용. ts 는 ISO 문자열로 직렬화."""
+    from simcore.live.repository import Repository
+    rows = Repository(sf).scan_status()
+    return [{**r, "ts": r["ts"].isoformat() if r["ts"] else None} for r in rows]
+
+
 def signal_status(sf, name: str, kind: str | None = None) -> list[dict]:
     """캐릭터의 SignalStatusRow 목록(관찰 전용, 마감 시점 저장 데이터만 읽는다).
     kind("후보"|"보유")를 주면 그 종류만 필터한다."""

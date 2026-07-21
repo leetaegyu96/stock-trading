@@ -141,6 +141,19 @@ class MarketStatusOut(BaseModel):
     last_open_date: str | None = None
 
 
+class ScanStatusOut(BaseModel):
+    """장중 스캔 하트비트(시장별 최신 1건) — 스캔 상태 스트립용."""
+    market: str
+    ts: str
+    universe_size: int
+    evaluated: int
+    failed: int
+    gate_pass: int
+    buys: int
+    sells: int
+    scan_minutes: int
+
+
 class FlowOut(BaseModel):
     date: date
     amount_krw: float

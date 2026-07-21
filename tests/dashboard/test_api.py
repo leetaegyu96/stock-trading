@@ -284,6 +284,30 @@ def test_character_positions_falls_back_when_kis_fails(sf):
 
 
 @needs_db
+def test_scan_status_endpoint_returns_rows(sf):
+    with sf() as s:
+        s.add(db.IntradayScanRow(market="KR", ts=datetime(2026, 7, 21, 13, 43, 0),
+                                 universe_size=60, evaluated=58, failed=2,
+                                 gate_pass=3, buys=1, sells=0, scan_minutes=10))
+        s.commit()
+
+    app.dependency_overrides[get_sf] = lambda: sf
+    try:
+        r = TestClient(app).get("/api/scan-status")
+    finally:
+        app.dependency_overrides.pop(get_sf, None)
+
+    assert r.status_code == 200
+    rows = r.json()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["market"] == "KR"
+    assert row["universe_size"] == 60 and row["evaluated"] == 58 and row["failed"] == 2
+    assert row["gate_pass"] == 3 and row["buys"] == 1 and row["sells"] == 0
+    assert row["scan_minutes"] == 10
+    assert row["ts"].startswith("2026-07-21T13:43")
+
+
 def test_character_candidates_endpoint_returns_rows(sf):
     with sf() as s:
         s.merge(db.CharacterRow(name="국내형", base_currency="KRW"))
