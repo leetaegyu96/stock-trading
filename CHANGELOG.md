@@ -4,6 +4,19 @@
 
 상세 패치노트는 `docs/patch-notes/vX.Y.Z.md` 참조.
 
+## v1.14.0 — 2026-07-21
+
+운영 토글: INTRADAY_ENABLED 환경변수로 코드 수정 없이 장중 자동매매 on/off.
+
+### Added
+- LiveSettings에 INTRADAY_ENABLED(기본 false)·INTRADAY_SCAN_MINUTES(기본 10). build_app이 설정→Config 구성(_config_from_settings), 엔진·오케·스케줄러 단일 Config 공유. 기본 OFF라 미설정 시 기존 동작 불변.
+
+### Fixed
+- build_app이 엔진/오케에 서로 다른 Config() 넘기던 잠재 버그 → 단일 공유 Config로 통일.
+
+### 검증
+- pytest 371 passed(+5), 회귀 0. 운영 반영: .env에 INTRADAY_ENABLED=1 후 데몬 재기동. 상세: `docs/patch-notes/v1.14.0.md`.
+
 ## v1.13.1 — 2026-07-21
 
 패치: 시드/리플레이 보유 red_score 승계(#7 핵심).
