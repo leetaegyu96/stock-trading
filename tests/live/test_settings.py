@@ -26,3 +26,20 @@ def test_secrets_masked_in_repr():
     assert "SEKRET" not in text
     assert "AK" not in text
     assert "***" in text
+
+
+def test_intraday_defaults_off():
+    s = _mk()
+    assert s.intraday_enabled is False
+    assert s.intraday_scan_minutes == 10
+
+
+def test_intraday_enabled_from_env(monkeypatch):
+    monkeypatch.setenv("KIS_APP_KEY", "AK")
+    monkeypatch.setenv("KIS_APP_SECRET", "SEKRET")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost/db")
+    monkeypatch.setenv("INTRADAY_ENABLED", "true")
+    monkeypatch.setenv("INTRADAY_SCAN_MINUTES", "5")
+    s = LiveSettings()
+    assert s.intraday_enabled is True
+    assert s.intraday_scan_minutes == 5

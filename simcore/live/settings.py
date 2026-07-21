@@ -17,6 +17,9 @@ class LiveSettings(BaseSettings):
     database_url: str = Field(alias="DATABASE_URL")
     test_database_url: str | None = Field(default=None, alias="TEST_DATABASE_URL")
     kis_rate_limit_per_sec: float = Field(default=10.0, alias="KIS_RATE_LIMIT_PER_SEC")
+    # 운영 서버에서 장중 자동매매(인트라데이) on/off — 기본 OFF, 코드 수정 없이 env 로만 전환.
+    intraday_enabled: bool = Field(default=False, alias="INTRADAY_ENABLED")
+    intraday_scan_minutes: int = Field(default=10, alias="INTRADAY_SCAN_MINUTES")
 
     def kis_base_url(self) -> str:
         return _PAPER if self.kis_env == "paper" else _REAL
