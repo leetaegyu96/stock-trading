@@ -11,6 +11,7 @@ from simcore.models import DailyBar, Market, SymbolSnapshot
 from simcore import signals as sigmod
 from simcore import metrics
 from simcore import data as datamod
+from simcore.signal_status import holding_signal_row
 
 
 @dataclass
@@ -102,6 +103,10 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
 
     last_close: dict[str, float] = {}
     last_snaps_by_market: dict[Market, dict[str, SymbolSnapshot]] = {}
+    # 보유 종목이 마지막 거래일의 universe 프레임에 없을 때(랭킹 이탈 등) red_score 를
+    # 0 으로 리셋하지 않고 마지막으로 스냅샷이 있었던 날의 값을 승계하기 위한 누적맵
+    # (orchestrator._prior_held_red_score 와 동일 원칙 — #7).
+    last_red_by_market: dict[Market, dict[str, int]] = {m: {} for m in md}
     equity_rows, green_counts = [], []
     for ts in all_dates:
         d = ts.date()
@@ -142,6 +147,7 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
                     green_score=gs, red_score=rs, buy_gate=gate)
                 last_close[sym] = close
                 green_counts.append(gs)             # green_score 분포 기록
+                last_red_by_market[market][sym] = rs  # 마지막 스냅 시점 red_score 누적(승계용)
             last_snaps_by_market[market] = snaps    # 마지막 거래일 값으로 매 스텝 덮어씀
             engine.evaluate_close(d, market, snaps, bearish_by_market=bearish)
         eq = engine.snapshot(last_close, fx)
@@ -208,19 +214,12 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
             })
         for sym, pos in st.portfolio.positions.items():
             snap = last_snaps_by_market.get(pos.market, {}).get(sym)
-            red_score = snap.red_score if snap is not None else 0
-            stop_px = pos.avg_price * (1 + pos.locked_stop_pct)
-            peak_gain = pos.peak_price / pos.avg_price - 1.0
-            trail_px = (pos.peak_price * (1 - config.rules.trail_pct)
-                        if peak_gain >= config.rules.trailing_top else None)
-            signal_status.append({
-                "date": last_day, "character": name, "symbol": sym,
-                "market": pos.market.value, "kind": "보유",
-                "green_score": 0, "red_score": red_score,
-                "buy_gate": False, "status": "", "block_reason": "",
-                "stop_px": stop_px, "trail_px": trail_px,
-                "close": last_close.get(sym),
-            })
+            red_score = (snap.red_score if snap is not None
+                        else last_red_by_market.get(pos.market, {}).get(sym, 0))
+            signal_status.append(holding_signal_row(
+                date=last_day, character=name, symbol=sym, market=pos.market,
+                pos=pos, red_score=red_score, close=last_close.get(sym),
+                trail_pct=config.rules.trail_pct, trailing_top=config.rules.trailing_top))
 
     return ReplayResult(trades, equity, flows_by_char, green_hist, summary,
                         positions_by_char=positions_by_char,

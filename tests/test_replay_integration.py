@@ -252,3 +252,36 @@ def test_replay_signal_status_holds_position_with_stop_px_and_candidates():
     cand_rows = [r for r in res.signal_status if r["kind"] == "후보"]
     assert cand_rows  # engine.last_candidates 기반(보유중 차단 포함)
     assert all(r["date"] == last_day for r in cand_rows)
+
+def test_replay_signal_status_carries_forward_red_score_when_last_day_snapshot_missing():
+    """#7: 보유 종목이 마지막 거래일의 universe 프레임에 없으면(랭킹 이탈 등) red_score
+    를 0 으로 리셋하지 않고, 그 종목이 마지막으로 스냅샷을 가졌던 날의 red_score 를
+    승계해야 한다(orchestrator._prior_held_red_score 와 동일 원칙, replay 쪽 회귀 재현)."""
+    import numpy as np, pandas as pd
+    from simcore.config import Config
+    from simcore.replay import DataBundle, run_replay
+    from simcore import signals as sigmod
+
+    idx = pd.bdate_range("2024-10-01", periods=200)
+    up = np.linspace(100, 400, 200)
+    vol_down = np.linspace(5000, 1000, 200)   # 상승가 + 하락거래량 → R24(거래량 감소중 상승) 지속 발화
+    bbb = pd.DataFrame({"open": up, "high": up + 2, "low": up - 2,
+                        "close": up, "volume": vol_down}, index=idx)
+    aaa = bbb.iloc[:190]                      # AAA 는 190일치만 존재 → 마지막 10일은 유니버스 이탈
+    cfg = Config()
+    bundle = DataBundle(kr={"AAA": aaa, "BBB": bbb}, us={}, fx=pd.Series(1300.0, index=idx))
+    res = run_replay(cfg, bundle, idx[100].date(), idx[-1].date())
+
+    # AAA 가 여전히 보유 중이어야 시나리오가 유효 (마지막 날 스냅 누락 + 보유 지속)
+    assert any(p["symbol"] == "AAA" for p in res.positions_by_char["국내형"])
+
+    # AAA 가 마지막으로 프레임에 있었던 날(idx[189])의 red_score 를 독립적으로 재계산
+    frame = sigmod.evaluate_frame(aaa, cfg.signals)
+    last_aaa_ts = aaa.index[-1]
+    green, red = sigmod.fired_at(frame, last_aaa_ts)
+    _, expected_red_score, _ = sigmod.snapshot_scores(green, red, cfg.scores)
+    assert expected_red_score != 0  # 시나리오 전제: 이탈 직전 red_score 가 0 이 아님
+
+    held_row = next(r for r in res.signal_status
+                    if r["kind"] == "보유" and r["character"] == "국내형" and r["symbol"] == "AAA")
+    assert held_row["red_score"] == expected_red_score  # 0 으로 리셋되지 않고 직전값 승계

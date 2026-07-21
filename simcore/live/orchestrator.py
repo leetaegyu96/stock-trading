@@ -9,6 +9,7 @@ from simcore.engine import Engine
 from simcore.models import CapitalFlow, DailyBar, Market, SymbolSnapshot
 from simcore import signals as sigmod
 from simcore import data as datamod
+from simcore.signal_status import holding_signal_row
 
 
 class Orchestrator:
@@ -122,18 +123,11 @@ class Orchestrator:
                 snap = snaps.get(sym)
                 red_score = (snap.red_score if snap is not None
                              else self._prior_held_red_score(name, sym))
-                stop_px = pos.avg_price * (1 + pos.locked_stop_pct)
-                peak_gain = pos.peak_price / pos.avg_price - 1.0
-                trail_px = (pos.peak_price * (1 - self.cfg.rules.trail_pct)
-                            if peak_gain >= self.cfg.rules.trailing_top else None)
-                rows.append({
-                    "date": d, "character": name, "symbol": sym,
-                    "market": m.value, "kind": "보유",
-                    "green_score": 0, "red_score": red_score,
-                    "buy_gate": False, "status": "", "block_reason": "",
-                    "stop_px": stop_px, "trail_px": trail_px,
-                    "close": self._last_price.get(sym),
-                })
+                rows.append(holding_signal_row(
+                    date=d, character=name, symbol=sym, market=pos.market,
+                    pos=pos, red_score=red_score, close=self._last_price.get(sym),
+                    trail_pct=self.cfg.rules.trail_pct,
+                    trailing_top=self.cfg.rules.trailing_top))
         return rows
 
     def _prior_held_red_score(self, character: str, symbol: str) -> int:
