@@ -33,7 +33,8 @@
 Phase B 다음의 큰 덩어리. 감사 §6 3단계 원문 기준:
 
 - [ ] point-in-time universe와 corporate action 검증
-- [x] walk-forward / holdout 하니스 구현 완료 (`simcore/walkforward.py`, `feature/walk-forward-validation`) — 기존 `run_replay`/`risk_metrics` 재사용한 롤링 OOS 평가(폴드별 재적합은 아직 없음, 엄밀한 WFO 아님). 실데이터로 폴드 리포트를 뽑아 국면별 일관성 검토는 남음.
+- [x] walk-forward / holdout 하니스 구현 완료 (`simcore/walkforward.py`, `feature/walk-forward-validation`) — 기존 `run_replay`/`risk_metrics` 재사용한 롤링 OOS 평가.
+- [x] **진짜 WFO(폴드별 파라미터 최적화) + 과적합확률(PBO, CSCV 경량판) 구현 완료** (이슈 #30, `generate_opt_folds`/`run_wfo`/`probability_of_backtest_overfitting`, CLI `--wfo`, `docs/trading-rules.md` §18.1). 실데이터로 폴드 리포트를 뽑아 국면별 일관성 검토는 남음. **여전히 후속**: purge/embargo·≥100 경로를 갖춘 완전 CPCV, Deflated/Probabilistic Sharpe Ratio(DSR/PSR).
 - [ ] 비용·슬리피지·미체결 스트레스 테스트
 - [ ] 신호별 ablation과 파라미터 안정성 지도
 - [ ] **paper/shadow 최소 1개월 운영** — 주문 대사·데이터 장애 통계 수집. ※ 라이브 데몬이 이제 상시 가동되므로 이 항목은 오늘부터 사실상 진행 시작. 장애(일봉 실패 등) 통계를 쌓는 관측 코드가 뒷받침되면 좋음.
