@@ -7,6 +7,7 @@
 from __future__ import annotations
 import argparse
 import time
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -45,6 +46,17 @@ def _index_provider(cache: Path):
     return load
 
 
+def _config_from_settings(settings) -> Config:
+    """LiveSettings → Config. INTRADAY_ENABLED=false(기본)면 Config() 그대로(기존 동작 100% 불변).
+    true 면 intraday_enabled/intraday_scan_minutes 를 반영한 새 Config 를 만든다."""
+    cfg = Config()
+    if settings.intraday_enabled:
+        cfg = replace(cfg, rules=replace(cfg.rules,
+                      intraday_enabled=True,
+                      intraday_scan_minutes=settings.intraday_scan_minutes))
+    return cfg
+
+
 def build_app(settings: LiveSettings):
     engine = db.make_engine(settings.database_url)
     db.create_all(engine)
@@ -52,8 +64,9 @@ def build_app(settings: LiveSettings):
     repo = Repository(sf)
     kis = KisClient(settings, DbTokenStore(sf),
                     RateLimiter(settings.kis_rate_limit_per_sec))
-    eng = Engine(Config())
-    orch = Orchestrator(eng, kis, repo, Config(), fx_provider=_fx_provider(repo),
+    cfg = _config_from_settings(settings)
+    eng = Engine(cfg)
+    orch = Orchestrator(eng, kis, repo, cfg, fx_provider=_fx_provider(repo),
                         index_provider=_index_provider(Path("data/cache")))
     return eng, kis, repo, orch
 
