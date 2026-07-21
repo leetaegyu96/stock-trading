@@ -1,6 +1,6 @@
-// 오늘의 매수후보 테이블(의사결정판, 감사 Phase B): 청/적신호 점수·매수게이트·상태·
-// 차단 사유. block_reason은 백엔드가 확정한 표시값을 그대로 렌더한다(프론트에서
-// 재계산/재해석하지 않음).
+// 오늘의 매수후보 테이블(의사결정판, 감사 Phase B): 청/적신호 점수·신뢰도·매수게이트·
+// 상태·차단 사유. block_reason은 백엔드가 확정한 표시값을 그대로 렌더한다(프론트에서
+// 재계산/재해석하지 않음). confidence(#31)는 수치 병기(퍼센트) — 색상 단독 아님.
 import type { CandidateOut } from "../types";
 import { formatPrice } from "./format";
 
@@ -27,6 +27,7 @@ export function CandidatesTable({ candidates, className }: CandidatesTableProps)
             <th className="ta-r">가격</th>
             <th className="ta-r">청신호</th>
             <th className="ta-r">적신호</th>
+            <th className="ta-r">신뢰도</th>
             <th>매수게이트</th>
             <th>상태</th>
             <th>차단 사유</th>
@@ -44,6 +45,7 @@ export function CandidatesTable({ candidates, className }: CandidatesTableProps)
                 <td className="ta-r num">{c.close === null ? "—" : formatPrice(c.market, c.close)}</td>
                 <td className="ta-r num">{c.green_score}</td>
                 <td className="ta-r num">{c.red_score}</td>
+                <td className="ta-r num">{Math.round(c.confidence * 100)}%</td>
                 <td>
                   <span className={`chip chip--${c.buy_gate ? "up" : "neutral"}`}>
                     {c.buy_gate ? "통과" : "미충족"}

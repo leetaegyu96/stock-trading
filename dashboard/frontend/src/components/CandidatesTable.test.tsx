@@ -10,6 +10,7 @@ function makeCandidate(overrides: Partial<CandidateOut>): CandidateOut {
     market: "KR",
     green_score: 3,
     red_score: 1,
+    confidence: 0.43,
     buy_gate: true,
     status: "예약",
     block_reason: "",
@@ -85,5 +86,12 @@ describe("CandidatesTable", () => {
       <CandidatesTable candidates={[makeCandidate({ close: null })]} />
     );
     expect(html).toContain("—");
+  });
+
+  it("renders confidence as a numeric percentage", () => {
+    const html = renderToStaticMarkup(
+      <CandidatesTable candidates={[makeCandidate({ confidence: 0.43 })]} />
+    );
+    expect(html).toContain("43%");
   });
 });
