@@ -4,6 +4,19 @@
 
 상세 패치노트는 `docs/patch-notes/vX.Y.Z.md` 참조.
 
+## v1.12.0 — 2026-07-21
+
+전략 검증(워크포워드 롤링 OOS) 하니스 + 장중 가드 영속(#26). 감사 3단계 첫 구현. 알고 트레이딩 벤처 리서치 반영.
+
+### Added
+- `simcore/walkforward.py`: 롤링 아웃오브샘플 검증(폴드별 TWR·MDD·Sharpe·승률 + 폴드 간 평균/표준편차·수익폴드 비율), 기존 run_replay+risk_metrics 재사용, CLI, trading-rules §18. 벤처 리서치 문서(deep-research).
+
+### Fixed / Safety
+- 장중 킬스위치·휩쏘 캡이 인메모리라 재시작 시 리셋되던 결함 → `intraday_guards` 테이블 영속·부팅 복원(#26).
+
+### 검증
+- pytest 335 passed(+15), 회귀 0. 후속(이슈): #27·#30·#31·#32, 인트라데이 운영 활성화·cttr 실서버 검증. 상세: `docs/patch-notes/v1.12.0.md`.
+
 ## v1.11.0 — 2026-07-21
 
 장중 자동매매 루프(인트라데이). 24h 라이브 페이퍼 서버가 장 시간 중 10분마다 스캔해 현재가 즉시 매수·매도. 엔진 결정 규칙 재사용(관찰≠행동), `intraday_enabled` 기본 OFF라 기존 동작·리플레이 등가성 불변.
