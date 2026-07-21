@@ -126,6 +126,7 @@ class CandidateOut(BaseModel):
     market: str
     green_score: int
     red_score: int
+    confidence: float     # 정규화 신호 강도 [0,1] = green_score / 도달가능 최대(#31, 표시 전용)
     buy_gate: bool
     status: str          # "예약" | "차단"
     block_reason: str    # "점수부족"|"게이트미충족"|"보유중"|"쿨다운"|"슬롯부족"|"현금부족"|"가격없음"|""

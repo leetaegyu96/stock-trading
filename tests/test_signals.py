@@ -206,3 +206,30 @@ def test_new_signal_scores_wired():
     gs, rs, _ = sig.snapshot_scores(("G9", "G8"), ("R20",), sc)
     assert gs == 5 + 3
     assert rs == 4
+
+
+def test_signal_confidence_bounds_and_midpoint():
+    sc = SignalScores()
+    # green: 추세10+돌파10+거래량8+모멘텀8+변동성6 = 42 (동적 계산, 하드코딩 아님)
+    green_max = sum(
+        sc.caps[cat]
+        for cat in {sc.category[c] for c in sc.category if c.startswith("G")}
+    )
+    assert green_max == 42
+    assert sig.signal_confidence(0, sc, "green") == 0.0
+    assert sig.signal_confidence(green_max, sc, "green") == 1.0
+    # buy_score_min(18) 부근 — 손계산: 18/42 = 0.4286 -> round(2) = 0.43
+    assert sig.signal_confidence(18, sc, "green") == 0.43
+    # 상한 초과분은 1.0 으로 클램프
+    assert sig.signal_confidence(green_max + 10, sc, "green") == 1.0
+    # 음수 점수는 0.0 으로 클램프
+    assert sig.signal_confidence(-5, sc, "green") == 0.0
+
+    red_max = sum(
+        sc.caps[cat]
+        for cat in {sc.category[c] for c in sc.category if c.startswith("R")}
+    )
+    assert red_max == 42
+    assert sig.signal_confidence(0, sc, "red") == 0.0
+    assert sig.signal_confidence(red_max, sc, "red") == 1.0
+    assert sig.signal_confidence(21, sc, "red") == 0.5

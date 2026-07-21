@@ -6,9 +6,13 @@ from datetime import datetime
 
 from sqlalchemy import func, select
 
+from simcore.config import Config
 from simcore.live import db
 from simcore.live.repository import Repository
 from simcore.names import display_name
+from simcore.signals import signal_confidence
+
+_SCORES = Config().scores
 
 
 def list_characters(sf) -> list[dict]:
@@ -303,6 +307,7 @@ def candidates(sf, name: str) -> list[dict]:
             "market": r["market"],
             "green_score": r["green_score"],
             "red_score": r["red_score"],
+            "confidence": signal_confidence(r["green_score"], _SCORES, "green"),
             "buy_gate": r["buy_gate"],
             "status": r["status"],
             "block_reason": r["block_reason"],

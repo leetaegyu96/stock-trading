@@ -418,6 +418,15 @@ def test_candidates_maps_signal_status_candidate_rows(sf):
     assert by_symbol["005930"]["block_reason"] == ""
     assert by_symbol["005930"]["as_of"] == date(2026, 1, 5)
     assert by_symbol["005930"]["market"] == "KR"
+
+    # confidence = signal_confidence(green_score, Config().scores, "green") — 저장된
+    # green_score 로부터의 순수 파생값(#31). 5점 종목과 1점 종목이 다른 값이어야 한다.
+    from simcore.config import Config
+    from simcore.signals import signal_confidence
+
+    cfg_scores = Config().scores
+    assert by_symbol["005930"]["confidence"] == signal_confidence(5, cfg_scores, "green")
+    assert by_symbol["000660"]["confidence"] == signal_confidence(1, cfg_scores, "green")
     assert by_symbol["005930"]["close"] == 70000.0
     # close 가 없는(None) 후보 행도 그대로 None 으로 노출되어야 한다(누락을 조용히 숨기지 않음).
     assert by_symbol["000660"]["close"] is None

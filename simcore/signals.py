@@ -143,3 +143,17 @@ def snapshot_scores(green, red, scores: SignalScores) -> tuple[int, int, bool]:
     gs, _ = score(green, scores)
     rs, _ = score(red, scores)
     return gs, rs, buy_gate_ok(green, scores)
+
+
+def signal_confidence(score: int, scores: SignalScores, side: str = "green") -> float:
+    """저장된 green_score/red_score 를 [0,1] 로 정규화(순수 표시용 파생값, read-only).
+
+    MAX 는 하드코딩하지 않고 side(코드가 "G"/"R" 로 시작)에 해당하는 카테고리들의
+    caps 합으로 매 호출마다 동적으로 계산한다(config.py 의 category/caps 가 바뀌면
+    자동 반영). 매매 판정에는 쓰이지 않는다."""
+    prefix = "G" if side == "green" else "R"
+    categories = {cat for c, cat in scores.category.items() if c.startswith(prefix)}
+    max_score = sum(scores.caps.get(cat, 0) for cat in categories)
+    if max_score <= 0:
+        return 0.0
+    return round(min(1.0, max(0.0, score / max_score)), 2)
