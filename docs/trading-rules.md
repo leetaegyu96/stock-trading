@@ -485,11 +485,19 @@ walk-forward 검증은 이 구현 범위 밖이며, 현재는 **실시간 라이
 하니스다. `simcore/walkforward.py`. 신규 의존성 없이 기존 `replay.run_replay`와
 `metrics.risk_metrics`를 그대로 재사용한다.
 
-**정직한 범위 한정(non-goal)**: 엔진 파라미터(`Config`)는 **전 폴드 공통 고정**이며 폴드별
-재적합을 하지 않는다 — 이는 엄밀한 워크포워드 최적화(WFO)가 아니라 **롤링 OOS 평가**다.
-폴드별 파라미터 최적화·CPCV·과적합확률(PBO)·Deflated Sharpe는 후속 과제로 남는다. 신호는
-인과적(과거만 참조)이라 번들 전체 히스토리를 워밍업으로 써도 lookahead가 없으며, 각 폴드의
-시뮬레이션은 test 구간에서 콜드스타트(초기자금)로 시작한다.
+**정직한 범위 한정(non-goal)**: 아래 `run_walkforward`는 엔진 파라미터(`Config`)를 **전 폴드
+공통 고정**하고 폴드별 재적합을 하지 않는다 — 이는 엄밀한 워크포워드 최적화(WFO)가 아니라
+**롤링 OOS 평가**다. 신호는 인과적(과거만 참조)이라 번들 전체 히스토리를 워밍업으로 써도
+lookahead가 없으며, 각 폴드의 시뮬레이션은 test 구간에서 콜드스타트(초기자금)로 시작한다.
+
+**진짜 WFO + 과적합확률(PBO) — 구현됨(#30)**: 폴드별 train 구간에서 파라미터를 그리드
+탐색(IS)하고, 선택된 파라미터로 test 구간을 평가(OOS)하는 진짜 워크포워드 최적화와, IS에서
+최적이던 파라미터가 OOS에서도 우수한지 폴드 이분 조합으로 검증하는 과적합확률(PBO, CSCV
+경량판)이 `simcore/walkforward.py`의 `generate_opt_folds`/`run_wfo`/
+`probability_of_backtest_overfitting`으로 구현되어 있다. 자세한 내용은 아래 "워크포워드
+최적화(WFO) + PBO" 절 참조. **여전히 후속 과제로 남는 것**: purge/embargo와 ≥100개 폴드
+분할 경로를 갖춘 완전한 CPCV(현재 PBO는 폴드 이분 조합만 쓰는 경량판), Deflated/Probabilistic
+Sharpe Ratio(DSR/PSR).
 
 **폴드 생성**(`generate_folds(start, end, test_days=63, step_days=63, warmup_days=120)`):
 `[start, end]`를 `step_days` 간격으로 타일링해 `test_days` 길이의 test 구간을 만든다. 첫
@@ -508,3 +516,30 @@ fold.test_start, fold.test_end)`를 호출해 캐릭터별 `{twr, mdd, sharpe, w
 **CLI**: `python -m simcore.walkforward --start YYYY-MM-DD --end YYYY-MM-DD [--test-days
 --step-days --warmup-days --kr-top --us-top --cache --out]` — 번들을 전체 구간으로 1회 로드
 후 폴드별·집계 표를 콘솔에 출력하고, `--out` 지정 시 마크다운 리포트로도 저장한다.
+
+### 18.1 워크포워드 최적화(WFO) + 과적합확률(PBO) — #30
+
+`--wfo` 플래그로 위 롤링 OOS 검증과 별도 모드를 켠다. 폴드는 `generate_opt_folds(start, end,
+train_days, test_days, step_days)`로 train(파라미터 탐색용)+test(OOS 평가용) 쌍으로
+타일링한다(첫 `test_start = start + train_days`, `train_start = test_start - train_days`).
+
+`run_wfo(config, bundle, folds, grid, objective="twr", character="국내형")`은 폴드마다
+① train 구간에서 `grid`(현재는 `buy_score_min` 단일 축)를 전수 탐색해 objective(`twr` 또는
+`sharpe`) 기준 최적값을 고르고(IS), ② 그 값으로 test 구간을 평가한다(OOS). 그리드값 평가 중
+`run_replay`가 `ValueError`(거래일 없음 등)를 던지면 그 값은 `-inf`로 기록하고 로그를 남긴
+뒤 계속 진행한다(그리드 전체가 실패하지 않는 한 폴드 자체는 건너뛰지 않는다).
+
+**WFO 효율**(`mean(OOS) / mean(IS-best)`)은 `is_best_perf`와 `oos_perf`가 **둘 다 유한한
+폴드만 페어링**해서 평균 낸다(`_wfo_efficiency` 순수 헬퍼) — 한쪽만 그리드 전체 실패로
+`-inf`가 된 폴드를 분자·분모에서 서로 다른 폴드 집합으로 독립 필터링하면 비율이 무의미해지기
+때문이다. 페어링된 폴드가 없거나 `mean(IS-best) == 0`이면 `float("nan")`을 반환한다(0.0이
+아님 — PBO의 "계산 불가 시 nan" 관례와 일관).
+
+**과적합확률(PBO)**은 `probability_of_backtest_overfitting(is_matrix, oos_matrix)`로
+계산한다 — López de Prado CSCV(Combinatorially Symmetric Cross-Validation)의 경량판으로,
+폴드를 두 동일 크기 그룹으로 나누는 모든 조합에서 "IS 최적 파라미터가 OOS 순위 하위 절반에
+드는 빈도"를 잰다. 폴드 수·그리드 수가 2 미만이면 `nan`.
+
+**CLI**: `python -m simcore.walkforward --start YYYY-MM-DD --end YYYY-MM-DD --wfo
+[--train-days --grid 12,14,16,18,20 --objective twr|sharpe --character 국내형 --test-days
+--step-days --kr-top --us-top --cache --out]`.
