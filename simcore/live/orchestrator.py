@@ -288,6 +288,10 @@ class Orchestrator:
             with self.repo.transaction() as s:
                 self.repo.persist_state(self.engine, session=s)
                 self.repo.append_new_trades(self.engine, session=s)
+                # 킬스위치 기준선·휩쏘 캡 카운터도 매 장중 틱마다 영속한다(#26) — 그렇지
+                # 않으면 데몬이 장중에 재시작할 때 _intraday_roll_day 가 재시작 시점
+                # equity 로 day_start_equity 를 재기준해 -5% 킬스위치가 조용히 풀린다.
+                self.repo.persist_intraday_guards(self.engine, session=s)
 
     def on_tick(self, d: date, market: str) -> None:
         m = Market(market)

@@ -5,6 +5,7 @@ write 메서드는 `session=None` 이면 자체 세션을 열고 commit(하위�
 from __future__ import annotations
 from contextlib import contextmanager
 from datetime import date, datetime
+import json
 import pandas as pd
 from sqlalchemy import delete, select
 
@@ -126,6 +127,37 @@ class Repository:
                 if st:
                     st.cooldowns[c.symbol] = [Market(c.market), c.remaining_days]
             return True
+
+    def persist_intraday_guards(self, engine: Engine, session=None) -> None:
+        """캐릭터별 장중 가드(킬스위치 기준선·휩쏘 캡 카운터)를 1행으로 upsert 한다(#26).
+        session 이 주어지면 호출자 트랜잭션(on_intraday)에 합류한다."""
+        with self._session(session) as s:
+            for name, st in engine.states.items():
+                last_sell_ts = {sym: ts.isoformat()
+                                for sym, ts in st.intraday_last_sell_ts.items()}
+                s.merge(db.IntradayGuardRow(
+                    character=name,
+                    intraday_day=st.intraday_day,
+                    day_start_equity=st.intraday_day_start_equity,
+                    buys_json=json.dumps(st.intraday_buys),
+                    sells_json=json.dumps(st.intraday_sells),
+                    last_sell_ts_json=json.dumps(last_sell_ts)))
+
+    def rehydrate_intraday_guards(self, engine: Engine) -> None:
+        """부팅 시 장중 가드를 복원한다(#26). 테이블이 비어 있으면(콜드스타트) no-op —
+        CharacterState 의 기본값(None/빈 dict)이 그대로 유지된다."""
+        with self.sf() as s:
+            for row in s.execute(select(db.IntradayGuardRow)).scalars():
+                st = engine.states.get(row.character)
+                if not st:
+                    continue
+                st.intraday_day = row.intraday_day
+                st.intraday_day_start_equity = row.day_start_equity
+                st.intraday_buys = json.loads(row.buys_json or "{}")
+                st.intraday_sells = json.loads(row.sells_json or "{}")
+                st.intraday_last_sell_ts = {
+                    sym: datetime.fromisoformat(ts)
+                    for sym, ts in json.loads(row.last_sell_ts_json or "{}").items()}
 
     def get_run_state(self, market: str):
         with self.sf() as s:
