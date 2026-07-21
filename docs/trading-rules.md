@@ -430,13 +430,16 @@ CAGR·변동성·Sharpe·Sortino·Calmar는 자산곡선(equity)의 일간수익
 `snapshot_scores`에 그대로 통과시켜 청/적신호·점수·게이트를 계산한다 — **일봉 매매와 동일한
 신호 계산 로직을 재사용**하며 별도 신호 체계를 만들지 않는다.
 
-**신규 지표(가격괴리율·지지/저항) — 배점 미편입 고지**: `simcore/indicators.py`에
-`disparity(close, period)`(괴리율 = (종가−이동평균)/이동평균)와
-`support_resistance(high, low, close, lookback)`(직전 구간 최저/최고 → 지지/저항)를
-추가했다. **정직한 한계**: 이 두 지표는 계산 함수만 존재하며, 현재 `SignalScores`/청·적신호
-목록(§3·§4)의 배점 체계에는 아직 편입되지 않았다 — 즉 장중 매수/매도 판정에 직접 반영되지
-않는다. 향후 신호로 승격하기 전까지는 계산되는 값일 뿐 판단에 쓰이지 않는다는 점을 화면·문서
-어디서도 숨기지 않는다.
+**신규 지표(가격괴리율·지지/저항) — 라이브러리 함수만 존재, 아직 어디서도 호출되지 않음**:
+`simcore/indicators.py`에 `disparity(close, period)`(괴리율 = (종가−이동평균)/이동평균)와
+`support_resistance(high, low, close, lookback)`(직전 구간 최저/최고 → 지지/저항)를 추가했다.
+**정직한 한계**: 이 두 함수는 계산 로직만 구현된 라이브러리 함수이며, `evaluate_frame`도
+그 어떤 라이브 경로(마감·장중)도 아직 이 함수들을 호출하지 않는다 — `SignalScores`/청·적신호
+목록(§3·§4) 배점에 편입되지 않은 것은 물론, 신호 계산 자체에 전혀 관여하지 않는다는 뜻이다.
+관련 설정 `intraday_disparity_period`/`intraday_sr_lookback`(`Config().rules`) 역시 **현재
+미사용(reserved)** 값으로, 어떤 계산에도 실제로 소비되지 않는다. 함수·설정 모두 향후 신호로
+승격시키기 위해 남겨둔 것(reserved)이며, 지금 시점에는 계산되지도 판단에 쓰이지도 않는다는
+점을 화면·문서 어디서도 숨기지 않는다.
 
 **체결강도(execution strength) — KR 전용, 실서버 검증 전제**: `KisClient.execution_strength
 (market, symbol)`는 KIS `inquire-price`(`FHKST01010100`) 응답의 `cttr` 필드를 매수 게이트에
