@@ -320,7 +320,11 @@ class Engine:
             eq = cur_equity.get(st.spec.name, st.intraday_day_start_equity or 0.0)
             # 1) 매도 (보유 종목 규칙 발동 시 현재가 즉시 매도)
             for sym in list(st.portfolio.positions):
-                pos = st.portfolio.positions[sym]
+                # 방어: 같은 락 구간 안이라도 이 루프 도중 포지션이 사라지는 경우(예: 향후
+                # 리팩터로 인한 재진입)에 KeyError 를 내지 않고 조용히 스킵한다.
+                pos = st.portfolio.positions.get(sym)
+                if pos is None:
+                    continue
                 if pos.market != market or sym not in snaps:
                     continue
                 s = snaps[sym]
