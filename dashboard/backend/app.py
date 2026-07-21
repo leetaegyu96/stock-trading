@@ -35,6 +35,7 @@ from dashboard.backend.schemas import (
     MarketStatusOut,
     Metrics,
     PositionOut,
+    ScanStatusOut,
     TradeOut,
     TradesPage,
 )
@@ -139,6 +140,12 @@ def list_character_cards(sf=Depends(get_sf)) -> list[CardSummary]:
 def market_status(sf=Depends(get_sf)) -> list[MarketStatusOut]:
     """시장별 데이터 기준(run_state) — as-of 표시용(P0)."""
     return [MarketStatusOut(**row) for row in queries.market_status(sf)]
+
+
+@app.get("/api/scan-status", response_model=list[ScanStatusOut])
+def scan_status(sf=Depends(get_sf)) -> list[ScanStatusOut]:
+    """시장별 장중 스캔 하트비트 — 스캔이 돌고 있는지·몇 종목 봤는지 표시용."""
+    return [ScanStatusOut(**row) for row in queries.scan_status(sf)]
 
 
 @app.get("/api/dashboard", response_model=DashboardOut)

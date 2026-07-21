@@ -291,20 +291,26 @@ class Engine:
             st.intraday_last_sell_ts = {}
             st.intraday_day_start_equity = day_equity
 
-    def _intraday_can_buy(self, st: CharacterState, symbol: str, now: datetime,
-                          cur_equity: float) -> bool:
+    def _intraday_buy_block(self, st: CharacterState, symbol: str, now: datetime,
+                            cur_equity: float) -> str | None:
+        """장중 매수 차단 사유(관찰용) — 없으면 None. `_intraday_can_buy` 와 완전히 동일한
+        순서·조건이며, bool 대신 사유 문자열을 돌려줘 의사결정판에 기록할 수 있게 한다."""
         r = self.config.rules
         if st.intraday_buys.get(symbol, 0) >= r.intraday_max_buys_per_symbol:
-            return False
+            return "장중매수캡"
         last = st.intraday_last_sell_ts.get(symbol)
         if last is not None:
             mins = (now - last).total_seconds() / 60.0
             if mins < r.intraday_reentry_cooldown_min:
-                return False
+                return "재매수쿨다운"
         start = st.intraday_day_start_equity
         if start and (cur_equity / start - 1.0) <= r.intraday_daily_loss_halt_pct:
-            return False   # 킬스위치: 당일 손실 한도 도달 → 신규 매수 중단
-        return True
+            return "킬스위치"   # 당일 손실 한도 도달 → 신규 매수 중단
+        return None
+
+    def _intraday_can_buy(self, st: CharacterState, symbol: str, now: datetime,
+                          cur_equity: float) -> bool:
+        return self._intraday_buy_block(st, symbol, now, cur_equity) is None
 
     def _intraday_can_sell(self, st: CharacterState, symbol: str) -> bool:
         return st.intraday_sells.get(symbol, 0) < self.config.rules.intraday_max_sells_per_symbol
@@ -351,20 +357,29 @@ class Engine:
                     if sym not in st.portfolio.positions:
                         st.intraday_last_sell_ts[sym] = now
             # 2) 매수 (미보유 종목이 게이트+조건 충족 시 현재가 즉시 매수)
+            #    관찰 전용: 종목별 판정 결과(status/block_reason)를 last_candidates 에 기록한다.
+            #    아래 분기는 매매 로직을 바꾸지 않는다(기록만 추가) — evaluate_close 와 동일 원칙.
+            #    ※ slots<=0 은 원래 break 였으나, 남은 후보 전부에 "슬롯부족"을 기록하려고
+            #      continue 로 바꾼다. 매수가 슬롯을 늘리는 경로는 없어 체결 결과는 동일하다.
             held = set(st.portfolio.positions)
             cands = sorted(
                 (s for sym, s in snaps.items()
                  if sym not in held and sym not in st.cooldowns
                  and s.green_score >= r.buy_score_min and s.buy_gate),
                 key=lambda s: (-s.green_score, -s.change_pct, -s.volume))
+            decided: dict[str, tuple[str, str]] = {}   # sym -> (status, block_reason)
             for s in cands:
                 slots = r.max_positions - len(st.portfolio.positions)
                 if slots <= 0:
-                    break
+                    decided[s.symbol] = ("차단", "슬롯부족")
+                    continue
                 strength = strengths.get(s.symbol)
                 if strength is not None and strength < r.intraday_strength_buy_min:
+                    decided[s.symbol] = ("차단", "체결강도미달")
                     continue
-                if not self._intraday_can_buy(st, s.symbol, now, eq):
+                block = self._intraday_buy_block(st, s.symbol, now, eq)
+                if block is not None:
+                    decided[s.symbol] = ("차단", block)
                     continue
                 b = PendingBuy(s.symbol, market, len(s.green), s.green_score, s.green,
                                s.change_pct, s.volume,
@@ -372,6 +387,28 @@ class Engine:
                                trigger_rule=f"장중 게이트+{s.green_score}점")
                 if self._buy(st, d, b, s.close, fx_rate, slots):
                     st.intraday_buys[s.symbol] = st.intraday_buys.get(s.symbol, 0) + 1
+                    decided[s.symbol] = ("매수", "")
+                else:
+                    decided[s.symbol] = ("차단", "현금부족")
+            # 이 시장 스냅 전 종목에 대해 후보 평가 기록(held/cooldown/점수/게이트는 여기서 분류)
+            cands_eval: list[CandidateEval] = []
+            for sym, s in snaps.items():
+                if sym in decided:
+                    status, reason = decided[sym]
+                elif sym in held:
+                    status, reason = "차단", "보유중"
+                elif sym in st.cooldowns:
+                    status, reason = "차단", "쿨다운"
+                elif s.green_score < r.buy_score_min:
+                    status, reason = "차단", "점수부족"
+                elif not s.buy_gate:
+                    status, reason = "차단", "게이트미충족"
+                else:
+                    status, reason = "차단", ""   # 도달 불가(후보였다면 decided에 있음) 안전 폴백
+                cands_eval.append(CandidateEval(sym, market, s.green_score, s.red_score,
+                                                s.buy_gate, status, reason))
+            kept = [c for c in self.last_candidates.get(st.spec.name, []) if c.market != market]
+            self.last_candidates[st.spec.name] = kept + cands_eval
 
     # ---- 장중: 트레일링 스탑 (리플레이 = 당일 OHLC 근사, 라이브 = 현재가 bar) ----
     def check_stops(self, d: Date, market: Market, bars: dict[str, DailyBar],

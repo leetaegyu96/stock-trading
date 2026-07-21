@@ -221,6 +221,101 @@ def test_intraday_partial_sell_reduces_quantity_without_reentry_cooldown():
     assert last_trade.quantity == expected_sold_qty
 
 
+def _evals(eng, name):
+    """이번 스캔 last_candidates 를 symbol -> CandidateEval 로."""
+    return {c.symbol: c for c in eng.last_candidates.get(name, [])}
+
+
+def test_intraday_records_buy_and_score_and_gate_reasons():
+    eng = _fresh()
+    name = "국내형"
+    st = eng.states[name]
+    now = datetime(2026, 7, 20, 10, 0, 0)
+    rmin = eng.config.rules.buy_score_min
+    snaps = {
+        "BUY1": _buy_snap("BUY1", rmin + 5),                 # 매수 체결
+        "LOW": _buy_snap("LOW", rmin - 1),                   # 점수부족
+        "NOGATE": SymbolSnapshot("NOGATE", Market.KR, green=("G1",) * 3, red=(),
+                                 close=10000.0, change_pct=0.01, volume=1000.0,
+                                 green_score=rmin + 5, red_score=0, buy_gate=False),
+    }
+    eng.evaluate_intraday(date(2026, 7, 20), Market.KR, snaps,
+                          {k: None for k in snaps}, 1300.0, now,
+                          {name: 1e8}, {name: 1e8})
+    ev = _evals(eng, name)
+    assert ev["BUY1"].status == "매수" and ev["BUY1"].block_reason == ""
+    assert ev["LOW"].status == "차단" and ev["LOW"].block_reason == "점수부족"
+    assert ev["NOGATE"].status == "차단" and ev["NOGATE"].block_reason == "게이트미충족"
+    assert "BUY1" in st.portfolio.positions           # 체결 결과 불변
+
+
+def test_intraday_records_strength_reason():
+    eng = _fresh()
+    name = "국내형"
+    now = datetime(2026, 7, 20, 10, 0, 0)
+    rmin = eng.config.rules.buy_score_min
+    snaps = {"WEAK": _buy_snap("WEAK", rmin + 5)}
+    eng.evaluate_intraday(date(2026, 7, 20), Market.KR, snaps, {"WEAK": 50.0},
+                          1300.0, now, {name: 1e8}, {name: 1e8})
+    ev = _evals(eng, name)
+    assert ev["WEAK"].status == "차단" and ev["WEAK"].block_reason == "체결강도미달"
+    assert "WEAK" not in eng.states[name].portfolio.positions
+
+
+def test_intraday_records_held_and_cooldown_reasons():
+    eng = _fresh()
+    name = "국내형"
+    st = eng.states[name]
+    now = datetime(2026, 7, 20, 10, 0, 0)
+    rmin = eng.config.rules.buy_score_min
+    eng.evaluate_intraday(date(2026, 7, 20), Market.KR,
+                          {"HELD": _buy_snap("HELD", rmin + 5)}, {"HELD": None},
+                          1300.0, now, {name: 1e8}, {name: 1e8})
+    assert "HELD" in st.portfolio.positions
+    st.cooldowns["COOL"] = [Market.KR, 3]
+    snaps = {"HELD": _buy_snap("HELD", rmin + 5), "COOL": _buy_snap("COOL", rmin + 5)}
+    eng.evaluate_intraday(date(2026, 7, 20), Market.KR, snaps,
+                          {"HELD": None, "COOL": None}, 1300.0,
+                          now + timedelta(minutes=10), {name: 1e8}, {name: 1e8})
+    ev = _evals(eng, name)
+    assert ev["HELD"].block_reason == "보유중"
+    assert ev["COOL"].block_reason == "쿨다운"
+
+
+def test_intraday_records_killswitch_reason():
+    eng = _fresh()
+    name = "국내형"
+    st = eng.states[name]
+    now = datetime(2026, 7, 20, 13, 0, 0)
+    rmin = eng.config.rules.buy_score_min
+    snaps = {"K": _buy_snap("K", rmin + 5)}
+    # 당일 -6% (킬스위치 임계 -5% 초과)
+    eng.evaluate_intraday(date(2026, 7, 20), Market.KR, snaps, {"K": None},
+                          1300.0, now, {name: 1e8}, {name: 0.94e8})
+    ev = _evals(eng, name)
+    assert ev["K"].status == "차단" and ev["K"].block_reason == "킬스위치"
+    assert "K" not in st.portfolio.positions
+
+
+def test_intraday_slot_contention_records_slot_full_reason():
+    eng = _fresh()
+    name = "국내형"
+    st = eng.states[name]
+    now = datetime(2026, 7, 20, 10, 0, 0)
+    min_score = eng.config.rules.buy_score_min
+    syms = [f"S{i}" for i in range(7)]
+    scores = {s: min_score + i * 3 for i, s in enumerate(syms)}
+    snaps = {s: _buy_snap(s, scores[s]) for s in syms}
+    eng.evaluate_intraday(date(2026, 7, 20), Market.KR, snaps,
+                          {s: None for s in syms}, 1300.0, now,
+                          {name: 1e8}, {name: 1e8})
+    ev = _evals(eng, name)
+    mp = eng.config.rules.max_positions
+    assert len(st.portfolio.positions) == mp            # 체결 결과 불변
+    for s in set(syms) - set(st.portfolio.positions):
+        assert ev[s].block_reason == "슬롯부족"
+
+
 def test_intraday_slot_contention_picks_top_n_by_priority():
     eng = _fresh()
     name = "국내형"

@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { ApiError, getCharacters, getDashboard } from "../api";
 import { useCardsSocket } from "../ws";
 import { DecisionBoard } from "../components/DecisionBoard";
+import { ScanStatusStrip } from "../components/ScanStatusStrip";
 import { formatKrw } from "../components/format";
 import type { CardSummary, Dashboard } from "../types";
 import "../components/theme.css";
@@ -96,10 +97,12 @@ export function Main() {
             className={`topbar__live-dot${connected ? " topbar__live-dot--on" : ""}`}
             aria-hidden="true"
           />
-          {connected ? "실시간" : "오프라인"}
-          {lastUpdated && ` · ${formatTime(lastUpdated)}`}
+          {connected ? "연결됨" : "오프라인"}
+          {lastUpdated && ` · 카드 갱신 ${formatTime(lastUpdated)}`}
         </span>
       </header>
+
+      <ScanStatusStrip asOf={lastUpdated} />
 
       {error && cards === null && (
         <div className="page-state page-state--error">

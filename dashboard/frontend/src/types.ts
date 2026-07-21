@@ -244,3 +244,16 @@ export interface MarketStatus {
   last_close_date: string | null;
   last_open_date: string | null;
 }
+
+/** 장중 스캔 하트비트(intraday_scan 미러) — 스캔 상태 스트립용. */
+export interface ScanStatus {
+  market: string;
+  ts: string;            // 마지막 스캔 시각(시장 벽시계, ISO)
+  universe_size: number; // 시도 종목 수
+  evaluated: number;     // 신호계산 성공 종목 수
+  failed: number;        // 조회/계산 실패 스킵 수
+  gate_pass: number;     // 매수게이트 통과 종목 수
+  buys: number;          // 이번 스캔 매수 건수
+  sells: number;         // 이번 스캔 매도 건수
+  scan_minutes: number;  // 스캔 주기(분)
+}
