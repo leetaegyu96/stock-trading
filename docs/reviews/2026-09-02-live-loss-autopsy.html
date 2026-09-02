@@ -1,0 +1,682 @@
+<title>적신호 11점의 함정</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  color-scheme: light;
+  --page:#EEF1F5;
+  --surface:#FAFBFC;
+  --surface-2:#F2F5F8;
+  --ink:#141920;
+  --ink-2:#48535F;
+  --ink-3:#78838F;
+  --rule:#D3D9E1;
+  --rule-soft:#E3E8ED;
+  --jeok:#C2352C;          /* 적 — 적신호 · 적자 */
+  --jeok-soft:#F6E4E2;
+  --cheong:#1D6FA8;        /* 청 — 청신호 */
+  --cheong-soft:#E2EDF5;
+  --heuk:#15251C;          /* 흑 — 흑자 */
+  --shadow:0 1px 2px rgba(20,25,32,.06), 0 6px 18px -12px rgba(20,25,32,.18);
+  --serif:"Gowun Batang", "Nanum Myeongjo", Georgia, serif;
+  --sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --mono:"IBM Plex Mono","D2Coding",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --page:#101418;
+    --surface:#171C22;
+    --surface-2:#1D242B;
+    --ink:#E7ECF2;
+    --ink-2:#A5B0BC;
+    --ink-3:#79848F;
+    --rule:#2B333C;
+    --rule-soft:#232A32;
+    --jeok:#D9564A;
+    --jeok-soft:#33201F;
+    --cheong:#4A93C8;
+    --cheong-soft:#16252F;
+    --heuk:#CFE3D6;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px -12px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --page:#101418;
+  --surface:#171C22;
+  --surface-2:#1D242B;
+  --ink:#E7ECF2;
+  --ink-2:#A5B0BC;
+  --ink-3:#79848F;
+  --rule:#2B333C;
+  --rule-soft:#232A32;
+  --jeok:#D9564A;
+  --jeok-soft:#33201F;
+  --cheong:#4A93C8;
+  --cheong-soft:#16252F;
+  --heuk:#CFE3D6;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px -12px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--page); color:var(--ink);
+  font-family:var(--sans); font-weight:400; font-size:16px; line-height:1.75;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px; margin:0 auto; padding:0 28px 96px;}
+.col{max-width:660px;}
+p{margin:0 0 1.05em; color:var(--ink-2);}
+p strong{color:var(--ink); font-weight:600;}
+a{color:var(--cheong)}
+h1,h2,h3{text-wrap:balance; margin:0; color:var(--ink);}
+em{font-style:normal; color:var(--jeok); font-weight:600;}
+
+/* ── masthead ─────────────────────────────── */
+.masthead{padding:72px 0 40px; border-bottom:2px solid var(--ink);}
+.kicker{
+  font-family:var(--mono); font-size:11.5px; font-weight:500; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--jeok); margin-bottom:22px;
+}
+h1{
+  font-family:var(--serif); font-weight:700; font-size:clamp(40px,7vw,68px);
+  line-height:1.06; letter-spacing:-.02em;
+}
+.dek{
+  font-family:var(--serif); font-size:clamp(17px,2.2vw,20px); line-height:1.6;
+  color:var(--ink-2); margin:20px 0 0; max-width:620px;
+}
+.byline{
+  display:flex; flex-wrap:wrap; gap:8px 22px; margin-top:28px;
+  font-family:var(--mono); font-size:11.5px; color:var(--ink-3); letter-spacing:.03em;
+}
+.byline span{white-space:nowrap}
+
+/* ── sections ─────────────────────────────── */
+section{padding:56px 0 0;}
+.eyebrow{
+  display:flex; align-items:baseline; gap:14px; margin-bottom:14px;
+  font-family:var(--mono); font-size:11.5px; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--ink-3);
+}
+.eyebrow b{color:var(--jeok); font-weight:600;}
+h2{font-family:var(--serif); font-weight:700; font-size:clamp(26px,3.6vw,36px); line-height:1.24; margin-bottom:20px;}
+h3{font-size:16.5px; font-weight:600; letter-spacing:-.005em; margin:36px 0 10px;}
+
+/* ── ledger / accounts ────────────────────── */
+.accounts{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:2px;
+  background:var(--rule); border:1px solid var(--rule); margin:34px 0 0;
+}
+.acct{background:var(--surface); padding:22px 22px 16px;}
+.acct .nm{font-family:var(--mono); font-size:12px; letter-spacing:.08em; color:var(--ink-3);}
+.acct .big{
+  font-family:var(--mono); font-weight:600; font-size:34px; line-height:1.1;
+  letter-spacing:-.03em; color:var(--jeok); margin:8px 0 2px;
+  font-variant-numeric:tabular-nums;
+}
+.acct .sub{font-family:var(--mono); font-size:12.5px; color:var(--ink-3); font-variant-numeric:tabular-nums;}
+.acct svg{display:block; width:100%; height:52px; margin-top:14px;}
+
+/* ── verdict ──────────────────────────────── */
+.verdict{
+  margin:34px 0 0; padding:26px 28px; background:var(--surface);
+  border-left:3px solid var(--jeok); box-shadow:var(--shadow);
+}
+.verdict p:last-child{margin-bottom:0}
+.verdict p{font-size:17px; line-height:1.72;}
+
+/* ── figure ───────────────────────────────── */
+figure{margin:34px 0 0; padding:0;}
+.fig-body{background:var(--surface); border:1px solid var(--rule); padding:26px 26px 20px; overflow-x:auto;}
+figcaption{
+  margin-top:10px; font-size:13px; line-height:1.62; color:var(--ink-3);
+  font-family:var(--sans); max-width:660px;
+}
+.fig-title{font-size:14px; font-weight:600; color:var(--ink); margin-bottom:4px;}
+.fig-note{font-size:12.5px; color:var(--ink-3); margin-bottom:20px; font-family:var(--mono);}
+.legend{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:18px; font-size:12.5px; color:var(--ink-2); font-family:var(--mono);}
+.legend i{display:inline-block; width:11px; height:11px; border-radius:2px; margin-right:6px; vertical-align:-1px;}
+
+/* ── chain ────────────────────────────────── */
+.chain{margin:30px 0 0; border-top:1px solid var(--rule);}
+.link{display:grid; grid-template-columns:56px 1fr; gap:0 22px; padding:26px 0; border-bottom:1px solid var(--rule);}
+.link .n{
+  font-family:var(--mono); font-size:12px; font-weight:600; color:var(--jeok);
+  letter-spacing:.1em; padding-top:5px;
+}
+.link h3{margin:0 0 8px; font-size:17.5px;}
+.link p{margin:0 0 .7em; font-size:15px;}
+.link p:last-child{margin-bottom:0}
+
+/* ── code chips ───────────────────────────── */
+code{
+  font-family:var(--mono); font-size:.88em; background:var(--surface-2);
+  border:1px solid var(--rule-soft); border-radius:3px; padding:1px 5px; color:var(--ink);
+}
+code.r{color:var(--jeok); background:var(--jeok-soft); border-color:transparent;}
+code.g{color:var(--cheong); background:var(--cheong-soft); border-color:transparent;}
+
+/* ── tables ───────────────────────────────── */
+.tw{overflow-x:auto; margin:26px 0 0; border:1px solid var(--rule); background:var(--surface);}
+table{border-collapse:collapse; width:100%; font-size:13.5px; min-width:520px;}
+caption{
+  text-align:left; padding:16px 20px 0; font-size:14px; font-weight:600; color:var(--ink);
+}
+caption span{display:block; font-family:var(--mono); font-size:12px; font-weight:400; color:var(--ink-3); margin-top:3px;}
+th,td{padding:9px 20px; text-align:right; border-bottom:1px solid var(--rule-soft);}
+th:first-child,td:first-child{text-align:left;}
+thead th{
+  font-family:var(--mono); font-size:11px; font-weight:500; letter-spacing:.07em;
+  text-transform:uppercase; color:var(--ink-3); border-bottom:1px solid var(--rule);
+  padding-top:14px; white-space:nowrap;
+}
+tbody tr:last-child td{border-bottom:none}
+td{font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2); white-space:nowrap;}
+td:first-child{font-family:var(--sans); color:var(--ink); white-space:normal;}
+.neg{color:var(--jeok); font-weight:500;}
+.pos{color:var(--heuk); font-weight:500;}
+tr.hi td{background:var(--jeok-soft);}
+tr.hi td:first-child{font-weight:600;}
+tr.ok td{background:var(--cheong-soft);}
+
+/* ── trade ledger ─────────────────────────── */
+.trace{
+  margin:26px 0 0; background:var(--surface); border:1px solid var(--rule);
+  font-family:var(--mono); font-size:13px; overflow-x:auto;
+}
+.trace-h{
+  padding:14px 20px 12px; border-bottom:1px solid var(--rule);
+  font-size:13.5px; font-weight:600; color:var(--ink); font-family:var(--sans);
+}
+.trace-h span{font-family:var(--mono); font-size:11.5px; font-weight:400; color:var(--ink-3); display:block; margin-top:2px;}
+.row{
+  display:grid; grid-template-columns:88px 46px 92px 96px 1fr 116px;
+  gap:14px; padding:9px 20px; border-bottom:1px solid var(--rule-soft);
+  align-items:baseline; white-space:nowrap; min-width:640px;
+  font-variant-numeric:tabular-nums; color:var(--ink-2);
+}
+.row:last-child{border-bottom:none}
+.row .b{color:var(--cheong); font-weight:600;}
+.row .s{color:var(--jeok); font-weight:600;}
+.row .amt{text-align:right; color:var(--jeok); font-weight:500;}
+.row .sig{color:var(--ink-3); font-size:12px; overflow:hidden; text-overflow:ellipsis;}
+.gap{
+  padding:7px 20px; background:var(--surface-2); color:var(--ink-3);
+  font-size:11.5px; letter-spacing:.05em; border-bottom:1px solid var(--rule-soft);
+  min-width:640px;
+}
+
+/* ── prescription ─────────────────────────── */
+.rx{margin:30px 0 0; display:flex; flex-direction:column; gap:2px; background:var(--rule); border:1px solid var(--rule);}
+.rx-item{background:var(--surface); padding:22px 24px; display:grid; grid-template-columns:1fr; gap:6px;}
+.rx-top{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;}
+.rx-top h3{margin:0; font-size:16.5px;}
+.tag{
+  font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.1em;
+  text-transform:uppercase; padding:2.5px 8px; border-radius:2px; white-space:nowrap;
+}
+.tag.v{background:var(--cheong-soft); color:var(--cheong);}
+.tag.u{background:var(--surface-2); color:var(--ink-3); border:1px solid var(--rule);}
+.tag.now{background:var(--jeok); color:#fff;}
+.rx-item p{margin:0; font-size:14.5px; line-height:1.68;}
+.rx-item .how{
+  font-family:var(--mono); font-size:12.5px; color:var(--ink-3); margin-top:4px;
+  padding-top:10px; border-top:1px dashed var(--rule); line-height:1.6; word-break:break-all;
+}
+
+.caveat{
+  margin:34px 0 0; padding:22px 24px; border:1px solid var(--rule);
+  background:var(--surface-2);
+}
+.caveat h3{margin:0 0 10px; font-size:15px;}
+.caveat ul{margin:0; padding-left:19px; color:var(--ink-2); font-size:14px; line-height:1.72;}
+.caveat li{margin-bottom:6px;}
+.caveat li:last-child{margin-bottom:0}
+
+footer{
+  margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
+  font-family:var(--mono); font-size:11.5px; color:var(--ink-3); line-height:1.8;
+}
+@media (max-width:640px){
+  .wrap{padding:0 18px 72px}
+  .link{grid-template-columns:1fr; gap:6px}
+  .link .n{padding-top:0}
+}
+@media (prefers-reduced-motion:no-preference){
+  .acct .dl{stroke-dasharray:1;stroke-dashoffset:0}
+}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <div class="kicker">페이퍼 트레이딩 사후분석 · simcore v1.15.1</div>
+  <h1>적신호 11점의<br>함정</h1>
+  <p class="dek">6주간 세 계좌 모두 손실로 끝났다. 원인은 적신호가 예민해서가 아니다. <strong>매수 조건과 매도 조건이 “오늘 하루의 방향”이라는 같은 축을 정반대로 쓰고 있고, 매도 문턱이 매수 문턱의 절반</strong>이기 때문이다. 장중 10분 스캔이 그 비대칭을 하루에 39번씩 반복 적용했다.</p>
+  <div class="byline">
+    <span>2026-07-21 → 09-02 (30 거래일)</span>
+    <span>거래 417건 · 매수 105 / 매도 312</span>
+    <span>KIS 모의투자 · 계좌당 1억원</span>
+  </div>
+</header>
+
+<section>
+  <div class="eyebrow"><b>결과</b><span>세 계좌 전부 손실 · 회복 없이 단조 하락</span></div>
+
+  <div class="accounts">
+    <div class="acct">
+      <div class="nm">국내형 · KR</div>
+      <div class="big">−3.67%</div>
+      <div class="sub">96,331,329원 · MDD −6.76%</div>
+      <svg viewBox="0 0 240 52" role="img" aria-label="국내형 자산곡선: 1억에서 9,633만원으로 하락">
+        <line x1="3" y1="9.2" x2="237" y2="9.2" stroke="var(--rule)" stroke-width="1" stroke-dasharray="2 3"/>
+        <path fill="none" stroke="var(--jeok)" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"
+          d="M3.0,9.2 L9.3,9.2 L15.6,7.0 L22.0,7.0 L28.3,11.6 L34.6,9.1 L40.9,9.1 L47.3,15.0 L53.6,21.4 L59.9,21.4 L66.2,21.7 L72.6,23.4 L78.9,22.6 L85.2,21.0 L91.5,19.4 L97.9,15.9 L104.2,15.9 L110.5,20.2 L116.8,16.8 L123.2,16.8 L129.5,20.9 L135.8,20.9 L142.1,20.9 L148.5,20.9 L154.8,20.9 L161.1,21.6 L167.4,23.5 L173.8,26.3 L180.1,26.3 L186.4,26.4 L192.7,23.9 L199.1,23.2 L205.4,23.2 L211.7,20.5 L218.0,20.5 L224.4,24.0 L230.7,19.9 L237.0,19.9"/>
+        <circle cx="237" cy="19.9" r="2.6" fill="var(--jeok)"/>
+      </svg>
+    </div>
+    <div class="acct">
+      <div class="nm">범용형 · KR+US</div>
+      <div class="big">−11.74%</div>
+      <div class="sub">88,257,659원 · MDD −12.42%</div>
+      <svg viewBox="0 0 240 52" role="img" aria-label="범용형 자산곡선: 1억에서 8,826만원으로 하락">
+        <line x1="3" y1="9.2" x2="237" y2="9.2" stroke="var(--rule)" stroke-width="1" stroke-dasharray="2 3"/>
+        <path fill="none" stroke="var(--jeok)" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"
+          d="M3.0,9.2 L9.3,8.8 L15.6,8.5 L22.0,8.4 L28.3,12.6 L34.6,12.6 L40.9,16.2 L47.3,19.6 L53.6,22.8 L59.9,24.5 L66.2,27.6 L72.6,27.3 L78.9,25.7 L85.2,24.4 L91.5,23.2 L97.9,22.6 L104.2,24.0 L110.5,24.6 L116.8,17.3 L123.2,21.4 L129.5,24.4 L135.8,13.5 L142.1,14.7 L148.5,14.9 L154.8,20.9 L161.1,20.0 L167.4,19.8 L173.8,26.5 L180.1,25.3 L186.4,26.2 L192.7,27.4 L199.1,29.7 L205.4,36.9 L211.7,42.1 L218.0,41.3 L224.4,43.7 L230.7,42.7 L237.0,43.2"/>
+        <circle cx="237" cy="43.2" r="2.6" fill="var(--jeok)"/>
+      </svg>
+    </div>
+    <div class="acct">
+      <div class="nm">해외형 · US</div>
+      <div class="big">−12.30%</div>
+      <div class="sub">87,700,758원 · MDD −12.95%</div>
+      <svg viewBox="0 0 240 52" role="img" aria-label="해외형 자산곡선: 1억에서 8,770만원으로 하락">
+        <line x1="3" y1="9.2" x2="237" y2="9.2" stroke="var(--rule)" stroke-width="1" stroke-dasharray="2 3"/>
+        <path fill="none" stroke="var(--jeok)" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"
+          d="M3.0,9.5 L9.3,8.4 L15.6,8.8 L22.0,8.7 L28.3,9.9 L34.6,12.4 L40.9,12.6 L47.3,12.8 L53.6,16.0 L59.9,19.7 L66.2,25.6 L72.6,24.0 L78.9,23.6 L85.2,23.6 L91.5,23.1 L97.9,23.0 L104.2,24.0 L110.5,25.1 L116.8,21.7 L123.2,24.2 L129.5,26.1 L135.8,19.4 L142.1,20.3 L148.5,20.5 L154.8,22.5 L161.1,21.0 L167.4,19.1 L173.8,27.2 L180.1,26.8 L186.4,27.6 L192.7,29.4 L199.1,32.0 L205.4,36.5 L211.7,44.6 L218.0,43.8 L224.4,45.0 L230.7,44.6 L237.0,44.8"/>
+        <circle cx="237" cy="44.8" r="2.6" fill="var(--jeok)"/>
+      </svg>
+    </div>
+  </div>
+
+  <p style="font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:10px 0 0">세 스파크라인은 공통 축(8,764만 ~ 1억 77만원) · 점선은 원금 1억원 · 38개 평가시점</p>
+
+  <div class="verdict col">
+    <p><strong>당신의 가설 “떨어질 때 판다 → 반복 → 손실”은 데이터로 확인된다.</strong> 다만 세 단계 각각이 서로 다른 원인에서 나온다. “떨어질 때 판다”는 점수표 설계의 문제, “반복”은 부분매도 연쇄와 2일 쿨다운의 문제, 그리고 이 둘을 하루 39번으로 증폭시킨 것은 <em>한 번도 백테스트된 적 없는 장중 스캔 경로</em>다.</p>
+    <p>실제로 KR 매도 43건 <strong>전부</strong>가 장중 경로였고, 백테스트가 검증한 유일한 경로인 일봉 종가 매도는 US에서 30건뿐인데 그 30건은 <strong>+224달러 흑자</strong>였다.</p>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow"><b>근본 원인</b><span>매수선 18점 · 매도선 11점 — 같은 42점 만점 위에서</span></div>
+  <h2 class="col">사는 것은 사건이고,<br>파는 것은 상태다</h2>
+  <div class="col">
+    <p>청신호와 적신호는 각각 42점 만점이다. 그런데 <strong>전량매도는 11점(26%)이면 발동하고, 매수는 18점(43%)에 더해 추세·돌파·거래량 세 관문을 모두 통과해야 한다.</strong> 문턱만 비대칭인 게 아니다. 무엇이 점수를 채우는지가 결정적이다.</p>
+    <p>적신호 상위 다섯 개 <code class="r">R13</code> <code class="r">R2</code> <code class="r">R12</code> <code class="r">R4</code> <code class="r">R1</code>은 전부 48~50%의 날에 켜진다. 이 중 넷(<code class="r">R1</code> 데드크로스, <code class="r">R2</code> 20일선 아래, <code class="r">R4</code> MACD 데드크로스, <code class="r">R12</code> 하락 우위)은 <strong>“주가가 하락 추세다”라는 하나의 사실을 네 가지로 말한 동어반복</strong>이고, 전부 ‘추세’ 카테고리(상한 10점)에 들어간다. 즉 <strong>20일선이 깨지는 순간 둘만 켜져도 추세 10점이 자동으로 만점</strong>이 된다.</p>
+    <p>남은 1점은 <code class="r">R13</code>(매집 하락)이 채운다. <code class="r">R13</code>은 OBV 비교 기간이 <code>1</code>이라 실질적으로 <strong>“오늘 종가가 어제보다 낮다”</strong>는 뜻이고 4점이다. 10 + 4 = 14점 → 전량매도. <em>하락 추세에서 하루 내리면, 다른 어떤 신호도 필요 없이 전량 청산된다.</em></p>
+  </div>
+
+  <figure>
+    <div class="fig-body">
+      <div class="fig-title">42점 만점 위의 매수선과 매도선</div>
+      <div class="fig-note">유니버스 3,278 종목일 (2026-06-17 ~ 09-01, KR 34 · US 30종목)</div>
+      <div class="legend">
+        <span><i style="background:var(--jeok)"></i>적신호 — 매도 트리거</span>
+        <span><i style="background:var(--cheong)"></i>청신호 — 매수 트리거</span>
+      </div>
+      <svg viewBox="0 0 700 250" width="700" style="max-width:100%;height:auto" role="img"
+           aria-label="0~42점 척도. 적신호 평균 12.1점은 전량매도선 11점을 이미 넘고, 청신호 평균 10.2점은 매수선 18점에 못 미친다.">
+        <!-- axis -->
+        <g font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--ink-3)">
+          <line x1="60" y1="205" x2="660" y2="205" stroke="var(--rule)" stroke-width="1"/>
+          <g text-anchor="middle">
+            <line x1="60"  y1="205" x2="60"  y2="211" stroke="var(--rule)"/><text x="60"  y="226">0</text>
+            <line x1="203" y1="205" x2="203" y2="211" stroke="var(--rule)"/><text x="203" y="226">10</text>
+            <line x1="346" y1="205" x2="346" y2="211" stroke="var(--rule)"/><text x="346" y="226">20</text>
+            <line x1="489" y1="205" x2="489" y2="211" stroke="var(--rule)"/><text x="489" y="226">30</text>
+            <line x1="632" y1="205" x2="632" y2="211" stroke="var(--rule)"/><text x="632" y="226">40</text>
+          </g>
+          <text x="360" y="245" text-anchor="middle" fill="var(--ink-3)">신호 총점</text>
+        </g>
+
+        <!-- 전량매도선 11 -->
+        <line x1="217" y1="34" x2="217" y2="205" stroke="var(--jeok)" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <text x="222" y="30" font-family="IBM Plex Mono, monospace" font-size="11.5" font-weight="600" fill="var(--jeok)">전량매도 11</text>
+        <!-- 부분매도선 9 -->
+        <line x1="189" y1="52" x2="189" y2="205" stroke="var(--jeok)" stroke-width="1" stroke-dasharray="2 3" opacity=".62"/>
+        <text x="185" y="48" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--jeok)" opacity=".85">부분매도 9</text>
+        <!-- 매수선 18 -->
+        <line x1="317" y1="34" x2="317" y2="205" stroke="var(--cheong)" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <text x="322" y="30" font-family="IBM Plex Mono, monospace" font-size="11.5" font-weight="600" fill="var(--cheong)">매수 18 + 3관문</text>
+
+        <!-- 적신호 bar -->
+        <text x="52" y="98" text-anchor="end" font-family="IBM Plex Sans KR, sans-serif" font-size="12.5" font-weight="600" fill="var(--ink)">적신호</text>
+        <text x="52" y="114" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="var(--ink-3)">평균 12.1</text>
+        <rect x="60" y="80" width="173" height="26" rx="3" fill="var(--jeok)" opacity=".22"/>
+        <rect x="60" y="80" width="173" height="26" rx="3" fill="none" stroke="var(--jeok)" stroke-width="1" opacity=".5"/>
+        <circle cx="233" cy="93" r="5.5" fill="var(--jeok)"/>
+        <text x="246" y="97" font-family="IBM Plex Mono, monospace" font-size="12" font-weight="600" fill="var(--jeok)">12.1</text>
+        <text x="340" y="97" font-family="IBM Plex Sans KR, sans-serif" font-size="12.5" fill="var(--ink-2)">평균이 이미 전량매도선 위에 있다</text>
+
+        <!-- 청신호 bar -->
+        <text x="52" y="152" text-anchor="end" font-family="IBM Plex Sans KR, sans-serif" font-size="12.5" font-weight="600" fill="var(--ink)">청신호</text>
+        <text x="52" y="168" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="var(--ink-3)">평균 10.2</text>
+        <rect x="60" y="134" width="146" height="26" rx="3" fill="var(--cheong)" opacity=".22"/>
+        <rect x="60" y="134" width="146" height="26" rx="3" fill="none" stroke="var(--cheong)" stroke-width="1" opacity=".5"/>
+        <circle cx="206" cy="147" r="5.5" fill="var(--cheong)"/>
+        <text x="219" y="151" font-family="IBM Plex Mono, monospace" font-size="12" font-weight="600" fill="var(--cheong)">10.2</text>
+        <text x="340" y="151" font-family="IBM Plex Sans KR, sans-serif" font-size="12.5" fill="var(--ink-2)">평균이 매수선의 절반을 조금 넘는다</text>
+      </svg>
+    </div>
+    <figcaption><strong>KR 기준 하루 중 56.9%가 전량매도 구간(적 ≥ 11)</strong>인 반면, 매수 3관문까지 통과하는 날은 <strong>3.32%</strong>다. 매도 기회가 매수 기회보다 <strong>17배</strong> 자주 온다. US는 43.8% 대 13.3%로 3.3배.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="eyebrow"><b>인과 사슬</b><span>다섯 개의 고리 — 앞 고리를 끊지 않으면 뒤는 반복된다</span></div>
+  <h2 class="col">고점에서 사서,<br>흔들리면 전부 던진다</h2>
+
+  <div class="chain">
+    <div class="link">
+      <div class="n">01</div>
+      <div>
+        <h3>매수는 60일 신고가·박스 상단에서만 일어난다</h3>
+        <p>매수 3관문 중 ‘돌파’ 칸은 <code class="g">G7</code>(60일 신고가) 또는 <code class="g">G18</code>(박스권 상단 돌파)만 통과시킨다. 실제 매수 105건 중 <code class="g">G18</code>이 95건, <code class="g">G7</code>이 58건에서 발화했다. <strong>구조적으로 국지적 고점에서만 산다.</strong></p>
+        <p>‘거래량’ 칸은 더 극단적이다. <code class="g">G5</code>·<code class="g">G23</code>은 거래량 급증을 요구해 각각 6건·4건만 발화했고, 실질적으로 매수 105건 <strong>전부</strong>가 <code class="g">G13</code>(매집 상승 = <strong>오늘 종가가 어제보다 높다</strong>)으로 통과했다.</p>
+      </div>
+    </div>
+
+    <div class="link">
+      <div class="n">02</div>
+      <div>
+        <h3>매수 게이트와 매도 트리거가 같은 축의 반대편에 있다</h3>
+        <p><code class="g">G13</code>은 “오늘 상승”, <code class="r">R13</code>은 “오늘 하락”이다. <strong>매수의 필수 관문과 매도의 4점짜리 적신호가 같은 하나의 지표를 정반대로 읽는다.</strong> 그래서 산 다음 방향이 하루만 바뀌면 즉시 매도 점수가 채워진다.</p>
+        <p>실제로 매수 후 <strong>바로 다음 스캔(10분 이내)에 매도가 시작된 비율이 KR 32% · US 35%</strong>다. 매수 시점 청신호 평균은 27.7점(A등급)인데, 첫 매도 시점 적신호 평균은 12.0점이다. <em>두 점수는 서로를 전혀 참조하지 않아 같은 순간 둘 다 성립한다.</em></p>
+      </div>
+    </div>
+
+    <div class="link">
+      <div class="n">03</div>
+      <div>
+        <h3>장중 스캔은 거래량을 잘못 비교해 적신호를 상시 점등시킨다</h3>
+        <p><code>on_intraday</code>는 잠정봉의 거래량으로 <strong>당일 누적 거래량</strong>을 쓰면서, 비교 대상인 <code>vol.shift(1)</code>과 <code>vol_avg</code>는 <strong>완성된 하루치</strong>다. 장 초반 누적량은 당연히 그보다 작으므로 <code class="r">R24</code>(거래량 없는 상승)의 뒤 두 조건이 항상 참이 되고, <code class="r">R24</code>는 사실상 “지금 어제 종가보다 위”라는 뜻으로 변질된다.</p>
+        <p>결과는 아래 표와 같다. 장 초반에는 <strong><code class="r">R13</code>(내림)과 <code class="r">R24</code>(오름) 중 하나가 99.3%의 확률로 켜진다.</strong> 방향과 무관하게 거래량 카테고리 4점이 상시 확보된다.</p>
+      </div>
+    </div>
+
+    <div class="link">
+      <div class="n">04</div>
+      <div>
+        <h3>50% 부분매도가 포지션을 먼지로 쪼갠다</h3>
+        <p>적 9~10점이면 잔량의 절반을 판다. 다음 스캔에도 조건이 유지되면 또 절반. 71주 → 35 → 18 → 9 → 4 → 2 → 1주로 <strong>한 포지션이 최대 10회(US 평균 3.5회)에 걸쳐 청산</strong>됐다. 남은 잔량은 수익이 나도 금액이 0에 수렴한다.</p>
+        <p>반대로 하락 종목은 부분매도 신호(<code class="r">R3</code> RSI 과열 꺾임)가 뜨지 않으니 <strong>풀사이즈 그대로 −7% 손절까지 간다</strong>. 그래서 진 거래의 평균 베팅이 이긴 거래의 <strong>2.67배</strong>(KR)다. 승률이 나빠서가 아니라 <em>이익 쪽에만 사이즈가 없다</em>.</p>
+      </div>
+    </div>
+
+    <div class="link">
+      <div class="n">05</div>
+      <div>
+        <h3>쿨다운 2일이 같은 종목으로 되돌려 보낸다</h3>
+        <p>전량 청산 후 쿨다운은 <strong>2 거래일</strong>, 장중 재매수 쿨다운은 <strong>30분</strong>뿐이다. 같은 종목에 2회 이상 재진입한 조합이 27개, 최대 4회다. 그런데 <strong>매수 게이트는 여전히 “고점 돌파”를 요구</strong>하므로, 되돌아갈 때는 항상 직전에 판 가격보다 위다. <em>비싸게 사서 싸게 팔기를 종목 단위로 반복한다.</em></p>
+      </div>
+    </div>
+  </div>
+
+  <figure>
+    <div class="tw">
+      <table>
+        <caption>장중 스캔 재현 — 누적 거래량 비율(f)에 따른 신호 왜곡<span>일봉 3,278 종목일에 orchestrator.on_intraday와 동일한 잠정봉 구성을 적용</span></caption>
+        <thead><tr><th>스캔 시점</th><th>R13 발화</th><th>R24 발화</th><th>둘 중 하나</th><th>적신호 평균</th><th>전량매도 발동</th></tr></thead>
+        <tbody>
+          <tr class="hi"><td>개장 30분 <span style="color:var(--ink-3)">f=0.10</span></td><td>49.8%</td><td class="neg">49.5%</td><td class="neg">99.3%</td><td>12.0점</td><td class="neg">61.9%</td></tr>
+          <tr><td>2시간 경과 <span style="color:var(--ink-3)">f=0.25</span></td><td>49.8%</td><td>49.2%</td><td>99.0%</td><td>12.0점</td><td>61.8%</td></tr>
+          <tr><td>후반 <span style="color:var(--ink-3)">f=0.60</span></td><td>49.8%</td><td>44.3%</td><td>94.1%</td><td>11.8점</td><td>60.3%</td></tr>
+          <tr class="ok"><td>마감 <span style="color:var(--ink-3)">f=1.00 · 백테스트가 보는 값</span></td><td>49.8%</td><td>22.7%</td><td>72.5%</td><td>11.0점</td><td>50.5%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption>같은 종목·같은 날인데 <strong>장 초반에 보면 전량매도 발동률이 마감 대비 11%p 높다.</strong> 백테스트는 마지막 줄만 본다.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="eyebrow"><b>증거</b><span>실측 — 재구성한 라운드트립 312건</span></div>
+  <h2 class="col">팔면 오른다</h2>
+  <div class="col">
+    <p>매도 시점 가격과 그 이후 일봉을 붙여 확인했다. 국내형에서 <strong>판 다음날 평균 +1.51%(60%가 상승), 10거래일 뒤 +3.77%(74%가 상승)</strong>. 반대로 <strong>산 다음 5거래일 뒤는 평균 −2.22%(33%만 상승)</strong>. 매수와 매도 타이밍이 정확히 뒤집혀 있다.</p>
+    <p>US는 매도 후 경로가 거의 평평하다(1일 −0.02%, 10일 +0.42%). US의 손실은 타이밍보다 <strong>비용과 사이즈</strong>에서 왔다.</p>
+  </div>
+
+  <figure>
+    <div class="fig-body">
+      <div class="fig-title">국내형 — 매도·매수 이후 주가 경로</div>
+      <div class="fig-note">양수 = 팔고 나서 올랐다(= 팔지 말았어야 했다)</div>
+      <svg viewBox="0 0 700 210" width="700" style="max-width:100%;height:auto" role="img"
+           aria-label="매도 후 1일 +1.51%, 3일 +0.52%, 5일 -0.87%, 10일 +3.77%. 매수 후 1일 +0.32%, 3일 -1.04%, 5일 -2.22%, 10일 +3.80%.">
+        <g font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--ink-3)">
+          <line x1="70" y1="100" x2="670" y2="100" stroke="var(--rule)" stroke-width="1.2"/>
+          <text x="62" y="104" text-anchor="end">0%</text>
+          <line x1="70" y1="40"  x2="670" y2="40"  stroke="var(--rule-soft)" stroke-width="1"/><text x="62" y="44"  text-anchor="end">+4%</text>
+          <line x1="70" y1="160" x2="670" y2="160" stroke="var(--rule-soft)" stroke-width="1"/><text x="62" y="164" text-anchor="end">−4%</text>
+        </g>
+        <!-- groups: 1,3,5,10 days -->
+        <g font-family="IBM Plex Mono, monospace" font-size="11">
+          <!-- +1일 : sell +1.51, buy +0.32 -->
+          <rect x="110" y="77.4" width="46" height="22.6" rx="3" fill="var(--jeok)"/>
+          <rect x="162" y="95.2" width="46" height="4.8" rx="2" fill="var(--cheong)"/>
+          <text x="133" y="71" text-anchor="middle" fill="var(--jeok)" font-weight="600">+1.51</text>
+          <text x="185" y="90" text-anchor="middle" fill="var(--cheong)">+0.32</text>
+          <text x="159" y="185" text-anchor="middle" fill="var(--ink-3)">1거래일 뒤</text>
+          <!-- +3일 : sell +0.52, buy -1.04 -->
+          <rect x="255" y="92.2" width="46" height="7.8" rx="3" fill="var(--jeok)"/>
+          <rect x="307" y="100" width="46" height="15.6" rx="3" fill="var(--cheong)"/>
+          <text x="278" y="86" text-anchor="middle" fill="var(--jeok)">+0.52</text>
+          <text x="330" y="129" text-anchor="middle" fill="var(--cheong)">−1.04</text>
+          <text x="304" y="185" text-anchor="middle" fill="var(--ink-3)">3거래일 뒤</text>
+          <!-- +5일 : sell -0.87, buy -2.22 -->
+          <rect x="400" y="100" width="46" height="13.1" rx="3" fill="var(--jeok)"/>
+          <rect x="452" y="100" width="46" height="33.3" rx="3" fill="var(--cheong)"/>
+          <text x="423" y="126" text-anchor="middle" fill="var(--jeok)">−0.87</text>
+          <text x="475" y="147" text-anchor="middle" fill="var(--cheong)" font-weight="600">−2.22</text>
+          <text x="449" y="185" text-anchor="middle" fill="var(--ink-3)">5거래일 뒤</text>
+          <!-- +10일 : sell +3.77, buy +3.80 -->
+          <rect x="545" y="43.5" width="46" height="56.5" rx="3" fill="var(--jeok)"/>
+          <rect x="597" y="43" width="46" height="57" rx="3" fill="var(--cheong)"/>
+          <text x="568" y="37" text-anchor="middle" fill="var(--jeok)" font-weight="600">+3.77</text>
+          <text x="620" y="37" text-anchor="middle" fill="var(--cheong)">+3.80</text>
+          <text x="594" y="185" text-anchor="middle" fill="var(--ink-3)">10거래일 뒤</text>
+        </g>
+        <g font-family="IBM Plex Mono, monospace" font-size="11.5">
+          <rect x="110" y="196" width="11" height="11" rx="2" fill="var(--jeok)"/>
+          <text x="127" y="206" fill="var(--ink-2)">매도 이후</text>
+          <rect x="205" y="196" width="11" height="11" rx="2" fill="var(--cheong)"/>
+          <text x="222" y="206" fill="var(--ink-2)">매수 이후</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>매도 43건 · 매수 26건(10일 지평은 각 31·16건) 기준. 표본이 작아 개별 수치는 넓은 오차를 갖지만, <strong>“매도 후 상승 / 매수 후 하락”이라는 부호가 모든 지평에서 일관</strong>된다.</figcaption>
+  </figure>
+
+  <h3 class="col">약한 적신호는 이익, 강한 적신호는 손실 전부</h3>
+  <div class="tw">
+    <table>
+      <caption>매도 시점 적신호 점수대별 실현 결과<span>FIFO로 재구성한 라운드트립 312건 · 비용 차감 전 총손익</span></caption>
+      <thead><tr><th>적신호 점수</th><th>동작</th><th>KR 건수</th><th>KR 총손익</th><th>US 건수</th><th>US 총손익</th></tr></thead>
+      <tbody>
+        <tr class="ok"><td>9 ~ 10점</td><td>부분매도 50%</td><td>25</td><td class="pos">+1,909,250원</td><td>216</td><td class="pos">+3,154달러</td></tr>
+        <tr class="hi"><td>11 ~ 13점</td><td>전량매도</td><td>12</td><td class="neg">−4,265,300원</td><td>16</td><td class="pos">+973달러</td></tr>
+        <tr class="hi"><td>14점 이상</td><td>전량매도</td><td>5</td><td class="neg">−2,468,500원</td><td>32</td><td class="neg">−7,363달러</td></tr>
+        <tr><td>손절 −7% (R7)</td><td>강제 청산</td><td>1</td><td class="neg">−194,320원</td><td>5</td><td class="neg">−3,632달러</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <figcaption style="max-width:660px"><strong>부분매도(9~10점)는 양쪽 시장 모두 흑자다.</strong> 손실은 전량매도 구간에 전부 몰려 있다. 즉 “적신호를 보고 파는 것” 자체가 아니라 <strong>“전부 파는 것”</strong>이 문제다.</figcaption>
+
+  <h3 class="col">실제 기록 — 현대모비스(012330), 국내형</h3>
+  <div class="trace">
+    <div class="trace-h">떨어질 때 판다 → 재매수 → 또 떨어질 때 판다<span>2026-07-22 ~ 07-24 · 2회 진입 · 누적 −1,686,520원</span></div>
+    <div class="row"><span>07-22 09:19</span><span class="b">매수</span><span>38주</span><span>517,000</span><span class="sig">청 32점 · 게이트 통과</span><span class="amt"></span></div>
+    <div class="row"><span>07-22 09:29</span><span class="s">매도</span><span>38주</span><span>515,000</span><span class="sig">적 14점 · R1+R12+R24</span><span class="amt">−108,291</span></div>
+    <div class="gap">↑ 매수 10분 뒤 전량 청산. R1·R12는 매수 시점에도 이미 참인 상태 플래그였고, R24는 장중 거래량 왜곡으로 켜졌다.</div>
+    <div class="row"><span>07-24 09:00</span><span class="b">매수</span><span>46주</span><span>524,000</span><span class="sig">청 26점 · 게이트 통과</span><span class="amt"></span></div>
+    <div class="row"><span>07-24 10:51</span><span class="s">매도</span><span>46주</span><span>490,500</span><span class="sig">적 20점 · R2+R12+R13+R14+R19</span><span class="amt">−1,578,229</span></div>
+    <div class="gap">↑ 쿨다운 2일이 지나자마자 <b>직전 매도가보다 9,000원 비싼 가격</b>에 재진입했고, 1시간 51분 뒤 −6.4%에 전량 청산.</div>
+  </div>
+
+  <h3 class="col">비대칭은 시간에도 나타난다</h3>
+  <div class="tw">
+    <table>
+      <caption>이익 거래와 손실 거래의 구조 차이<span>“이익은 짧게, 손실은 크게” — 사이즈와 보유시간 양쪽에서</span></caption>
+      <thead><tr><th>지표</th><th>이긴 거래</th><th>진 거래</th><th>배율</th></tr></thead>
+      <tbody>
+        <tr><td>KR 평균 베팅금액</td><td>3,614,636원</td><td class="neg">9,660,641원</td><td class="neg">2.67×</td></tr>
+        <tr><td>KR 보유시간 중앙값</td><td>288.6시간</td><td class="neg">24.2시간</td><td>0.08×</td></tr>
+        <tr><td>US 평균 베팅금액</td><td>4,086달러</td><td class="neg">5,514달러</td><td class="neg">1.35×</td></tr>
+        <tr><td>US 보유시간 중앙값</td><td>74.0시간</td><td class="neg">28.7시간</td><td>0.39×</td></tr>
+        <tr class="hi"><td>US 승률 55.0%인데 Profit Factor</td><td colspan="3" style="text-align:left">0.53 — 이겨도 작게, 져도 크게</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="col">회전이 만든 비용</h3>
+  <div class="col">
+    <p>국내형은 6주 동안 <strong>총 회전액 6억 4,408만원</strong>, 즉 자본의 <strong>6.4배</strong>를 굴렸다. 수수료·세금으로 505,301원이 나갔다(거래세 0.15%가 대부분). 범용형은 여기에 더해, 미국 주식을 팔 때마다 <code>convert_all_usd_to_krw</code>로 <strong>달러 잔고 전액을 원화로 되돌린 뒤 다음 매수에 다시 달러로 바꾼다.</strong> 편도 0.1%씩, US 매도 56.4만달러 + 매수 59.4만달러에 대해 <strong>약 160만원</strong>이 수수료 테이블에 잡히지도 않은 채 증발했다. 범용형 손실 1,174만원의 14%다.</p>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow"><b>백테스트와의 괴리</b><span>+30%였던 전략이 −12%가 된 이유</span></div>
+  <h2 class="col">매도의 88%는 검증된 적이 없다</h2>
+  <div class="col">
+    <p>직전 리플레이(2026-01-09 ~ 07-09)는 국내형 +30.40%, 해외형 +26.93%였다. 그 리플레이와 실전의 차이는 파라미터가 아니다. <strong>실행 경로 자체가 다르다.</strong></p>
+    <p><code>run_replay</code>는 <strong>하루 1사이클</strong>(마감에 판정 → 다음 개장에 체결)만 시뮬레이션한다. 반면 라이브는 <code>INTRADAY_ENABLED=1</code>로 <strong>10분마다</strong> <code>evaluate_intraday</code>를 돌렸다. 이 함수는 리플레이에서 <em>단 한 번도 호출되지 않는다</em>.</p>
+  </div>
+  <div class="tw">
+    <table>
+      <caption>실행 경로별 매도 실적<span>백테스트가 검증한 경로는 마지막 두 줄뿐이고, 그 30건은 흑자였다</span></caption>
+      <thead><tr><th>경로</th><th>백테스트 검증</th><th>건수</th><th>실현손익</th></tr></thead>
+      <tbody>
+        <tr class="hi"><td>INTRADAY_SELL · KR</td><td>없음</td><td>42</td><td class="neg">−5,387,697원</td></tr>
+        <tr class="hi"><td>INTRADAY_SELL · US</td><td>없음</td><td>234</td><td class="neg">−4,555달러</td></tr>
+        <tr><td>FORCED_SELL (손절) · KR/US</td><td>있음</td><td>6</td><td class="neg">−198,580원 / −3,675달러</td></tr>
+        <tr class="ok"><td>PARTIAL_SELL · US</td><td>있음</td><td>22</td><td class="pos">+105달러</td></tr>
+        <tr class="ok"><td>FULL_SELL · US</td><td>있음</td><td>8</td><td class="pos">+119달러</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <figcaption style="max-width:660px">매도 312건 중 <strong>276건(88%)</strong>이 장중 경로. KR은 43건 전부다. 검증 여부와 손익 부호가 정확히 갈린다.</figcaption>
+</section>
+
+<section>
+  <div class="eyebrow"><b>검증</b><span>같은 유니버스 · 3.2년 · 규칙만 A/B</span></div>
+  <h2 class="col">적신호 매도 시스템 전체가<br>마이너스 알파다</h2>
+  <div class="col">
+    <p>DB의 34개 KR · 30개 US 종목으로 3년 7개월치 일봉을 받아, 같은 유니버스 위에서 규칙만 바꿔 리플레이했다. <strong>가장 크게 개선되는 변경은 파라미터 조정이 아니라 “신호 기반 매도를 통째로 끄고 손절·트레일링 스탑만 남기는 것”</strong>이다.</p>
+  </div>
+  <div class="tw">
+    <table>
+      <caption>2023-07-01 ~ 2026-09-01 리플레이 (3.2년)<span>수익률 / 최대낙폭 / 샤프 · 계좌당 1억원 · 일봉 1사이클</span></caption>
+      <thead><tr><th>규칙</th><th>거래</th><th>국내형</th><th>범용형</th><th>해외형</th></tr></thead>
+      <tbody>
+        <tr class="hi"><td>현행 (baseline)</td><td>4,771</td><td>+67.4% / −23.3% / 0.7</td><td class="neg">−5.4% / −41.3% / 0.1</td><td>+57.6% / −18.1% / 0.8</td></tr>
+        <tr><td>전량매도 11 → 13</td><td>4,750</td><td>+37.9% / −24.1% / 0.5</td><td>+4.0% / −38.0% / 0.2</td><td>+26.1% / −26.5% / 0.5</td></tr>
+        <tr><td>전량매도 11 → 16</td><td>5,022</td><td class="neg">−10.5% / −31.8% / 0.0</td><td>+26.4% / −43.1% / 0.4</td><td>+20.4% / −34.5% / 0.4</td></tr>
+        <tr><td>전량매도 11 → 26</td><td>5,909</td><td>+38.7% / −30.5% / 0.5</td><td>+32.4% / −38.3% / 0.5</td><td>+42.2% / −13.9% / 0.6</td></tr>
+        <tr><td>R13 · R24 0점 처리</td><td>3,351</td><td>+23.8% / −28.4% / 0.4</td><td>+16.0% / −41.6% / 0.3</td><td>+12.9% / −47.1% / 0.3</td></tr>
+        <tr class="ok"><td><strong>신호매도 OFF (손절·트레일만)</strong></td><td>999</td><td class="pos">+184.8% / −26.3% / 1.5</td><td class="pos">+82.7% / −21.0% / 1.1</td><td>+36.7% / −18.0% / 0.7</td></tr>
+        <tr class="ok"><td><strong>신호매도 OFF + 보유 10종목</strong></td><td>1,877</td><td class="pos">+159.9% / −17.1% / 1.5</td><td class="pos">+89.0% / −15.3% / 1.4</td><td class="pos">+58.7% / −13.9% / 1.0</td></tr>
+        <tr><td>신호매도 OFF + 돌파게이트 제거</td><td>1,066</td><td>+133.7% / −27.2% / 1.1</td><td>+78.8% / −19.3% / 1.1</td><td class="pos">+105.8% / −23.2% / 1.3</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <figcaption style="max-width:660px"><strong>임계값을 13·16·26으로 올리는 조정은 계좌마다 들쭉날쭉하다 — 과적합 신호다.</strong> 세 계좌에서 일관되게 개선되는 것은 “신호매도 제거”뿐이고, 거래 건수가 4,771 → 999로 79% 줄면서 그렇게 된다.</figcaption>
+
+  <div class="tw">
+    <table>
+      <caption>워크포워드 — 기간을 셋으로 잘라 같은 규칙을 재확인<span>과적합이면 특정 구간에서만 좋아야 한다</span></caption>
+      <thead><tr><th>구간</th><th>규칙</th><th>국내형</th><th>범용형</th><th>해외형</th></tr></thead>
+      <tbody>
+        <tr><td>2023-07 → 2024-07</td><td style="font-family:var(--sans);color:var(--ink-2)">현행</td><td>+17.7% / −19.8%</td><td>+17.4% / −13.3%</td><td>+28.4% / −7.6%</td></tr>
+        <tr class="ok"><td></td><td style="font-family:var(--sans);color:var(--ink)">매도OFF + 10종목</td><td class="pos">+28.2% / −9.8%</td><td class="pos">+38.7% / −8.7%</td><td class="neg">+23.8% / −11.9%</td></tr>
+        <tr><td>2024-07 → 2025-07</td><td style="font-family:var(--sans);color:var(--ink-2)">현행</td><td>−1.2% / −18.8%</td><td>+6.3% / −17.4%</td><td>+15.6% / −15.0%</td></tr>
+        <tr class="ok"><td></td><td style="font-family:var(--sans);color:var(--ink)">매도OFF + 10종목</td><td class="pos">+28.8% / −16.3%</td><td class="pos">+12.2% / −16.7%</td><td class="neg">−2.3% / −13.9%</td></tr>
+        <tr><td>2025-07 → 2026-09</td><td style="font-family:var(--sans);color:var(--ink-2)">현행</td><td>+43.5% / −23.5%</td><td>−20.2% / −41.0%</td><td>−3.1% / −18.6%</td></tr>
+        <tr class="ok"><td></td><td style="font-family:var(--sans);color:var(--ink)">매도OFF + 10종목</td><td class="pos">+54.9% / −14.6%</td><td class="pos">+1.7% / −10.0%</td><td class="pos">+21.8% / −7.7%</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <figcaption style="max-width:660px">9개 칸 중 <strong>7개에서 수익률이, 8개에서 최대낙폭이 개선</strong>된다. 해외형 두 구간이 예외지만 낙폭은 그때도 줄어든다. 구간을 가리지 않는다는 점이 파라미터 튜닝과 다르다.</figcaption>
+</section>
+
+<section>
+  <div class="eyebrow"><b>처방</b><span>검증된 것과 아닌 것을 나눠서</span></div>
+  <h2 class="col">무엇을 고칠 것인가</h2>
+
+  <div class="rx">
+    <div class="rx-item">
+      <div class="rx-top"><h3>1. 장중 자동매매를 먼저 끈다</h3><span class="tag now">지금</span></div>
+      <p>손실의 88%가 여기서 나왔고, 이 경로는 백테스트로 검증된 적이 없다. 고칠 것들을 검증하는 동안 출혈을 멈추는 게 먼저다. 끄면 일봉 스윙(하루 1사이클)으로 돌아가는데, 그게 원래 +30%가 나왔던 경로다.</p>
+      <div class="how">.env → INTRADAY_ENABLED=0 · systemctl --user restart stock-live</div>
+    </div>
+
+    <div class="rx-item">
+      <div class="rx-top"><h3>2. 신호 기반 매도를 손절·트레일링으로 대체한다</h3><span class="tag v">3.2년 · 워크포워드 검증</span></div>
+      <p>가장 크고 가장 일관된 개선이다. 적신호로 파는 대신 <strong>−7% 손절과 트레일링 스탑만</strong> 남긴다. 이렇게 하면 “떨어질 때 판다”가 “<strong>충분히 떨어졌을 때만 판다</strong>”로 바뀌고, 오르는 종목은 잘려나가지 않는다. 여기에 보유 종목을 5 → 10개로 늘리면 낙폭이 추가로 줄어든다(집중도 완화).</p>
+      <div class="how">TradeRules: sell_full_min / sell_partial_min 을 비활성값으로 · max_positions 5 → 10</div>
+    </div>
+
+    <div class="rx-item">
+      <div class="rx-top"><h3>3. 장중 거래량 비교 버그를 고친다</h3><span class="tag now">버그</span></div>
+      <p>매도 시스템을 남기든 없애든 이건 잘못된 계산이다. 장중 잠정봉의 <strong>누적</strong> 거래량을 완성된 하루치와 비교하고 있다. 최소한 <strong>경과 시간으로 정규화</strong>(누적량 ÷ 경과비율)하거나, 거래량 의존 신호(<code class="r">R5</code> <code class="r">R13</code> <code class="r">R23</code> <code class="r">R24</code> <code class="g">G5</code> <code class="g">G13</code> <code class="g">G23</code>)를 <strong>장중에는 판정에서 제외</strong>해야 한다.</p>
+      <div class="how">simcore/live/orchestrator.py · on_intraday 의 df.loc[ts] volume 구성</div>
+    </div>
+
+    <div class="rx-item">
+      <div class="rx-top"><h3>4. 적신호 ‘추세’ 카테고리의 동어반복을 정리한다</h3><span class="tag u">구조 개선 · 단독 검증 안 됨</span></div>
+      <p><code class="r">R1</code> <code class="r">R2</code> <code class="r">R4</code> <code class="r">R12</code>는 같은 사실의 네 표현인데 각각 4~5점씩이고 상한이 10점이라, 둘만 켜져도 만점이다. <strong>넷을 하나의 “하락 추세” 신호(5점)로 합치는 것</strong>이 정직한 모델링이다. 단독으로 돌린 A/B에서는 개선이 일관되지 않았으므로, 2번과 함께 적용하고 재검증할 것.</p>
+      <div class="how">config.SignalScores.points / category — 추세 적신호 통합</div>
+    </div>
+
+    <div class="rx-item">
+      <div class="rx-top"><h3>5. 매수 게이트와 매도 신호의 축을 분리한다</h3><span class="tag u">구조 개선 · 단독 검증 안 됨</span></div>
+      <p><code class="g">G13</code>(오늘 상승)이 매수 필수 관문이고 <code class="r">R13</code>(오늘 하락)이 4점 적신호인 한, 산 다음 하루만 흔들려도 매도 점수가 찬다. 둘 중 하나를 빼거나, <strong>매수 직후 N개 봉 동안은 신호매도를 유예</strong>(손절만 유효)하는 최소 보유 구간을 두는 게 실용적이다. 매수 후 10분 내 청산 32~35%가 이 한 가지로 사라진다.</p>
+      <div class="how">engine.evaluate_intraday / evaluate_close — 진입 후 grace period</div>
+    </div>
+
+    <div class="rx-item">
+      <div class="rx-top"><h3>6. 부분매도 연쇄와 환전 왕복을 막는다</h3><span class="tag u">비용 · 계산으로 확인</span></div>
+      <p>같은 포지션을 10회까지 쪼개 파는 것은 의미 없는 비용이다. <strong>포지션당 부분매도 1회 제한</strong>, 또는 잔량이 최초 수량의 25% 밑이면 전량 정리. 그리고 범용형의 <code>convert_all_usd_to_krw</code>는 <strong>US 매도마다 달러 전액을 원화로 되돌리지 말고 달러 잔고를 유지</strong>해야 한다 — 6주에 약 160만원이 왕복 환전으로 사라졌다.</p>
+      <div class="how">engine._sell 의 통화 환원 · rules.partial_sell_fraction 적용 횟수 제한</div>
+    </div>
+
+    <div class="rx-item">
+      <div class="rx-top"><h3>7. 리플레이가 장중 경로를 태우도록 만든다</h3><span class="tag u">검증 인프라</span></div>
+      <p>지금 <code>run_replay</code>는 <code>evaluate_intraday</code>를 호출하지 않는다. 그래서 실전 매도의 88%가 검증 밖이었다. <strong>일중 데이터(또는 일봉 OHLC로 근사한 N개 슬라이스)로 장중 경로를 리플레이할 수 없다면, 장중 매매를 켜서는 안 된다.</strong> 이건 파라미터 문제가 아니라 규율의 문제다.</p>
+      <div class="how">simcore/replay.py — 장중 슬라이스 주입 + walkforward 하니스 연결</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow"><b>한계</b><span>이 분석이 말하지 않는 것</span></div>
+  <div class="caveat col">
+    <h3>수치를 읽을 때 감안할 것</h3>
+    <ul>
+      <li><strong>표본이 작다.</strong> 라이브는 30 거래일, KR 라운드트립은 43건뿐이다. 개별 수익률 수치는 넓은 신뢰구간을 갖는다. 신뢰할 만한 것은 개별 숫자가 아니라 <strong>부호의 일관성</strong>(모든 지평에서 매도 후 상승, 모든 구간에서 매도OFF 우위)이다.</li>
+      <li><strong>백테스트 유니버스에 생존편향이 있다.</strong> 3.2년 리플레이는 <em>현재</em> DB에 남아 있는 34·30개 종목으로 돌렸다. 당시 시점의 코스피200/S&amp;P500 구성이 아니다. 절대 수익률은 부풀려져 있고, <strong>규칙 간 비교</strong>에만 쓸 수 있다.</li>
+      <li><strong>같은 유니버스의 동일가중 바이앤홀드는 KR +412% · US +97%였다.</strong> 생존편향을 감안해도, 고친 전략(최대 +185%)조차 그냥 사서 들고 있는 것을 이기지 못한다. <strong>이 시스템은 아직 알파를 만들지 못한다</strong>는 사실은 매도 규칙을 고쳐도 남는다.</li>
+      <li><strong>리플레이는 슬리피지 0, 완전 체결을 가정한다.</strong> 회전이 높은 현행 규칙일수록 이 가정의 혜택을 크게 받으므로, 실제 격차는 표보다 더 벌어진다.</li>
+      <li>해외형·범용형의 원화 환산 손익에는 환율 변동이 섞여 있다. 매매 손익만 분리하려면 달러 기준 성과를 따로 봐야 한다.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  분석 기준일 2026-09-02 · 데이터 출처: PostgreSQL <code>simcore</code> (trades 417행, equity_curve 186행, daily_bars 8,270행) + yfinance/pykrx 3.2년 일봉<br>
+  코드 기준: simcore v1.15.1 (b6c6685) · KIS_ENV=paper · INTRADAY_ENABLED=1
+</footer>
+
+</div>
