@@ -33,9 +33,11 @@ def test_deposit_withdraw_enqueue_flow():
 
 @dataclass
 class _FakeSettings:
-    """_config_from_settings 는 intraday_enabled/intraday_scan_minutes 두 속성만 읽는다."""
+    """_config_from_settings 가 읽는 속성들."""
     intraday_enabled: bool = False
     intraday_scan_minutes: int = 10
+    signal_sell_enabled: bool = True
+    max_positions: int = 5
 
 
 def test_config_from_settings_disabled_keeps_defaults():
@@ -48,6 +50,25 @@ def test_config_from_settings_enabled_applies_scan_minutes():
     cfg = _config_from_settings(_FakeSettings(intraday_enabled=True, intraday_scan_minutes=5))
     assert cfg.rules.intraday_enabled is True
     assert cfg.rules.intraday_scan_minutes == 5
+
+
+def test_config_from_settings_defaults_keep_signal_sell_and_positions():
+    cfg = _config_from_settings(_FakeSettings())
+    assert cfg.rules.signal_sell_enabled is True
+    assert cfg.rules.max_positions == 5
+
+
+def test_config_from_settings_disables_signal_sell():
+    cfg = _config_from_settings(_FakeSettings(signal_sell_enabled=False))
+    assert cfg.rules.signal_sell_enabled is False
+    # 강제매도 파라미터는 건드리지 않는다
+    assert cfg.rules.stop_loss_pct == -0.07
+    assert cfg.rules.trail_pct == 0.07
+
+
+def test_config_from_settings_applies_max_positions():
+    cfg = _config_from_settings(_FakeSettings(max_positions=10))
+    assert cfg.rules.max_positions == 10
 
 
 @needs_db

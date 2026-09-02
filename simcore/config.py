@@ -93,6 +93,11 @@ class TradeRules:
     buy_score_min: int = 18
     sell_partial_min: int = 9
     sell_full_min: int = 11
+    # 적신호 점수(sell_partial_min/sell_full_min) 기반 매도의 on/off.
+    # False 면 점수 매도만 끄고 강제매도(R7 손절·R10 트레일링·R18 지지선 붕괴·
+    # R5+R23 급락 복합)는 그대로 살아 있다 — "손절/트레일만" 모드.
+    # 근거: docs/reviews/2026-09-02-live-loss-autopsy.html (3.2년 리플레이 + 3구간 워크포워드)
+    signal_sell_enabled: bool = True
     partial_sell_fraction: float = 0.5
     stop_loss_pct: float = -0.07
     trail_pct: float = 0.07
