@@ -8,7 +8,7 @@ import pandas as pd
 
 from simcore.config import Config
 from simcore import data as datamod, universe, metrics
-from simcore.replay import DataBundle, FlowEvent, run_replay
+from simcore.replay import DataBundle, FlowEvent, IntradayReplayOptions, run_replay
 from simcore.engine import DEFAULT_CHARACTERS
 from simcore.report import write_outputs
 
@@ -30,6 +30,13 @@ def main() -> None:
     ap.add_argument("--flows", default=None, help="입출금 CSV (date,character,amount_krw,liquidate)")
     ap.add_argument("--buy-score", type=int, default=None,
                     help="매수 최소 총점(기본 18)")
+    ap.add_argument("--intraday-slices", type=int, default=0,
+                    help="장중 경로를 태울 하루당 스캔 횟수(0=끔). 일봉에 경로 정보가 없어 "
+                         "OHLC로 경로를 '가정'하므로 --intraday-order 양방향을 모두 돌려 "
+                         "그 폭으로 읽을 것. 비용이 슬라이스 수에 선형으로 늘어난다.")
+    ap.add_argument("--intraday-order", default="low_first",
+                    choices=["low_first", "high_first"],
+                    help="장중 가격 경로 가정 (기본 low_first=보수적)")
     grp = ap.add_mutually_exclusive_group()
     grp.add_argument("--bear-guard", action="store_true",
                      help="하락장 가드 전 캐릭터 강제 on (기본: config bear_guard_characters)")
@@ -66,8 +73,15 @@ def main() -> None:
         kr_index=kr_index,
         us_index=us_index,
     )
+    intraday_opts = None
+    if args.intraday_slices > 0:
+        cfg = replace(cfg, rules=replace(cfg.rules, intraday_enabled=True))
+        intraday_opts = IntradayReplayOptions(slices=args.intraday_slices,
+                                              order=args.intraday_order)
+        print(f"[intraday] 장중 경로 {args.intraday_slices}슬라이스 · {args.intraday_order} "
+              f"— OHLC 기반 경로 '가정'이므로 절대값이 아니라 양방향 폭으로 해석할 것")
     flows = parse_flows(args.flows) if args.flows else []
-    result = run_replay(cfg, bundle, start, end, flows=flows)
+    result = run_replay(cfg, bundle, start, end, flows=flows, intraday=intraday_opts)
 
     # 벤치마크: 매수후보유 (구간 첫 종가 → 마지막 종가)
     benchmarks = {}

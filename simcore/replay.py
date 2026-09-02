@@ -3,15 +3,21 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date as Date
+from datetime import datetime, time as _Time, timedelta
 import pandas as pd
 
 from simcore.config import Config
 from simcore.engine import Engine
+from simcore.intraday_path import PathOrder, day_slices
 from simcore.models import DailyBar, Market, SymbolSnapshot
 from simcore import signals as sigmod
 from simcore import metrics
 from simcore import data as datamod
 from simcore.signal_status import holding_signal_row
+
+# 잠정봉 신호 계산에 넘길 히스토리 길이. 지표 워밍업(일목 78거래일)에 여유를 더한 값 —
+# 전체 히스토리를 매 슬라이스마다 재계산하면 O(일수 × 슬라이스 × 전체길이) 로 폭발한다.
+_INTRADAY_WINDOW = 160
 
 
 @dataclass
@@ -21,6 +27,26 @@ class DataBundle:
     fx: pd.Series  # KRW per USD
     kr_index: pd.Series | None = None
     us_index: pd.Series | None = None
+
+
+@dataclass(frozen=True)
+class IntradayReplayOptions:
+    """리플레이에서 장중 경로(`Engine.evaluate_intraday`)를 태우는 설정.
+
+    `Config().rules.intraday_enabled` 가 True 일 때만 적용된다. 일봉에는 경로 정보가 없어
+    `intraday_path` 모듈이 (O,H,L,C) 로 꺾은선을 **가정**하므로, 결과는 절대값이 아니라
+    `order` 양방향의 폭(envelope)으로 읽어야 한다 — 자세한 한계는 그 모듈 docstring 참고.
+
+    - `slices`: 하루당 장중 스캔 횟수. 비용이 슬라이스 수에 선형으로 늘어난다
+      (종목마다 매 슬라이스 지표 재계산). 실무적으로 4~8 권장.
+    - `order`: 가격 경로 가정. "low_first"(보수적, 기본) / "high_first".
+    - `session_start` · `scan_minutes`: 합성 타임스탬프용. 엔진의 재매수 쿨다운
+      (`intraday_reentry_cooldown_min`)이 실제 분 단위 간격으로 동작하게 한다.
+    """
+    slices: int = 4
+    order: PathOrder = "low_first"
+    session_start: _Time = _Time(9, 0)
+    scan_minutes: int = 10
 
 
 @dataclass(frozen=True)
@@ -76,9 +102,66 @@ def _char_benchmark(markets: tuple[Market, ...], indexes: dict[Market, pd.Series
     return rets[only_m], _INDEX_NAME[only_m]
 
 
+def _intraday_step(engine: Engine, config: Config, market: Market, d: Date,
+                   todays: dict, opts: IntradayReplayOptions, fx: float,
+                   running_px: dict[str, float]) -> None:
+    """하루치 장중 스캔을 순서대로 실행한다 — 라이브의 on_tick + on_intraday 대응.
+
+    각 슬라이스마다 ① 손익절 틱(현재가 유사봉, `on_tick` 과 동일한 o=h=l=c 형태)
+    ② 잠정봉 스냅샷으로 `evaluate_intraday`. 잠정봉 신호는 라이브와 같은
+    `fired_at_provisional` 로 뽑아 거래량 배율 의존 신호를 제외한다.
+    """
+    # 종목별 슬라이스 사전 계산 (경로 가정은 intraday_path 가 담당)
+    sliced = {}
+    for sym, (df, ts) in todays.items():
+        bar = df.loc[ts]
+        sliced[sym] = day_slices(float(bar["open"]), float(bar["high"]),
+                                 float(bar["low"]), float(bar["close"]),
+                                 float(bar["volume"]), opts.slices, opts.order)
+    if not sliced:
+        return
+    base_dt = datetime.combine(d, opts.session_start)
+    day_equity = engine.snapshot(running_px, fx)
+    for k in range(opts.slices):
+        now = base_dt + timedelta(minutes=opts.scan_minutes * (k + 1))
+        # ① 손익절 틱. 라이브 on_tick 은 현재가만 아는 유사봉(o=h=l=c)을 쓰지만,
+        #    리플레이는 직전 스캔 이후 지나간 구간(seg_low/seg_high)을 알고 있으므로
+        #    그걸 쓴다 — 두 스캔 사이에 손절선을 찍고 되돌아온 경우를 놓치지 않기 위해서고,
+        #    일봉 check_stops 가 이미 "저가 트리거 우선(보수적)"을 쓰는 관례와도 맞다.
+        tick_bars = {sym: DailyBar(sym, d, s[k].close, s[k].seg_high, s[k].seg_low,
+                                   s[k].close, 0.0)
+                     for sym, s in sliced.items()}
+        engine.check_stops(d, market, tick_bars, fx)
+        # ② 잠정봉 신호 판정
+        snaps: dict[str, SymbolSnapshot] = {}
+        for sym, (df, ts) in todays.items():
+            sl = sliced[sym][k]
+            loc = df.index.get_loc(ts)
+            hist = df.iloc[max(0, loc - _INTRADAY_WINDOW):loc]     # 어제까지 확정분
+            prov = pd.DataFrame([{"open": sl.open, "high": sl.high, "low": sl.low,
+                                  "close": sl.close, "volume": sl.volume}], index=[ts])
+            frame = sigmod.evaluate_frame(pd.concat([hist, prov]), config.signals)
+            green, red = sigmod.fired_at_provisional(frame, ts)
+            gs, rs, gate = sigmod.snapshot_scores(green, red, config.scores)
+            prev_close = float(df["close"].iloc[loc - 1]) if loc > 0 else sl.close
+            snaps[sym] = SymbolSnapshot(sym, market, green, red, sl.close,
+                                        sl.close / prev_close - 1.0, sl.volume,
+                                        green_score=gs, red_score=rs, buy_gate=gate)
+            running_px[sym] = sl.close
+        cur_equity = engine.snapshot(running_px, fx)
+        # strengths={} → 체결강도 게이트는 스킵(리플레이엔 체결강도 데이터가 없다.
+        # 라이브에서도 조회 실패 시 None 이면 같은 경로를 탄다).
+        engine.evaluate_intraday(d, market, snaps, {}, fx, now,
+                                 day_equity=day_equity, cur_equity=cur_equity)
+
+
 def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
-               flows: list[FlowEvent] = ()) -> ReplayResult:
+               flows: list[FlowEvent] = (),
+               intraday: IntradayReplayOptions | None = None) -> ReplayResult:
     md = _market_data(bundle)
+    # 장중 경로는 config 토글이 켜져 있을 때만. 꺼져 있으면 기존 동작 100% 불변.
+    intraday_opts = (intraday or IntradayReplayOptions()) \
+        if config.rules.intraday_enabled else None
     # 1) 신호 표를 종목당 한 번 벡터화 계산
     frames = {m: {sym: sigmod.evaluate_frame(df, config.signals)
                   for sym, df in data.items()}
@@ -129,6 +212,14 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
                 continue
             opens = {sym: float(df.loc[ts, "open"]) for sym, df in todays.items()}
             engine.fill_open(d, market, opens, fx)
+            # 장중 경로(옵션): 개장 체결 후 ~ 마감 판정 전. 라이브의 시간 순서와 같다.
+            if intraday_opts is not None:
+                running_px = dict(last_close)
+                running_px.update(opens)
+                _intraday_step(engine, config, market, d,
+                               {sym: (df, ts) for sym, df in todays.items()},
+                               intraday_opts, fx, running_px)
+                last_close.update(running_px)
             bars = {sym: DailyBar(sym, d, float(df.loc[ts, "open"]),
                                   float(df.loc[ts, "high"]), float(df.loc[ts, "low"]),
                                   float(df.loc[ts, "close"]), float(df.loc[ts, "volume"]))
