@@ -4,6 +4,26 @@
 
 상세 패치노트는 `docs/patch-notes/vX.Y.Z.md` 참조.
 
+## v1.17.0 — 2026-09-02
+
+리플레이에 장중 경로 주입 — 장중 자동매매를 검증할 수 있게 된 첫 버전. 첫 검증 결과는 "계속 꺼둘 것".
+
+### Added
+- `simcore/intraday_path.py` — 일봉 OHLC → 장중 슬라이스 근사. `low_first`(O→L→H→C, 기본)/`high_first` 경로를 등속 샘플링, 슬라이스는 k/(n+1) 지점(구간 내부)만. high/low 는 샘플 지점이 아닌 **지나간 구간**의 극값(두 스캔 사이의 저가를 놓치면 손절이 어긋난다)
+- `replay.IntradayReplayOptions`(slices/order/session_start/scan_minutes) — `rules.intraday_enabled=True` 일 때만 적용
+- CLI `--intraday-slices` / `--intraday-order`
+- 테스트 29건, 전체 452 passed. `docs/trading-rules.md` §17-2
+
+### 검증 결과
+- 현행 구성에서 장중 ON vs OFF (경로 양방향 폭): **2026년 8개월 국내형 −17.98%~−17.61%p 악화**(두 경로가 좁게 일치 → 강건), 해외형 −1.80%~−0.08%, 범용형 −2.86%~+2.32%(판단 불가)
+- 라이브와 같은 6주만 보면 부호가 뒤집힌다(+0.88~+4.69%) — 짧은 구간 하나로 판단하면 반대 결론이 나온다는 실례
+- → `INTRADAY_ENABLED=0` 유지
+
+### 한계
+- 일봉에 경로 정보가 없어 경로는 '가정'. 메커니즘·방향성·상대비교는 검증되지만 **정확한 손익은 재현되지 않는다**(라이브 구간에서 매도 폭증 signature 는 재현되나 금액은 다름). 한쪽 order 값만 인용 금지
+- 비용이 슬라이스 수에 선형. 4~8 권장
+- `intraday_enabled=False` 면 기존 결과와 완전 동일(테스트로 고정)
+
 ## v1.16.1 — 2026-09-02
 
 장중 잠정봉의 거래량 왜곡 차단 (v1.16.0 사후분석에서 지목한 버그).
