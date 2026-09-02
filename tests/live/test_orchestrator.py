@@ -519,3 +519,90 @@ def test_evaluate_intraday_survives_position_vanishing_mid_iteration():
     # Fix 3 적용 전이었다면 st.portfolio.positions[sym] 직접 인덱싱에서 KeyError.
     eng.evaluate_intraday(date(2026, 1, 6), Market.KR, snaps, {}, 1300.0,
                           datetime(2026, 1, 6, 10, 0, 0), day_equity=eq, cur_equity=eq)
+
+
+class _LowVolumeIntradayKis(_IntradayFakeKis):
+    """장중 실제 상황 모사 — 당일 잠정봉의 거래량이 '누적'이라 전일 완성치보다 작다.
+
+    이 조건에서 R24(거래량 없는 상승) = 상승 & vol<전일 & vol<vol_avg 가 성립한다.
+    수정 전에는 이 R24 가 그대로 적신호 4점으로 스냅샷에 실려 매도 판정에 쓰였다."""
+    VOLUME_FRACTION = 0.1
+
+    def daily_bars(self, market, symbol, start, end):
+        out = super().daily_bars(market, symbol, start, end)
+        if pd.Timestamp(end) >= pd.Timestamp(self.today):
+            out = out.copy()
+            out.iloc[-1, out.columns.get_loc("volume")] *= self.VOLUME_FRACTION
+        return out
+
+
+@needs_db
+def test_on_intraday_excludes_volume_scale_signals_from_snapshot(session):
+    """장중 잠정봉에서 G5/G23/R5/R24 는 스냅샷에 실리지 않는다.
+
+    당일 누적 거래량을 전일/평균의 완성 거래량과 비교하는 신호라 잠정봉에서는 판정이
+    성립하지 않는다. 특히 R24 는 이 왜곡으로 상시 점등돼 전량매도를 유발했다
+    (docs/reviews/2026-09-02-live-loss-autopsy.html).
+    """
+    from dataclasses import replace
+    from simcore import signals as sigmod
+
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    cfg = Config(rules=replace(Config().rules, intraday_enabled=True))
+    eng = Engine(cfg)
+    eng.start(date(2026, 1, 1), 1300.0)
+    hist = _uptrend(80, end=pd.Timestamp("2026-07-17"))
+    d = date(2026, 7, 20)
+    kis = _LowVolumeIntradayKis({("KR", "005930"): hist}, today=d)
+    orch = Orchestrator(eng, kis, repo, cfg, fx_provider=lambda d_: 1300.0)
+
+    # 전제 확인: 같은 잠정봉을 필터 없이 평가하면 R24 가 실제로 발화한다.
+    raw = kis.daily_bars("KR", "005930", d, d)
+    frame = sigmod.evaluate_frame(raw, cfg.signals)
+    _, red_naive = sigmod.fired_at(frame, pd.Timestamp(d))
+    assert "R24" in red_naive, "테스트 전제 실패 — 잠정봉이 R24 를 발화시키지 않는다"
+
+    captured = {}
+    orig = eng.evaluate_intraday
+
+    def spy(day, market, snaps, strengths, fx, now, day_equity, cur_equity):
+        captured["snaps"] = snaps
+        return orig(day, market, snaps, strengths, fx, now, day_equity, cur_equity)
+
+    eng.evaluate_intraday = spy
+    orch.on_intraday(datetime(2026, 7, 20, 10, 0, 0), d, "KR", ["005930"])
+
+    snap = captured["snaps"]["005930"]
+    assert "R24" not in snap.red, "잠정봉의 R24 가 스냅샷으로 새어나갔다"
+    assert not sigmod.VOLUME_SCALE_DEPENDENT & (set(snap.red) | set(snap.green))
+    # 거래량 무관 신호는 그대로 남아야 한다(전면 차단이 아님)
+    assert snap.green, "거래량 의존 신호만 빼야 하는데 청신호가 전부 사라졌다"
+
+
+@needs_db
+def test_on_close_still_sees_volume_scale_signals(session):
+    """마감 확정봉 경로는 이 필터의 영향을 받지 않는다(확정 거래량이므로 판정 유효)."""
+    from simcore import signals as sigmod
+
+    sf = make_session_factory(make_engine(os.environ["TEST_DATABASE_URL"]))
+    repo = Repository(sf)
+    eng = Engine(Config())
+    eng.start(date(2026, 1, 1), 1300.0)
+    # 마지막 봉만 거래량을 줄여 R24 조건(상승 & 거래량 감소)을 만든 확정 히스토리
+    hist = _uptrend(80)
+    hist.iloc[-1, hist.columns.get_loc("volume")] *= 0.1
+    kis = FakeKis({("KR", "005930"): hist})
+    orch = Orchestrator(eng, kis, repo, Config(), fx_provider=lambda d_: 1300.0)
+
+    captured = {}
+    orig = eng.evaluate_close
+
+    def spy(day, m, snaps, bearish_by_market=None):
+        captured["snaps"] = snaps
+        return orig(day, m, snaps, bearish_by_market=bearish_by_market)
+
+    eng.evaluate_close = spy
+    orch.on_close(hist.index[-1].date(), "KR", ["005930"])
+    assert "R24" in captured["snaps"]["005930"].red, (
+        "확정봉 경로에서까지 R24 가 사라졌다 — 필터가 마감 경로로 번졌다")

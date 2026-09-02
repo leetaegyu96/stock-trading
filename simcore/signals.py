@@ -15,6 +15,36 @@ RED_COLS = ["R1", "R2", "R3", "R4", "R5", "R6", "R11", "R12", "R13", "R14",
 STUB_GREEN = ["G19", "G21", "G24"]
 STUB_RED = ["R22"]
 
+# 당일 "누적" 거래량을 전일/평균의 "완성" 거래량과 직접 비교하는 신호들.
+# 장중 잠정봉에서는 좌변만 부분값이라 판정이 성립하지 않는다 — G5/R5/G23 은 surge
+# (vol >= vol_avg*1.5), R24 는 (vol < 전일 vol) & (vol < vol_avg).
+#
+# 실측(일봉 3,278 종목일, 개장 30분 f=0.10 을 마감 f=1.00 과 대조):
+#   R24 22.7% → 49.5% (판정 뒤집힘 26.8%)  ← 4점 적신호가 상시 점등
+#   R5   3.3% → 0.0%,  G5 3.0% → 0.0%,  G23 0.7% → 0.0%  (장중엔 아예 발화 불가)
+# 나머지 33개 신호는 뒤집힘 0.0%. OBV(G13/R13)는 방향이 종가차 부호로만 결정돼
+# 거래량 배율에 불변이고, VWAP(G14/R14)도 0.0~0.1% 로 무시할 수준이라 제외 대상이 아니다.
+#
+# 누적량을 경과시간으로 나눠 "하루치 추정"으로 정규화하는 대안은 채택하지 않았다:
+# 장중 거래량은 U자형이라 선형 추정이 개장 직후 과대추정하고, 무엇보다 리플레이에
+# 장중 경로가 없어 그 추정기를 검증할 수단이 없다(검증 없는 장중 로직이 애초의 손실
+# 원인이었다 — docs/reviews/2026-09-02-live-loss-autopsy.html).
+#
+# ── 이 처리의 한계(측정치, 개장 30분 기준) ──────────────────────────────
+# 오차가 사라지는 게 아니라 부호가 뒤집힌다. R24 가 정당하게 발화하던 22.7% 의 경우
+# 까지 4점을 잃기 때문이다. 마감 확정봉을 정답으로 놓고 비교하면:
+#             적신호 평균      전량매도 발동률     매수 가능
+#   마감        11.01점          50.5%           8.18%
+#   수정 전     12.01 (+1.00)    61.9% (+11.4%p)  8.18%
+#   수정 후     10.03 (-0.98)    37.2% (-13.3%p)  8.18%
+# 다만 방향이 다르다 — 수정 전은 "과매도"(실제 손실의 원인), 수정 후는 "과소매도"이고
+# 이는 매일 마감의 확정봉 판정(on_close)이 바로잡는다. 강제매도(R7/R10/R18)는 이
+# 필터와 무관하게 유효하고, 매수 게이트 통과율은 8.18% 로 완전히 동일하다(거래량 관문은
+# 실질적으로 G13 이 담당 — 라이브 매수 105건 전부가 G13 으로 통과).
+# 오차를 실제로 줄이려면 시간대별 거래량 프로파일(장중 U자형 곡선)이 필요하며, 그건
+# 장중 리플레이 하니스와 함께 별도로 다뤄야 한다 — 장중매매 재활성화의 전제.
+VOLUME_SCALE_DEPENDENT = frozenset({"G5", "G23", "R5", "R24"})
+
 
 def min_history(p: SignalParams) -> int:
     return max(
@@ -121,6 +151,17 @@ def fired_at(frame: pd.DataFrame, d) -> tuple[tuple[str, ...], tuple[str, ...]]:
     green = tuple(c for c in GREEN_COLS if bool(row[c]))
     red = tuple(c for c in RED_COLS if bool(row[c]))
     return green, red
+
+
+def fired_at_provisional(frame: pd.DataFrame, d) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """장중 잠정봉용 발화 목록 — `VOLUME_SCALE_DEPENDENT` 를 제외한다.
+
+    잠정봉의 거래량은 당일 누적(부분)이라 완성 거래량과 비교하는 신호는 값이 정의되지
+    않는다. 값을 지어내는 대신 "판정하지 않는다"(미발화 처리). 마감 확정봉을 다루는
+    `fired_at` 은 영향받지 않는다."""
+    green, red = fired_at(frame, d)
+    return (tuple(c for c in green if c not in VOLUME_SCALE_DEPENDENT),
+            tuple(c for c in red if c not in VOLUME_SCALE_DEPENDENT))
 
 
 def score(codes, scores: SignalScores) -> tuple[int, dict]:
