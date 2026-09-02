@@ -269,7 +269,12 @@ class Orchestrator:
                               "volume": vol if vol else fallback_vol}
                 df = df.sort_index()
                 frame = sigmod.evaluate_frame(df, self.cfg.signals)
-                green, red = sigmod.fired_at(frame, ts)
+                # 잠정봉의 volume 은 당일 "누적"(위 today 조회, 실패 시 전일치 폴백)인데
+                # 비교 대상인 전일 volume·vol_avg 는 "완성" 하루치라, 이를 직접 비교하는
+                # 신호(G5/G23/R5/R24)는 장중에 판정이 성립하지 않는다 → 미발화 처리.
+                # 특히 R24(거래량 없는 상승, 적 4점)는 이 왜곡으로 22.7%→49.5% 로 상시
+                # 점등됐다. 근거·실측 표는 signals.VOLUME_SCALE_DEPENDENT 주석 참고.
+                green, red = sigmod.fired_at_provisional(frame, ts)
                 gs, rs, gate = sigmod.snapshot_scores(green, red, self.cfg.scores)
                 loc = df.index.get_loc(ts)
                 prev_close = float(df["close"].iloc[loc - 1]) if loc > 0 else px
