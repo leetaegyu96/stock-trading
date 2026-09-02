@@ -47,13 +47,21 @@ def _index_provider(cache: Path):
 
 
 def _config_from_settings(settings) -> Config:
-    """LiveSettings → Config. INTRADAY_ENABLED=false(기본)면 Config() 그대로(기존 동작 100% 불변).
-    true 면 intraday_enabled/intraday_scan_minutes 를 반영한 새 Config 를 만든다."""
+    """LiveSettings → Config. 모든 env 토글이 기본값이면 Config() 그대로(기존 동작 100% 불변).
+
+    - INTRADAY_ENABLED=true  → intraday_enabled/intraday_scan_minutes 반영
+    - SIGNAL_SELL_ENABLED=false → 적신호 점수 매도 OFF("손절/트레일만" 모드)
+    - MAX_POSITIONS=N (≠기본 5) → 동시 보유 종목 수 반영
+    """
     cfg = Config()
     if settings.intraday_enabled:
         cfg = replace(cfg, rules=replace(cfg.rules,
                       intraday_enabled=True,
                       intraday_scan_minutes=settings.intraday_scan_minutes))
+    if not settings.signal_sell_enabled:
+        cfg = replace(cfg, rules=replace(cfg.rules, signal_sell_enabled=False))
+    if settings.max_positions != cfg.rules.max_positions:
+        cfg = replace(cfg, rules=replace(cfg.rules, max_positions=settings.max_positions))
     return cfg
 
 

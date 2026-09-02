@@ -123,6 +123,8 @@ class Engine:
                         sym, market, TradeReason.SIGNAL_SELL, len(red), s.red_score,
                         tuple(s.red), partial=False,
                         decision_type=DecisionType.FORCED_SELL, trigger_rule=trig))
+                elif not r.signal_sell_enabled:
+                    continue                       # 점수 매도 OFF — 강제매도(위)만 유효
                 elif s.red_score >= r.sell_full_min:
                     st.pending_sells.append(PendingSell(
                         sym, market, TradeReason.SIGNAL_SELL, len(red), s.red_score,
@@ -344,6 +346,8 @@ class Engine:
                     st.intraday_sells[sym] = st.intraday_sells.get(sym, 0) + 1
                     st.intraday_last_sell_ts[sym] = now
                     continue
+                if not r.signal_sell_enabled:
+                    continue                       # 점수 매도 OFF — 강제매도(위)만 유효
                 full = s.red_score >= r.sell_full_min
                 partial = s.red_score >= r.sell_partial_min
                 if (full or partial) and self._intraday_can_sell(st, sym):
