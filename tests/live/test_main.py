@@ -38,6 +38,9 @@ class _FakeSettings:
     intraday_scan_minutes: int = 10
     signal_sell_enabled: bool = True
     max_positions: int = 5
+    intraday_buy_enabled: bool = True
+    intraday_max_buys_per_day: int = 0
+    trailing_intraday_update: bool = True
 
 
 def test_config_from_settings_disabled_keeps_defaults():
@@ -69,6 +72,26 @@ def test_config_from_settings_disables_signal_sell():
 def test_config_from_settings_applies_max_positions():
     cfg = _config_from_settings(_FakeSettings(max_positions=10))
     assert cfg.rules.max_positions == 10
+
+
+def test_config_from_settings_defaults_keep_intraday_brakes_off():
+    cfg = _config_from_settings(_FakeSettings())
+    assert cfg.rules.intraday_buy_enabled is True
+    assert cfg.rules.intraday_max_buys_per_day == 0
+
+
+def test_config_from_settings_applies_trailing_intraday_update():
+    assert _config_from_settings(_FakeSettings()).rules.trailing_intraday_update is True
+    cfg = _config_from_settings(_FakeSettings(trailing_intraday_update=False))
+    assert cfg.rules.trailing_intraday_update is False
+    assert cfg.rules.stop_loss_pct == -0.07      # 손절 파라미터는 불변
+
+
+def test_config_from_settings_applies_intraday_brakes():
+    cfg = _config_from_settings(_FakeSettings(intraday_buy_enabled=False,
+                                              intraday_max_buys_per_day=2))
+    assert cfg.rules.intraday_buy_enabled is False
+    assert cfg.rules.intraday_max_buys_per_day == 2
 
 
 @needs_db

@@ -24,6 +24,11 @@ class LiveSettings(BaseSettings):
     signal_sell_enabled: bool = Field(default=True, alias="SIGNAL_SELL_ENABLED")
     # 동시 보유 종목 수. 분산도 조절용(기본은 TradeRules.max_positions=5).
     max_positions: int = Field(default=5, alias="MAX_POSITIONS")
+    # 장중 회전 억제 — 장중 매수만 끄기 / 하루 장중 매수 상한(0=무제한).
+    intraday_buy_enabled: bool = Field(default=True, alias="INTRADAY_BUY_ENABLED")
+    intraday_max_buys_per_day: int = Field(default=0, alias="INTRADAY_MAX_BUYS_PER_DAY")
+    # 트레일링 잠금선을 장중 틱에서도 올릴지. false = 마감에서만 갱신(손절 체크는 유지).
+    trailing_intraday_update: bool = Field(default=True, alias="TRAILING_INTRADAY_UPDATE")
 
     def kis_base_url(self) -> str:
         return _PAPER if self.kis_env == "paper" else _REAL

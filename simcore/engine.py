@@ -301,6 +301,11 @@ class Engine:
         """장중 매수 차단 사유(관찰용) — 없으면 None. `_intraday_can_buy` 와 완전히 동일한
         순서·조건이며, bool 대신 사유 문자열을 돌려줘 의사결정판에 기록할 수 있게 한다."""
         r = self.config.rules
+        if not r.intraday_buy_enabled:
+            return "장중매수OFF"
+        if (r.intraday_max_buys_per_day
+                and sum(st.intraday_buys.values()) >= r.intraday_max_buys_per_day):
+            return "일일매수상한"
         if st.intraday_buys.get(symbol, 0) >= r.intraday_max_buys_per_symbol:
             return "장중매수캡"
         last = st.intraday_last_sell_ts.get(symbol)
@@ -419,7 +424,7 @@ class Engine:
 
     # ---- 장중: 트레일링 스탑 (리플레이 = 당일 OHLC 근사, 라이브 = 현재가 bar) ----
     def check_stops(self, d: Date, market: Market, bars: dict[str, DailyBar],
-                    fx_rate: float) -> None:
+                    fx_rate: float, update_trailing: bool = True) -> None:
         for st in self.states.values():
             if market not in st.spec.markets:
                 continue
@@ -437,7 +442,8 @@ class Engine:
                     self._sell(st, d, sym, stop_px, reason, fx_rate,
                                decision_type=DecisionType.FORCED_SELL, trigger_rule=trig)
                     continue
-                self._update_trailing(pos, b.high)                   # 미발동 시 peak 갱신
+                if update_trailing:
+                    self._update_trailing(pos, b.high)               # 미발동 시 peak 갱신
 
     # ---- 사용자 입출금 ----
     def apply_flow(self, d: Date, character: str, amount_krw: float, fx_rate: float,

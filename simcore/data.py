@@ -9,12 +9,41 @@ LOOKBACK_PAD_DAYS = 180  # 지표 워밍업(일목 78거래일 ≈ 118달력일)
 COLS = ["open", "high", "low", "close", "volume"]
 
 
+def sanitize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+    """공급원의 깨진 일봉을 걸러낸다. 로더와 리플레이 진입부에서 모두 적용한다.
+
+    pykrx 는 드물게 `open=high=low=0` 이고 close 만 채워진 봉을 준다(거래정지·데이터 공백).
+    이걸 그대로 쓰면 `Engine.check_stops` 가 `low(0) <= stop_px` 로 판정해 **그 종목 보유분을
+    전부 허위 손절**시킨다 — 조용히 백테스트를 오염시키는 버그다. 실측(2023-01~2026-09):
+    KR 캐시 34,578봉 중 20봉(0.058%)이 해당, US 는 0봉, 운영 DB(KIS 수신분) 8,380봉도 0봉.
+
+    처리:
+    - o/h/l/c 중 하나라도 0 이하이거나 NaN 인 행은 **버린다**(가격 정보가 없다).
+    - 반올림으로 high/low 가 살짝 어긋난 행(예: close 가 high 보다 1원 위)은
+      high=max(o,h,l,c), low=min(o,h,l,c) 로 **보정**한다.
+    """
+    # `_cached` 는 FX·지수 시리즈에도 쓰인다 — OHLC 컬럼이 없으면 손대지 않는다.
+    if df.empty or not {"open", "high", "low", "close"}.issubset(df.columns):
+        return df
+    px = df[["open", "high", "low", "close"]]
+    keep = px.notna().all(axis=1) & (px > 0).all(axis=1)
+    out = df.loc[keep].copy()
+    if out.empty:
+        return out
+    px = out[["open", "high", "low", "close"]]
+    out["high"] = px.max(axis=1)
+    out["low"] = px.min(axis=1)
+    return out
+
+
 def _cached(cache_dir: Path, key: str, fetch: Callable[[], pd.DataFrame]) -> pd.DataFrame:
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     path = cache_dir / f"{key}.parquet"
     if path.exists():
-        df = pd.read_parquet(path)
+        # 이미 저장된 캐시에도 깨진 봉이 들어 있을 수 있다(정제 도입 이전에 받은 것) —
+        # 읽는 쪽에서도 걸러야 재수집 없이 안전해진다.
+        df = sanitize_ohlcv(pd.read_parquet(path))
         # Restore frequency if it was lost during parquet serialization
         if df.index.freq is None and isinstance(df.index, pd.DatetimeIndex):
             inferred = df.index.inferred_freq
@@ -44,7 +73,7 @@ def load_kr_daily(symbols: list[str], start: Date, end: Date,
             raw = raw.rename(columns={"시가": "open", "고가": "high", "저가": "low",
                                       "종가": "close", "거래량": "volume"})
             raw.index = pd.to_datetime(raw.index)
-            return raw[COLS].astype(float).sort_index()
+            return sanitize_ohlcv(raw[COLS].astype(float).sort_index())
         try:
             df = _cached(cache_dir, _key("KR", sym, pad_start, end), fetch)
             if not df.empty:
