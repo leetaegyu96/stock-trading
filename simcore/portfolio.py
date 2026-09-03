@@ -48,10 +48,19 @@ class Portfolio:
                 raise InsufficientCashError(self.character, short)
             self.cash[Currency.USD] -= needed_usd
         else:
+            # 범용형은 매도 대금을 달러로 들고 있을 수 있다(왕복 환전 제거, v1.18.0).
+            # 원화가 모자라면 부족분만 달러에서 환전해 메운다 — 예전처럼 매도마다 전액을
+            # 원화로 되돌리지 않으므로, 이게 없으면 총자산이 충분해도 출금이 실패한다.
+            if self.cash[Currency.KRW] + _EPS < amount_krw:
+                shortfall = amount_krw - self.cash[Currency.KRW]
+                try:
+                    self.convert_to_krw(shortfall, fx_rate)
+                except ValueError:
+                    pass
             if self.cash[Currency.KRW] + _EPS < amount_krw:
                 raise InsufficientCashError(
                     self.character, amount_krw - self.cash[Currency.KRW])
-            self.cash[Currency.KRW] -= amount_krw
+            self.cash[Currency.KRW] = max(0.0, self.cash[Currency.KRW] - amount_krw)
         self.flows.append(CapitalFlow(d, self.character, -amount_krw, fx_rate))
         self.assert_invariants()
 
@@ -118,13 +127,56 @@ class Portfolio:
         self.cash[Currency.USD] += target_usd
         self.assert_invariants()
 
+    def convert_to_krw(self, target_krw: float, fx_rate: float) -> None:
+        """필요한 만큼만 달러→원화. `convert_to_usd` 의 대칭."""
+        if target_krw <= 0:
+            return
+        fee = self.config.costs.fx_fee
+        usd_cost = target_krw / (fx_rate * (1 - fee))
+        if self.cash[Currency.USD] + _EPS < usd_cost:
+            raise ValueError(f"{self.character}: 환전 달러 부족")
+        self.cash[Currency.USD] = max(0.0, self.cash[Currency.USD] - usd_cost)
+        self.cash[Currency.KRW] += target_krw
+        self.assert_invariants()
+
     def convert_all_usd_to_krw(self, fx_rate: float) -> None:
+        """달러 잔고 전액을 원화로. 청산·출금 같은 명시적 상황에서만 쓴다.
+
+        주의: 매도마다 이걸 부르면 다음 매수에서 되돌리느라 왕복 수수료(편도 0.1%)를
+        문다. 실제로 라이브 6주에 약 160만원, 3.2년 리플레이 기준 초기자본의 5.0%p 가
+        이 왕복으로 샜다(v1.18.0에서 제거) — `Engine._buy` 가 부족분만 환전한다.
+        """
         usd = self.cash[Currency.USD]
         if usd <= 0:
             return
         self.cash[Currency.USD] = 0.0
         self.cash[Currency.KRW] += costmod.usd_to_krw(usd, fx_rate, self.config.costs.fx_fee)
         self.assert_invariants()
+
+    def buying_power(self, cur: Currency, fx_rate: float) -> float:
+        """`cur` 기준 총 매수 여력 — 그 통화 현금 + 반대 통화를 환전했을 때 얻는 금액.
+
+        달러를 원화로 되돌리지 않고 들고 있으면 `cash[KRW]` 만으로는 여력을 과소평가한다.
+        """
+        fee = self.config.costs.fx_fee
+        krw, usd = self.cash[Currency.KRW], self.cash[Currency.USD]
+        if cur == Currency.USD:
+            return usd + costmod.krw_to_usd(krw, fx_rate, fee)
+        return krw + costmod.usd_to_krw(usd, fx_rate, fee)
+
+    def ensure_cash(self, cur: Currency, needed: float, fx_rate: float) -> bool:
+        """`cur` 현금이 `needed` 에 못 미치면 부족분만 반대 통화에서 환전. 성공 여부 반환."""
+        if self.cash[cur] + _EPS >= needed:
+            return True
+        shortfall = needed - self.cash[cur]
+        try:
+            if cur == Currency.USD:
+                self.convert_to_usd(shortfall, fx_rate)
+            else:
+                self.convert_to_krw(shortfall, fx_rate)
+        except ValueError:
+            return False
+        return self.cash[cur] + _EPS >= needed
 
     # ---- 평가 ----
     def equity_krw(self, prices: dict[str, float], fx_rate: float) -> float:
