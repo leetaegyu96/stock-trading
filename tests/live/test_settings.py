@@ -3,8 +3,10 @@ from simcore.live.settings import LiveSettings
 
 
 def _mk(**over):
+    # _env_file=None 으로 실제 .env 를 차단한다. 없으면 pydantic-settings 가 리포 루트의
+    # .env 를 읽어(운영은 KIS_ENV=paper) 기본값 검증이 환경에 따라 깨진다.
     base = dict(kis_app_key="AK", kis_app_secret="SEKRET",
-                database_url="postgresql://u:p@localhost/db")
+                database_url="postgresql://u:p@localhost/db", _env_file=None)
     base.update(over)
     return LiveSettings(**base)
 

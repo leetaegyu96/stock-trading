@@ -237,18 +237,19 @@ class Engine:
         c = self.config.costs
         cur = MARKET_CURRENCY[b.market]
         pf = st.portfolio
-        cross_currency = (st.spec.base_currency == Currency.KRW and cur == Currency.USD)
-        if cross_currency:
-            budget = costmod.krw_to_usd(pf.cash[Currency.KRW] / slots, fx_rate, c.fx_fee)
-        else:
-            budget = pf.cash[cur] / slots
+        # 두 통화를 다 쓰는 캐릭터(범용형)는 반대 통화 잔고도 매수 여력이다. 예산은 총
+        # 여력으로 잡고, 체결에는 보유 통화를 먼저 쓴 뒤 **부족분만** 환전한다 — 매도마다
+        # 전액을 되돌리던 예전 방식은 왕복 수수료를 물었다(0.1% × 2).
+        multi_currency = len(st.spec.markets) > 1
+        budget = (pf.buying_power(cur, fx_rate) if multi_currency else pf.cash[cur]) / slots
         fee_rate = costmod.commission_rate(b.market, c)
         fill_price = price * (1 + c.slippage)
         qty = int(budget // (fill_price * (1 + fee_rate)))
         if qty <= 0:
             return False
-        if cross_currency:
-            pf.convert_to_usd(qty * fill_price * (1 + fee_rate), fx_rate)
+        total = qty * fill_price * (1 + fee_rate)
+        if not pf.ensure_cash(cur, total, fx_rate):
+            return False
         pf.buy(d, b.symbol, b.market, qty, fill_price, TradeReason.SIGNAL_BUY,
                green_count=b.green_count, green_score=b.green_score, fired=b.fired,
                decision_type=b.decision_type or DecisionType.BUY, trigger_rule=b.trigger_rule)
@@ -268,8 +269,10 @@ class Engine:
                           decision_type=decision_type, trigger_rule=trigger_rule)
         if cooldown and symbol not in st.portfolio.positions:
             st.cooldowns[symbol] = [market, self.config.rules.cooldown_days]
-        if st.spec.base_currency == Currency.KRW and market == Market.US:
-            st.portfolio.convert_all_usd_to_krw(fx_rate)  # 범용형: 매도 대금 즉시 원화로
+        # 매도 대금은 그 통화 그대로 둔다. 예전에는 범용형의 US 매도마다 달러 전액을
+        # 원화로 되돌렸는데, 다음 US 매수에서 다시 달러로 바꾸느라 왕복 0.2% 를 물었다
+        # (3.2년 리플레이 기준 초기자본의 5.0%p). 이제 `_buy` 가 부족분만 환전하고,
+        # 출금은 `Portfolio.withdraw` 가 필요한 만큼만 환전한다.
 
     def _update_trailing(self, pos, high: float) -> None:
         r = self.config.rules
