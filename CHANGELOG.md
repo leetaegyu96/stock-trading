@@ -4,6 +4,27 @@
 
 상세 패치노트는 `docs/patch-notes/vX.Y.Z.md` 참조.
 
+## v1.19.0 — 2026-09-03
+
+"회전 억제" 가설 검증 — 가설은 틀렸고, 대신 라이브↔백테스트의 근본 불일치를 찾았다.
+
+### Fixed
+- **깨진 일봉이 허위 손절을 유발**하던 문제. pykrx 의 `open=high=low=0` 봉이 `check_stops` 에서 `low(0) <= stop_px` 로 그 종목 보유분을 전부 손절시켰다. KR 캐시 34,578봉 중 20봉 해당, 운영 DB(KIS)는 0봉 → **백테스트만 오염**. `data.sanitize_ohlcv` 를 로더·캐시 read·리플레이 진입부에 적용 (PR #73)
+- **트레일링 잠금선의 장중 래칫**. 라이브 `tick_{market}` 잡은 `intraday_enabled` 와 무관하게 5분마다 돌며 잠금선을 장중에 올리고, 같은 날 되돌림이 그 선을 때려 청산된다. `run_replay` 는 하루 1회만 판정해 이걸 모사한 적이 없다 — **백테스트가 라이브보다 관대**했다 (PR #73)
+
+### Added
+- `TradeRules.trailing_intraday_update`(기본 True) — False = peak/잠금선을 마감에서만 갱신(손절 체크는 유지)
+- `TradeRules.intraday_buy_enabled` / `intraday_max_buys_per_day` — 장중 매수 억제(검증 실패, 기본값 유지)
+- `replay.IntradayReplayOptions.tick_only` — 매매 판정 없이 손익절 틱만. 라이브 tick 잡과 동일 조건
+- env `TRAILING_INTRADAY_UPDATE` / `INTRADAY_BUY_ENABLED` / `INTRADAY_MAX_BUYS_PER_DAY`. 테스트 29건, 전체 **501 passed**
+
+### 검증
+- 매수 억제는 **듣지 않았다** — 장중매수 금지가 오히려 −13.1%p(브레이크 없음 −10.1%p), 반응이 비단조, 경로 가정만 바꿔도 +34.50%→+17.71%로 흔들려 잡음에 묻힌다
+- 트레일링 장중 래칫 차단은 3구간 × 경로 양방향 **국내형 6/6 전부 +9.6~+18.8%p 개선**, 범용형 4/6, 해외형 무영향. 끄면 하루-1회 기준선과 소수점까지 일치(정합성 증거)
+
+### Changed
+- 운영 `.env` 에 `TRAILING_INTRADAY_UPDATE=false` 적용. `INTRADAY_ENABLED=0` 유지
+
 ## v1.18.1 — 2026-09-03
 
 국내형 장중 악화 원인 분해 — 그 결과 다음 우선순위가 바뀌었다.
