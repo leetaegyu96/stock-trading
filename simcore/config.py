@@ -116,6 +116,20 @@ class TradeRules:
     intraday_disparity_period: int = 20
     intraday_sr_lookback: int = 20
     intraday_strength_buy_min: float = 100.0
+    # ── 장중 회전 억제 브레이크 ──
+    # 배경: 장중 경로를 켜면 국내형이 2026년 8개월 구간에 −17.6~−18.0%p 나빠지는데,
+    # 분해해 보면 비용은 3.3%뿐이고 매수가는 오히려 개선된다. 악화의 거의 전부가
+    # **회전 증가**에서 온다 — 평가 기회가 늘어 매수가 자주 성립하고, 그 포지션이 같은 날
+    # 저가에 노출돼 손절에 더 걸린다. docs/experiments/kr-intraday-degradation-2026-09-03.md
+    # 아래 둘은 그 회전을 직접 누르는 손잡이다. 기본값은 기존 동작 그대로.
+    intraday_buy_enabled: bool = True       # False = 장중 매수 금지(매도·손절만 장중에)
+    intraday_max_buys_per_day: int = 0      # 캐릭터별 하루 장중 매수 상한 (0=무제한)
+    # 트레일링 잠금선을 장중 틱에서도 올릴지. 라이브는 tick 잡이 5분마다 돌며 래칫하는데,
+    # 그러면 잠금선이 장중에 올라간 뒤 **같은 날 되돌림**이 그 선을 때려 청산된다.
+    # False = peak/잠금선은 마감 판정에서만 갱신(손절 체크 자체는 장중에도 계속).
+    # 실측: True→False 로 국내형이 3개 구간 모두 +9.6~+18.8%p 회복.
+    # docs/experiments/intraday-turnover-brakes-2026-09-03.md
+    trailing_intraday_update: bool = True
     # 하락장 가드 적용 캐릭터(빈 집합=전체 off). 스윕+12개월 검증 결과 기본 off 확정:
     # docs/experiments/bear_guard_tuning_sweep_2026-01-09_2026-07-09.md
     bear_guard_characters: frozenset = frozenset()

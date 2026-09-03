@@ -140,7 +140,8 @@ def _intraday_step(engine: Engine, config: Config, market: Market, d: Date,
         tick_bars = {sym: DailyBar(sym, d, s[k].close, s[k].seg_high, s[k].seg_low,
                                    s[k].close, 0.0)
                      for sym, s in sliced.items()}
-        engine.check_stops(d, market, tick_bars, fx)
+        engine.check_stops(d, market, tick_bars, fx,
+                           update_trailing=config.rules.trailing_intraday_update)
         if opts.tick_only:
             for sym, s_ in sliced.items():          # 최근가만 갱신(평가액 반영용)
                 running_px[sym] = s_[k].close

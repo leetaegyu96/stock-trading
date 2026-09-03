@@ -22,7 +22,8 @@ def sanitize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     - 반올림으로 high/low 가 살짝 어긋난 행(예: close 가 high 보다 1원 위)은
       high=max(o,h,l,c), low=min(o,h,l,c) 로 **보정**한다.
     """
-    if df.empty:
+    # `_cached` 는 FX·지수 시리즈에도 쓰인다 — OHLC 컬럼이 없으면 손대지 않는다.
+    if df.empty or not {"open", "high", "low", "close"}.issubset(df.columns):
         return df
     px = df[["open", "high", "low", "close"]]
     keep = px.notna().all(axis=1) & (px > 0).all(axis=1)

@@ -60,3 +60,16 @@ def test_low_zero_bar_would_have_stopped_every_position():
     stop_px = 100_000 * (1 + Config().rules.stop_loss_pct)
     assert bad["low"].iloc[0] <= stop_px          # 정제 전: 발동
     assert sanitize_ohlcv(bad).empty              # 정제 후: 봉 자체가 사라짐
+
+
+def test_non_ohlcv_frame_is_untouched():
+    """FX·지수 시리즈처럼 OHLC 컬럼이 없는 프레임은 그대로 통과한다(_cached 공용 경로)."""
+    fx = pd.DataFrame({"Close": [1300.0, 1310.0]},
+                      index=pd.bdate_range("2025-01-01", periods=2))
+    pd.testing.assert_frame_equal(sanitize_ohlcv(fx), fx)
+
+
+def test_partial_columns_are_untouched():
+    df = pd.DataFrame({"open": [1.0], "close": [2.0]},
+                      index=pd.bdate_range("2025-01-01", periods=1))
+    pd.testing.assert_frame_equal(sanitize_ohlcv(df), df)
