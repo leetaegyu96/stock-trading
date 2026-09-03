@@ -151,3 +151,43 @@ def test_max_positions_respected_intraday(bundle):
     res = _run(bundle, cfg, intraday=IntradayReplayOptions(slices=6))
     for poss in res.positions_by_char.values():
         assert len(poss) <= 1
+
+
+# ── 6. tick_only — 라이브 5분 손익절 틱 모사 ─────────────────────────────
+def test_tick_only_runs_stop_checks_per_slice(bundle, monkeypatch):
+    """tick_only 는 intraday_enabled 와 무관하게 슬라이스마다 check_stops 를 돌린다.
+
+    라이브 스케줄러의 `tick_{market}` 잡이 매매 토글과 무관하게 5분마다 돌기 때문이다.
+    (실제 청산 결과가 달라지는지는 엔진 단위 테스트에서 검증 —
+    tests/test_engine_trailing_ratchet.py)
+    """
+    from simcore.engine import Engine
+    calls = {"n": 0}
+    orig = Engine.check_stops
+
+    def spy(self, *a, **kw):
+        calls["n"] += 1
+        return orig(self, *a, **kw)
+
+    monkeypatch.setattr(Engine, "check_stops", spy)
+    _run(bundle, Config())
+    daily_only = calls["n"]
+    calls["n"] = 0
+    _run(bundle, Config(), intraday=IntradayReplayOptions(slices=6, tick_only=True))
+    with_ticks = calls["n"]
+    assert with_ticks > daily_only, (
+        f"tick_only 가 무시됐다 — check_stops 호출이 {daily_only} → {with_ticks}")
+
+
+def test_tick_only_makes_no_intraday_trading_decisions(bundle):
+    """손익절만 — 장중 매수/매도 판정은 일어나지 않는다."""
+    res = _run(bundle, Config(), intraday=IntradayReplayOptions(slices=6, tick_only=True))
+    kinds = set(res.trades["decision_type"])
+    assert DecisionType.INTRADAY_BUY.value not in kinds
+    assert DecisionType.INTRADAY_SELL.value not in kinds
+
+
+def test_tick_only_is_deterministic(bundle):
+    o = IntradayReplayOptions(slices=6, tick_only=True, order="low_first")
+    pd.testing.assert_frame_equal(_frame(_run(bundle, Config(), intraday=o))[1],
+                                  _frame(_run(bundle, Config(), intraday=o))[1])

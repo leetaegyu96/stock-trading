@@ -339,7 +339,12 @@ class Orchestrator:
         # 상태 mutate(check_stops) + persist 를 한 락 구간으로 직렬화. 위 보유 종목
         # 현재가 조회 루프(네트워크)는 락 밖에서 이미 끝났다.
         with self._lock:
-            self.engine.check_stops(d, m, bars, fx)
+            # 트레일링 래칫은 rules.trailing_intraday_update 가 True 일 때만. False 면
+            # 손절 체크는 계속하되 peak/잠금선은 마감(on_close 다음 개장 check_stops)에서만
+            # 올린다 — 장중에 올라간 선을 같은 날 되돌림이 때리는 문제를 막는다.
+            self.engine.check_stops(
+                d, m, bars, fx,
+                update_trailing=self.cfg.rules.trailing_intraday_update)
             with self.repo.transaction() as s:
                 self.repo.persist_state(self.engine, session=s)
                 self.repo.append_new_trades(self.engine, session=s)

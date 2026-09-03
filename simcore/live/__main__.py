@@ -52,6 +52,9 @@ def _config_from_settings(settings) -> Config:
     - INTRADAY_ENABLED=true  → intraday_enabled/intraday_scan_minutes 반영
     - SIGNAL_SELL_ENABLED=false → 적신호 점수 매도 OFF("손절/트레일만" 모드)
     - MAX_POSITIONS=N (≠기본 5) → 동시 보유 종목 수 반영
+    - INTRADAY_BUY_ENABLED=false → 장중 매수 금지(장중 매도·손절은 유지)
+    - INTRADAY_MAX_BUYS_PER_DAY=N → 캐릭터별 하루 장중 매수 상한
+    - TRAILING_INTRADAY_UPDATE=false → 트레일링 잠금선을 마감에서만 갱신
     """
     cfg = Config()
     if settings.intraday_enabled:
@@ -62,6 +65,13 @@ def _config_from_settings(settings) -> Config:
         cfg = replace(cfg, rules=replace(cfg.rules, signal_sell_enabled=False))
     if settings.max_positions != cfg.rules.max_positions:
         cfg = replace(cfg, rules=replace(cfg.rules, max_positions=settings.max_positions))
+    if not settings.intraday_buy_enabled:
+        cfg = replace(cfg, rules=replace(cfg.rules, intraday_buy_enabled=False))
+    if settings.intraday_max_buys_per_day != cfg.rules.intraday_max_buys_per_day:
+        cfg = replace(cfg, rules=replace(
+            cfg.rules, intraday_max_buys_per_day=settings.intraday_max_buys_per_day))
+    if not settings.trailing_intraday_update:
+        cfg = replace(cfg, rules=replace(cfg.rules, trailing_intraday_update=False))
     return cfg
 
 
