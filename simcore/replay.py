@@ -47,6 +47,11 @@ class IntradayReplayOptions:
     order: PathOrder = "low_first"
     session_start: _Time = _Time(9, 0)
     scan_minutes: int = 10
+    # True = 손익절 틱만 돌린다(장중 매매 판정 없음). 라이브 스케줄러의 `tick_{market}`
+    # 잡은 `intraday_enabled` 와 **무관하게 5분마다** on_tick→check_stops 를 호출하는데,
+    # 리플레이는 그걸 하루 1회로만 모사해 왔다. 그 차이를 메우는 모드이므로
+    # `intraday_enabled=False` 여도 동작한다.
+    tick_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -71,7 +76,11 @@ class ReplayResult:
 
 
 def _market_data(bundle: DataBundle) -> dict[Market, dict[str, pd.DataFrame]]:
-    return {Market.KR: bundle.kr, Market.US: bundle.us}
+    """시장별 일봉. 깨진 봉(o/h/l/c ≤ 0 등)은 여기서 걸러낸다 — 호출자가 직접 만든
+    DataBundle(예: DB에서 조립한 것)도 보호하기 위해서다. low=0 인 봉 하나가
+    `check_stops` 에서 그 종목 보유분을 전부 허위 손절시킨다."""
+    return {Market.KR: {s: datamod.sanitize_ohlcv(df) for s, df in bundle.kr.items()},
+            Market.US: {s: datamod.sanitize_ohlcv(df) for s, df in bundle.us.items()}}
 
 
 _INDEX_NAME = {Market.KR: "KOSPI200", Market.US: "S&P500"}
@@ -132,6 +141,10 @@ def _intraday_step(engine: Engine, config: Config, market: Market, d: Date,
                                    s[k].close, 0.0)
                      for sym, s in sliced.items()}
         engine.check_stops(d, market, tick_bars, fx)
+        if opts.tick_only:
+            for sym, s_ in sliced.items():          # 최근가만 갱신(평가액 반영용)
+                running_px[sym] = s_[k].close
+            continue                                 # 장중 매매 판정 없음 — 틱만
         # ② 잠정봉 신호 판정
         snaps: dict[str, SymbolSnapshot] = {}
         for sym, (df, ts) in todays.items():
@@ -159,9 +172,14 @@ def run_replay(config: Config, bundle: DataBundle, start: Date, end: Date,
                flows: list[FlowEvent] = (),
                intraday: IntradayReplayOptions | None = None) -> ReplayResult:
     md = _market_data(bundle)
-    # 장중 경로는 config 토글이 켜져 있을 때만. 꺼져 있으면 기존 동작 100% 불변.
-    intraday_opts = (intraday or IntradayReplayOptions()) \
-        if config.rules.intraday_enabled else None
+    # 장중 매매 경로는 config 토글이 켜져 있을 때만. 단 tick_only(라이브 5분 손익절 틱
+    # 모사)는 매매 토글과 무관하게 동작한다 — 라이브의 tick 잡이 그렇기 때문이다.
+    if intraday is not None and intraday.tick_only:
+        intraday_opts = intraday
+    elif config.rules.intraday_enabled:
+        intraday_opts = intraday or IntradayReplayOptions()
+    else:
+        intraday_opts = None
     # 1) 신호 표를 종목당 한 번 벡터화 계산
     frames = {m: {sym: sigmod.evaluate_frame(df, config.signals)
                   for sym, df in data.items()}
