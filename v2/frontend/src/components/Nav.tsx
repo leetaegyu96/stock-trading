@@ -24,6 +24,10 @@ export function Nav({ me, accounts, activeAccountId, onLogout }: NavProps) {
       <NavLink to="/" className={cls} end>
         홈
       </NavLink>
+      {/* 랭킹은 캐릭터를 고르지 않아도 볼 수 있는 전체 화면이라 항상 띄운다. */}
+      <NavLink to="/ranking" className={cls}>
+        랭킹
+      </NavLink>
       {active && (
         <>
           <NavLink to={`/accounts/${active.id}/stocks`} className={cls}>

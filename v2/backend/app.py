@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, PlainTextResponse
 
 from v2.backend import market as market_mod
+from v2.backend import ranking as ranking_mod
 from v2.backend import scheduler as sched_mod
 from v2.backend.db import create_all, make_engine, make_session_factory
 from v2.backend.deps import install_error_handler
@@ -34,7 +35,7 @@ async def lifespan(app: FastAPI):
     sf = make_session_factory(engine)
     # KIS 클라이언트·캐시를 프로세스 1회 초기화. 라우터는 모듈 레벨 함수를 그대로 쓴다.
     market_mod.init_from_settings(sf, settings)
-    _warm_market_cache()
+    _warm_market_cache(sf)
     scheduler = sched_mod.build_scheduler(sf, market_mod, settings)
     if scheduler.get_jobs():
         scheduler.start()
@@ -49,12 +50,15 @@ async def lifespan(app: FastAPI):
             scheduler.shutdown(wait=False)
 
 
-def _warm_market_cache() -> None:
-    """종목 목록을 백그라운드로 미리 채운다.
+def _warm_market_cache(sf) -> None:
+    """종목 목록과 랭킹을 백그라운드로 미리 채운다.
 
     콜드 캐시에서는 종목 30개 × (현재가+일봉)을 받아야 해서 첫 요청이 몇 초 걸린다.
     그 몇 초를 **첫 방문자가 대신 기다리는 것**이 이 앱에서 제일 흔한 나쁜 첫인상이라,
     기동 직후 미리 받아 둔다. 실패해도 그냥 넘어간다 — 요청 시점에 다시 시도한다.
+
+    랭킹까지 데우는 이유: 보유 종목에는 상위 30위 밖 종목이 섞여 있어 목록 예열만으로는
+    그 일봉이 캐시되지 않는다(실측 첫 호출 15초).
     """
     def run() -> None:
         for kind in ("KR", "US"):
@@ -62,6 +66,12 @@ def _warm_market_cache() -> None:
                 market_mod.list_stocks(kind)      # 첫 페이지만 — 뒤는 '더 보기' 시점에
             except Exception as exc:
                 log.warning("[v2] %s 종목 예열 실패(요청 시 재시도): %s", kind, exc)
+        for kind in (None, "KR", "US"):
+            try:
+                with sf() as session:
+                    ranking_mod.build(session, market_mod, kind=kind, use_cache=True)
+            except Exception as exc:
+                log.warning("[v2] 랭킹 예열 실패(요청 시 재시도): %s", exc)
 
     threading.Thread(target=run, name="market-warmup", daemon=True).start()
 

@@ -116,6 +116,13 @@ export function kindLabel(kind: string): string {
   return kind;
 }
 
+/** 좁은 자리(뱃지·표 셀)용 짧은 라벨: "국내" / "해외". */
+export function kindShort(kind: string): string {
+  if (kind === "KR") return "국내";
+  if (kind === "US") return "해외";
+  return kind;
+}
+
 /** ISO 문자열 → YYYY-MM-DD. 파싱 실패 시 원본 반환. */
 export function shortDate(value: string): string {
   const d = new Date(value);

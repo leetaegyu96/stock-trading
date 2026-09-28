@@ -302,3 +302,137 @@
   flex-wrap: wrap;
   padding: 20px 0 8px;
 }
+
+/* ── 랭킹 ──────────────────────────────────────────────────────────────────
+ * 이 화면의 일은 "등수가 한눈에 읽히는 것" 하나다. 그래서 크기(시상대 높이)·
+ * 색조(금은동)·막대 길이 세 가지로만 서열을 말하고, 애니메이션은 쓰지 않는다.
+ * 새 색은 만들지 않았다 — 메달 색조도 theme.css 토큰(--medal-*)이다.
+ */
+
+/* 시상대: DOM 은 1·2·3위 순서(스크린리더용)이고, 배치만 CSS order 로 2·1·3 */
+.podium {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  /* minmax 의 최소값을 0 으로 두면 auto-fit 이 빈 트랙을 수십 개 만든다 — 실제 폭을 준다. */
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+.podium__slot { display: flex; flex-direction: column; justify-content: flex-end; }
+.podium__card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--color-border-strong);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  box-shadow: var(--shadow-card);
+  padding: 14px 14px 12px;
+}
+/* 받침대 높이가 곧 등수 — 1위가 가장 높이 선다. 색은 장식이고, 등수는 글자가 말한다. */
+.podium__pillar {
+  height: 22px;
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+  background: var(--color-border-strong);
+}
+.podium__slot--gold .podium__pillar { height: 56px; background: var(--medal-gold); }
+.podium__slot--silver .podium__pillar { height: 36px; background: var(--medal-silver); }
+.podium__slot--bronze .podium__pillar { height: 22px; background: var(--medal-bronze); }
+.podium__slot--gold .podium__card { border-top-color: var(--medal-gold); }
+.podium__slot--silver .podium__card { border-top-color: var(--medal-silver); }
+.podium__slot--bronze .podium__card { border-top-color: var(--medal-bronze); }
+/* 등수 글자는 본문 잉크로 — 메달 색을 글자에 쓰면 밝은 테마에서 대비가 모자란다. */
+.podium__slot--gold .podium__medal { background: var(--medal-gold-tint); }
+.podium__slot--silver .podium__medal { background: var(--medal-silver-tint); }
+.podium__slot--bronze .podium__medal { background: var(--medal-bronze-tint); }
+
+/* 내 계정이면 카드 전체를 테두리로 감싼다(뱃지 '나' 와 함께 — 색만으로 말하지 않는다) */
+.podium__slot--me .podium__card { box-shadow: inset 0 0 0 2px var(--color-text); }
+
+.podium__top { display: flex; align-items: center; gap: 6px; }
+.podium__medal {
+  font-size: 13px; font-weight: 800; letter-spacing: -0.01em;
+  padding: 2px 9px; border-radius: 999px; color: var(--color-text);
+}
+.podium__name {
+  font-size: 16px; font-weight: 800; letter-spacing: -0.02em; margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.podium__tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 5px 0 10px; }
+.podium__pct { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+.podium__sub { font-size: 12px; color: var(--color-text-sub); margin-top: 2px; }
+.podium__slot--gold .podium__name { font-size: 18px; }
+.podium__slot--gold .podium__pct { font-size: 26px; }
+.podium__facts {
+  display: flex; gap: 14px; margin: 11px 0 0; padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+.podium__facts dt { font-size: 11px; color: var(--color-text-muted); }
+.podium__facts dd { margin: 0; font-size: 12.5px; font-weight: 700; }
+
+/* 국내/해외 뱃지 — 뜻은 글자가 지고, 색은 거들기만 한다 */
+.kindtag {
+  font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 5px;
+  background: var(--tint-neutral); color: var(--color-text-sub); white-space: nowrap;
+}
+.chip--me { background: var(--color-text); color: var(--color-surface); }
+
+/* 일간 수익률 발산형 막대: 0 이 정확히 가운데 */
+.dbar {
+  position: relative; height: 18px; min-width: 104px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+}
+.dbar__zero {
+  position: absolute; left: 50%; top: 2px; bottom: 2px; width: 1px; z-index: 1;
+  background: var(--chart-hairline);
+}
+.dbar__fill { position: absolute; top: 3px; bottom: 3px; }
+.dbar__fill--up { background: var(--color-up); border-radius: 0 4px 4px 0; }
+.dbar__fill--down { background: var(--color-down); border-radius: 4px 0 0 4px; }
+.dbar__fill--neutral { background: var(--color-neutral); }
+
+.rank-legend {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  font-size: 11.5px; color: var(--color-text-muted); margin-bottom: 10px;
+}
+.rank-legend__swatch {
+  display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+  margin-right: 5px; vertical-align: -1px;
+}
+.rank-legend__swatch--up { background: var(--color-up); }
+.rank-legend__swatch--down { background: var(--color-down); }
+.rank-legend__swatch--zero { background: var(--chart-hairline); width: 2px; height: 12px; }
+
+/* 순위표 — 행을 누를 수 없으므로 종목 표의 포인터 커서를 되돌린다 */
+.rank-table tbody tr:hover, .rank-table tfoot tr:hover { cursor: default; }
+.rank-table__caption {
+  caption-side: top; text-align: left;
+  font-size: 11.5px; color: var(--color-text-muted); padding: 0 0 9px; line-height: 1.5;
+}
+.rank-row__rank { font-size: 15px; font-weight: 800; text-align: right; white-space: nowrap; }
+.rank-row__rank-unit { font-size: 11px; font-weight: 600; color: var(--color-text-muted); margin-left: 1px; }
+.rank-row__who { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rank-row__name { font-weight: 700; font-size: 13.5px; }
+.rank-row__tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.rank-row__bar { width: 26%; min-width: 120px; }
+.rank-row__pct { font-weight: 700; font-size: 13.5px; }
+
+/* 내 행은 확실히 눈에 띄게: 배경 + 왼쪽 굵은 선 + '나' 뱃지 */
+.rank-row--me > th, .rank-row--me > td { background: var(--tint-neutral); }
+.rank-row--me > th:first-child { box-shadow: inset 3px 0 0 var(--color-text); }
+
+.rank-mine__label {
+  text-align: left; font-size: 11.5px; font-weight: 700;
+  color: var(--color-text-sub); background: var(--color-surface-2);
+  border-top: 2px solid var(--color-border-strong);
+}
+
+@media (max-width: 640px) {
+  /* 좁은 화면에서는 시상대를 세로로 — 이때는 DOM 순서(1·2·3위)가 그대로 맞다 */
+  .podium { grid-template-columns: 1fr; align-items: stretch; }
+  .podium__slot { order: 0 !important; }
+  .podium__pillar { display: none; }
+  .podium__card { border-radius: var(--radius-card); }
+}
