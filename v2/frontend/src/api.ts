@@ -14,6 +14,8 @@ import type {
   OrderRequest,
   OrderResult,
   Position,
+  RankingKind,
+  RankingRow,
   SellRule,
   SellRuleRequest,
   SignupRequest,
@@ -128,6 +130,12 @@ export function getTrades(accountId: number, query: TradesQuery = {}): Promise<T
 
 export function getEvents(accountId: number): Promise<EventLog[]> {
   return request<EventLog[]>(`/api/accounts/${accountId}/events`);
+}
+
+// ── 랭킹 ────────────────────────────────────────────────────────────────
+/** 전 참가자 일간 수익률 랭킹. 응답은 이미 정렬·rank 부여가 끝난 상태로 온다. */
+export function getRanking(kind: RankingKind = "all"): Promise<RankingRow[]> {
+  return request<RankingRow[]>(`/api/ranking?kind=${kind}`);
 }
 
 // ── 시세 ────────────────────────────────────────────────────────────────

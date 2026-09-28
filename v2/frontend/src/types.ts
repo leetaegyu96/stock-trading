@@ -239,3 +239,37 @@ export interface StocksPage {
   offset: number;
   limit: number;
 }
+
+// ── 랭킹 ─────────────────────────────────────────────────────────────────
+/** 랭킹 탭. "all" 은 국내·해외를 한 표에 섞어 본다. */
+export type RankingKind = "all" | AccountKind;
+
+/**
+ * 랭킹 1행(`GET /api/ranking`). 서버가 **일간 수익률 내림차순으로 정렬**해서 준다.
+ *
+ * 금액(daily_pnl·total_asset)은 계좌 통화 그대로다 — 국내는 원, 해외는 달러라
+ * 서로 더하거나 비교할 수 없다. 그래서 순위 기준은 금액이 아니라 비율(%)이다.
+ * 개인정보는 닉네임만 온다(이메일은 서버가 내려주지 않는다).
+ */
+export interface RankingRow {
+  /** 1부터. 동률은 누적 수익률로 가른다(서버 규칙). */
+  rank: number;
+  account_id: number;
+  /** 표시 이름 */
+  nickname: string;
+  kind: AccountKind;
+  currency: Currency;
+  /** 순위 기준 — 어제 마감 대비 오늘 수익률 % */
+  daily_return_pct: number;
+  /** 오늘 손익 (해당 통화, 사람 단위) */
+  daily_pnl: number;
+  /** 처음 투입액 대비 누적 수익률 % */
+  total_return_pct: number;
+  /** 현재 총자산 (해당 통화) */
+  total_asset: number;
+  position_count: number;
+  /** 내 계정이면 true */
+  is_me: boolean;
+  /** 시세가 최신이 아니라 일부를 평단으로 계산했으면 true */
+  stale: boolean;
+}

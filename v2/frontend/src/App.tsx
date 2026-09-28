@@ -13,6 +13,7 @@ import { Explore } from "./pages/Explore";
 import { Holdings } from "./pages/Holdings";
 import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
+import { Ranking } from "./pages/Ranking";
 import { StockDetail } from "./pages/StockDetail";
 import { Trades } from "./pages/Trades";
 import { SessionProvider, useSession } from "./session";
@@ -58,6 +59,7 @@ function Shell() {
       />
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/ranking" element={<Ranking />} />
         <Route path="/accounts/:accountId/stocks" element={<Explore />} />
         <Route path="/accounts/:accountId/stocks/:symbol" element={<StockDetail />} />
         <Route path="/accounts/:accountId/holdings" element={<Holdings />} />

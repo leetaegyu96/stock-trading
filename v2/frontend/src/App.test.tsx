@@ -49,6 +49,13 @@ describe("앱 스모크", () => {
     expect(screen.getByRole("button", { name: "종목 찾으러 가기" })).toBeDefined();
   });
 
+  it("내비에서 랭킹으로 갈 수 있다", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("link", { name: "랭킹" }));
+    expect(await screen.findByRole("heading", { name: "랭킹" })).toBeDefined();
+    expect(await screen.findByText("불꽃개미")).toBeDefined();
+  });
+
   it("거래 내역에서 자동매도는 발동 근거를 함께 보여준다", async () => {
     window.history.pushState({}, "", "/accounts/1/trades");
     const { container } = render(<App />);

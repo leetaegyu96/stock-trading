@@ -11,13 +11,22 @@ import type {
   AccountDetail,
   AccountSummary,
   Position,
+  RankingRow,
   StocksPage,
   SellRule,
   SellRuleRequest,
   Trade,
   TradesPage,
 } from "../types";
-import { MOCK_EQUITY, MOCK_STOCKS, initialMockState, toListItem, type MockState } from "./data";
+import {
+  MOCK_DAILY_BASE,
+  MOCK_EQUITY,
+  MOCK_RIVALS,
+  MOCK_STOCKS,
+  initialMockState,
+  toListItem,
+  type MockState,
+} from "./data";
 
 let state: MockState = initialMockState();
 
@@ -219,6 +228,44 @@ function handleSellRule(positionId: number, payload: SellRuleRequest): Response 
   return json(rule);
 }
 
+/**
+ * 랭킹. 백엔드(`ranking.build`)와 **같은 규칙**으로 계산한다 —
+ * 일간 수익률 내림차순, 동률이면 누적 수익률, 그다음 1부터 등수 부여.
+ *
+ * 내 캐릭터 행은 목 상태에서 그때그때 계산하므로, 매수/매도로 총자산이 바뀌면
+ * 랭킹도 함께 움직인다(상태 있는 목의 일관성).
+ */
+function handleRanking(kindParam: string): Response {
+  const kind = kindParam === "KR" || kindParam === "US" ? kindParam : null;
+  state.accounts.forEach((a) => recompute(a.id));
+
+  const mine = state.accounts.map((acc) => {
+    const base = MOCK_DAILY_BASE[acc.id] ?? acc.seed;
+    return {
+      account_id: acc.id,
+      nickname: state.me?.nickname ?? "나",
+      kind: acc.kind,
+      currency: acc.currency,
+      daily_return_pct: base > 0 ? Math.round((acc.total_asset / base - 1) * 100000) / 1000 : 0,
+      daily_pnl: roundMinor(acc.total_asset - base, acc.currency),
+      total_return_pct: acc.return_pct,
+      total_asset: acc.total_asset,
+      position_count: acc.position_count,
+      is_me: true,
+      stale: acc.stale,
+    };
+  });
+
+  const all = [...mine, ...MOCK_RIVALS.map((r) => ({ ...r, is_me: false }))];
+  const shown = kind ? all.filter((r) => r.kind === kind) : all;
+  shown.sort(
+    (a, b) =>
+      b.daily_return_pct - a.daily_return_pct || b.total_return_pct - a.total_return_pct
+  );
+  const rows: RankingRow[] = shown.map((r, i) => ({ ...r, rank: i + 1 }));
+  return json(rows);
+}
+
 interface OrderBody {
   symbol: string;
   quantity: number;
@@ -278,6 +325,11 @@ const ROUTES: Array<{
     },
   },
   { method: "GET", pattern: /^\/api\/accounts\/(\d+)\/events$/, handle: () => json([]) },
+  {
+    method: "GET",
+    pattern: /^\/api\/ranking$/,
+    handle: (_m, _payload, query) => handleRanking(query.get("kind") ?? "all"),
+  },
   {
     method: "GET",
     pattern: /^\/api\/market\/(KR|US)\/stocks$/,
