@@ -4,6 +4,23 @@
 
 상세 패치노트는 `docs/patch-notes/vX.Y.Z.md` 참조.
 
+## v1.20.0 — 2026-09-28
+
+v2 착수에 따른 경로 분리. v1 기능 변경 없음.
+
+### Changed
+- 공개 URL `/stock-trading/` → **`/stock-v1/`**. 기존 경로는 301 영구 이동으로 보존
+- 프론트는 `VITE_BASE_PATH=/stock-v1/` 로 재빌드 필요
+
+### Fixed
+- nginx `absolute_redirect off` — Caddy 뒤 평문 80 이라 절대 리다이렉트가 `http://` 로 나가 https 로 한 번 더 튕기던 문제
+
+### Added
+- `v2/` 착수 — 회원제 수동매수 + 매도벽 모의투자(:8030, `/stock-v2/`). 이번엔 스펙·계획·기반 모듈만
+  - `v2/docs/SPEC.md`(계약서) · `v2/docs/PLAN.md`
+  - `v2/backend/{settings,money,models,db}.py` — 정수 최소단위 금액, ORM 9테이블
+  - DB `simcore_v2`/`simcore_v2_test`, pyproject 에 argon2-cffi·PyJWT
+
 ## v1.19.0 — 2026-09-03
 
 "회전 억제" 가설 검증 — 가설은 틀렸고, 대신 라이브↔백테스트의 근본 불일치를 찾았다.

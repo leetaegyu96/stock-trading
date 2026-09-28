@@ -17,6 +17,9 @@ dependencies = [
     "pydantic-settings>=2.2",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
+    # v2 (회원제 모의투자) — 인증
+    "argon2-cffi>=23.1",
+    "PyJWT>=2.8",
 ]
 
 [project.optional-dependencies]
@@ -27,7 +30,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["simcore*", "dashboard*"]
+include = ["simcore*", "dashboard*", "v2*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
