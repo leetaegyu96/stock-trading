@@ -5,6 +5,7 @@ nginx 가 `/stock-v2/` 프리픽스를 벗겨 넘기므로 앱은 루트 기준�
 from __future__ import annotations
 
 import logging
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -33,6 +34,7 @@ async def lifespan(app: FastAPI):
     sf = make_session_factory(engine)
     # KIS 클라이언트·캐시를 프로세스 1회 초기화. 라우터는 모듈 레벨 함수를 그대로 쓴다.
     market_mod.init_from_settings(sf, settings)
+    _warm_market_cache()
     scheduler = sched_mod.build_scheduler(sf, market_mod, settings)
     if scheduler.get_jobs():
         scheduler.start()
@@ -45,6 +47,23 @@ async def lifespan(app: FastAPI):
     finally:
         if scheduler.running:
             scheduler.shutdown(wait=False)
+
+
+def _warm_market_cache() -> None:
+    """종목 목록을 백그라운드로 미리 채운다.
+
+    콜드 캐시에서는 종목 30개 × (현재가+일봉)을 받아야 해서 첫 요청이 몇 초 걸린다.
+    그 몇 초를 **첫 방문자가 대신 기다리는 것**이 이 앱에서 제일 흔한 나쁜 첫인상이라,
+    기동 직후 미리 받아 둔다. 실패해도 그냥 넘어간다 — 요청 시점에 다시 시도한다.
+    """
+    def run() -> None:
+        for kind in ("KR", "US"):
+            try:
+                market_mod.list_stocks(kind)
+            except Exception as exc:
+                log.warning("[v2] %s 종목 예열 실패(요청 시 재시도): %s", kind, exc)
+
+    threading.Thread(target=run, name="market-warmup", daemon=True).start()
 
 
 app = FastAPI(title="stock-trading v2", lifespan=lifespan)

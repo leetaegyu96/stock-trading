@@ -10,6 +10,7 @@ v1 의 `simcore.live.kis_client.KisClient` 를 그대로 재사용하되, **토�
 from __future__ import annotations
 
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import httpx
 import time as _time
@@ -91,6 +92,9 @@ _BARS_TIMEOUT = 20.0
 # 실패는 감시 한 바퀴를 건너뛸 만큼 길게(30초) 둔다.
 _QUOTE_TTL = 5.0
 _QUOTE_FAIL_TTL = 30.0
+# 목록 조립 동시 실행 수. KIS 레이트리미터(기본 초당 10회)가 상한을 지키므로
+# 여기서는 커넥션을 과하게 열지 않을 만큼만 잡는다.
+_FETCH_WORKERS = 8
 
 
 def make_kis_client(session_factory, settings: V2Settings) -> KisClient:
@@ -172,6 +176,8 @@ class MarketService:
         # 현재가 캐시: (만료시각, 가격, stale). 성공은 짧게, **실패는 길게** 캐싱한다 —
         # KIS 가 응답하지 않을 때 종목마다 타임아웃을 거듭 물면 1분 감시가 1분을 넘긴다.
         self._quotes: dict[tuple[str, str], tuple[float, float | None, bool]] = {}
+        # 거래소가 알려준 종목명. 정적 이름표에 없는 신규·변경 종목을 메운다.
+        self._names: dict[str, str] = {}
 
     # ---- 캐시 ----
     def clear_cache(self) -> None:
@@ -180,6 +186,7 @@ class MarketService:
             self._lists.clear()
             self._symbols.clear()
             self._quotes.clear()
+            self._names.clear()
 
     # ---- 원천 조회 ----
     def _daily(self, kind: str, symbol: str) -> pd.DataFrame:
@@ -206,7 +213,10 @@ class MarketService:
             if hit and hit[0] == today:
                 return list(hit[1])
         if kind == "KR":
-            syms = list(self.kis_bars.market_cap_ranking(_TOP_N))[:_TOP_N]
+            # 시총 랭킹 응답에 한글 종목명(hts_kor_isnm)이 이미 들어 있다. v1 의 정적
+            # 이름표(simcore.names)는 코스피200 일부만 담고 있어서 랭킹에 새로 들어온
+            # 종목이 "034020" 같은 숫자로 보였다 — 같은 호출에서 이름까지 받아 쓴다.
+            syms = self._kr_ranking(_TOP_N)
         elif kind == "US":
             syms = list(_universe.sp500(self._cache_dir))[:_TOP_N]
         else:
@@ -214,6 +224,38 @@ class MarketService:
         with self._lock:
             self._symbols[kind] = (today, syms)
         return list(syms)
+
+    def _kr_ranking(self, top_n: int) -> list[str]:
+        """시총 상위 종목코드. 부수적으로 한글 종목명을 이름 캐시에 채운다."""
+        from simcore.live.kis_client import _TR
+
+        try:
+            j = self.kis_bars._get(
+                "/uapi/domestic-stock/v1/ranking/market-cap", _TR[("rank_mcap", "KR")],
+                {"fid_cond_mrkt_div_code": "J", "fid_cond_scr_div_code": "20174",
+                 "fid_div_cls_code": "0", "fid_input_iscd": "0000",
+                 "fid_trgt_cls_code": "0", "fid_trgt_exls_cls_code": "0",
+                 "fid_input_price_1": "", "fid_input_price_2": "", "fid_vol_cnt": ""})
+        except Exception:
+            # 이름은 못 얻어도 목록은 나와야 한다 — v1 헬퍼로 폴백한다.
+            return list(self.kis_bars.market_cap_ranking(top_n))[:top_n]
+
+        syms: list[str] = []
+        with self._lock:
+            for row in j.get("output", [])[:top_n]:
+                code = row.get("mksc_shrn_iscd")
+                if not code:
+                    continue
+                syms.append(code)
+                name = (row.get("hts_kor_isnm") or "").strip()
+                if name:
+                    self._names[code] = name
+        return syms
+
+    def _name_of(self, symbol: str, kind: str) -> str:
+        with self._lock:
+            hit = self._names.get(symbol)
+        return hit or _names.display_name(symbol, kind)
 
     def current_price(self, kind: str, symbol: str) -> tuple[float, bool]:
         """(현재가, stale). 실시간 실패 시 **마지막 일봉 종가**로 폴백하고 stale=True.
@@ -284,7 +326,7 @@ class MarketService:
 
         return StockInfo(
             symbol=symbol,
-            name=_names.display_name(symbol, kind),
+            name=self._name_of(symbol, kind),
             price=price,
             change_pct=_pct(price, prev_close) if prev_close else None,
             spark7=[round(c, 4) for c in spark7],
@@ -303,12 +345,20 @@ class MarketService:
             hit = self._lists.get(kind)
             if hit and now - hit[0] < _LIST_TTL_SEC:
                 return list(hit[1])
-        out: list[StockInfo] = []
-        for sym in self.symbols(kind):
-            try:
-                out.append(self._build_info(kind, sym))
-            except Exception:
-                continue          # 개별 종목 실패는 화면 전체를 막을 이유가 못 된다
+        symbols = self.symbols(kind)
+        # 종목당 현재가+일봉 2회를 순차로 돌면 30종목에 분 단위가 걸린다(첫 로드가 특히).
+        # KisClient 의 레이트리미터가 초당 호출을 제한하므로 병렬로 던져도 안전하다.
+        # 순서는 랭킹 순서를 유지해야 하므로 인덱스로 되돌린다.
+        results: dict[int, StockInfo] = {}
+        with ThreadPoolExecutor(max_workers=_FETCH_WORKERS) as pool:
+            futures = {pool.submit(self._build_info, kind, sym): i
+                       for i, sym in enumerate(symbols)}
+            for fut in as_completed(futures):
+                try:
+                    results[futures[fut]] = fut.result()
+                except Exception:
+                    continue      # 개별 종목 실패는 화면 전체를 막을 이유가 못 된다
+        out = [results[i] for i in sorted(results)]
         with self._lock:
             self._lists[kind] = (self._clock(), out)
         return list(out)
