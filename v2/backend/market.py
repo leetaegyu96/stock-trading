@@ -152,9 +152,16 @@ class StockInfo:
 class StockDetail:
     info: StockInfo
     bars: list[dict[str, Any]]        # 최근 30일 일봉
+    kind: str = "KR"                  # 'KR' | 'US'
+    currency: str = "KRW"
 
     def to_dict(self) -> dict[str, Any]:
-        return {**self.info.to_dict(), "bars": self.bars}
+        # 응답 계약을 **여기 한 곳**에서 닫는다. 라우터가 뒤에서 키를 덧붙이면
+        # 직렬화 단위 테스트가 통과해도 실제 응답과 달라진다.
+        # 키 이름은 프론트 types.ts 와 반드시 같아야 한다 — "bars" 로 내보내는 동안
+        # 상세 화면이 차트를 못 그려 빈 화면이었다.
+        return {**self.info.to_dict(), "bars30": self.bars,
+                "kind": self.kind, "currency": self.currency}
 
 
 # ---------------------------------------------------------------- 서비스
@@ -515,7 +522,8 @@ class MarketService:
                          "open": float(r["open"]), "high": float(r["high"]),
                          "low": float(r["low"]), "close": float(r["close"]),
                          "volume": float(r["volume"])})
-        return StockDetail(info=info, bars=rows)
+        return StockDetail(info=info, bars=rows, kind=kind,
+                           currency="KRW" if kind == "KR" else "USD")
 
 
 # ---------------------------------------------------------------- 모듈 기본 인스턴스

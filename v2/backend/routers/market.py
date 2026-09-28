@@ -40,7 +40,4 @@ def get_stock(kind: str, symbol: str, _user: User = Depends(current_user)) -> di
         detail = market_mod.get_stock(kind, symbol)
     except TradingError as exc:
         raise ApiError(exc.code, exc.message, status=503) from exc
-    out = detail.to_dict()
-    out.setdefault("kind", kind)
-    out.setdefault("currency", _CURRENCY[kind])
-    return out
+    return detail.to_dict()
