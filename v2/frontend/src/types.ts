@@ -231,3 +231,11 @@ export interface OrderResult {
   account: AccountSummary;
   position: Position | null;
 }
+
+/** 종목 목록 한 페이지. 상세는 요청 구간만 채워지므로 서버가 전체 개수를 따로 알려준다. */
+export interface StocksPage {
+  items: Stock[];
+  total: number;
+  offset: number;
+  limit: number;
+}
