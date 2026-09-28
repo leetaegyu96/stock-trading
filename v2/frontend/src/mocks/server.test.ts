@@ -26,7 +26,9 @@ describe("목 API 계약", () => {
   });
 
   it("종목 목록은 §4.2 필드를 모두 담는다", async () => {
-    const [stock] = await api.getStocks("KR");
+    const {
+      items: [stock],
+    } = await api.getStocks("KR");
     expect(Object.keys(stock).sort()).toEqual(
       [
         "change_pct",
@@ -101,5 +103,17 @@ describe("목 API 계약", () => {
     expect(auto).toBeDefined();
     expect(auto!.trigger_price).not.toBeNull();
     expect(auto!.sell_rule_id).not.toBeNull();
+  });
+
+  it("종목 목록은 페이지 단위로 내려온다", async () => {
+    const first = await api.getStocks("KR", 0, 2);
+    expect(first.items).toHaveLength(2);
+    expect(first.total).toBeGreaterThanOrEqual(2);
+    expect(first.offset).toBe(0);
+
+    const second = await api.getStocks("KR", 2, 2);
+    const firstSymbols = first.items.map((s) => s.symbol);
+    // '더 보기'가 같은 종목을 다시 주면 목록에 중복이 쌓인다.
+    expect(second.items.every((s) => !firstSymbols.includes(s.symbol))).toBe(true);
   });
 });

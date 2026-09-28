@@ -11,6 +11,7 @@ import type {
   AccountDetail,
   AccountSummary,
   Position,
+  StocksPage,
   SellRule,
   SellRuleRequest,
   Trade,
@@ -227,7 +228,7 @@ const ROUTES: Array<{
   method: string;
   pattern: RegExp;
   /** payload 는 요청 본문을 파싱한 값(본문이 없으면 빈 객체). */
-  handle: (m: RegExpMatchArray, payload: never) => Response;
+  handle: (m: RegExpMatchArray, payload: never, query: URLSearchParams) => Response;
 }> = [
   { method: "POST", pattern: /^\/api\/auth\/signup$/, handle: () => json(state.me) },
   { method: "POST", pattern: /^\/api\/auth\/login$/, handle: () => json(state.me) },
@@ -280,7 +281,19 @@ const ROUTES: Array<{
   {
     method: "GET",
     pattern: /^\/api\/market\/(KR|US)\/stocks$/,
-    handle: (m) => json(MOCK_STOCKS[m[1] as "KR" | "US"].map(toListItem)),
+    // 서버와 같은 페이지네이션 계약 — 프론트가 '더 보기'를 목만으로 검증할 수 있어야 한다.
+    handle: (m, _payload, query) => {
+      const all = MOCK_STOCKS[m[1] as "KR" | "US"].map(toListItem);
+      const offset = Number(query.get("offset") ?? 0) || 0;
+      const limit = Number(query.get("limit") ?? 30) || 30;
+      const page: StocksPage = {
+        items: all.slice(offset, offset + limit),
+        total: all.length,
+        offset,
+        limit,
+      };
+      return json(page);
+    },
   },
   {
     method: "GET",
@@ -329,7 +342,8 @@ export function installMockApi(): void {
       typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const base =
       typeof globalThis.location === "undefined" ? "http://localhost" : globalThis.location.href;
-    const path = new URL(href, base).pathname;
+    const parsed = new URL(href, base);
+    const path = parsed.pathname;
     const apiPath = BASE_PATH && path.startsWith(BASE_PATH) ? path.slice(BASE_PATH.length) : path;
     if (!apiPath.startsWith("/api/")) return real(input as RequestInfo, init);
 
@@ -346,7 +360,7 @@ export function installMockApi(): void {
     for (const route of ROUTES) {
       if (route.method !== method) continue;
       const m = apiPath.match(route.pattern);
-      if (m) return route.handle(m, payload as never);
+      if (m) return route.handle(m, payload as never, parsed.searchParams);
     }
     return fail(404, "NOT_FOUND", `목 API 에 없는 경로입니다: ${method} ${apiPath}`);
   };

@@ -15,16 +15,25 @@ export function Explore() {
   const account = accounts.find((a) => a.id === Number(accountId)) ?? null;
 
   const [stocks, setStocks] = useState<Stock[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<StockListView>("card");
   const [q, setQ] = useState("");
 
+  // 첫 페이지. 캐릭터가 바뀌면 목록을 처음부터 다시 받는다.
   useEffect(() => {
     if (!account) return;
     let cancelled = false;
+    setStocks(null);
+    setTotal(0);
     api
-      .getStocks(account.kind)
-      .then((data) => !cancelled && setStocks(data))
+      .getStocks(account.kind, 0)
+      .then((page) => {
+        if (cancelled) return;
+        setStocks(page.items);
+        setTotal(page.total);
+      })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : "종목을 불러오지 못했습니다.");
       });
@@ -32,6 +41,21 @@ export function Explore() {
       cancelled = true;
     };
   }, [account?.kind, account]);
+
+  /** '더 보기' — 다음 구간만 추가로 받는다(전체를 한 번에 받으면 몇 분이 걸린다). */
+  async function loadMore() {
+    if (!account || !stocks || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await api.getStocks(account.kind, stocks.length);
+      setStocks((prev) => [...(prev ?? []), ...page.items]);
+      setTotal(page.total);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "종목을 더 불러오지 못했습니다.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     if (!stocks) return [];
@@ -102,6 +126,29 @@ export function Explore() {
           view={view}
           onSelect={(symbol) => navigate(`/accounts/${account.id}/stocks/${symbol}`)}
         />
+      )}
+
+      {stocks !== null && stocks.length > 0 && (
+        <div className="loadmore">
+          <span className="muted small">
+            {q.trim()
+              ? `검색 결과 ${filtered.length}개`
+              : `${stocks.length}개 보는 중 · 전체 ${total}개`}
+          </span>
+          {!q.trim() && stocks.length < total && (
+            <button
+              type="button"
+              className="btn btn--outline"
+              onClick={loadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore ? "불러오는 중…" : `${Math.min(30, total - stocks.length)}개 더 보기`}
+            </button>
+          )}
+          {!q.trim() && stocks.length >= total && total > 0 && (
+            <span className="muted small">모두 불러왔습니다</span>
+          )}
+        </div>
       )}
     </div>
   );
