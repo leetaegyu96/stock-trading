@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, sessionmaker
 
 from v2.backend import market as market_mod
+from v2.backend import ranking as ranking_mod
 from v2.backend import serializers as ser
 from v2.backend.deps import current_user, get_sf, require_account
 from v2.backend.models import Account, EquitySnapshot, EventLog, Position, Trade, User
@@ -43,6 +44,21 @@ def list_accounts(user: User = Depends(current_user),
             prices, stale = _prices_for(s, acct)
             out.append(ser.account_summary(s, acct, prices, stale))
         return out
+
+
+@router.get("/ranking")
+def get_ranking(user: User = Depends(current_user),
+                sf: sessionmaker[Session] = Depends(get_sf),
+                kind: str = Query("all", pattern="^(all|KR|US)$")) -> list[dict]:
+    """전 계정 일간 수익률 랭킹.
+
+    통화가 달라 금액은 비교할 수 없지만 수익률은 비율이라 비교된다 — 그래서 순위 지표는
+    %다. 개인 식별 정보는 닉네임만 나간다(이메일은 절대 포함하지 않는다).
+    """
+    with sf() as s:
+        return ranking_mod.build(s, market_mod,
+                                 kind=None if kind == "all" else kind,
+                                 me_user_id=user.id, use_cache=True)
 
 
 @router.get("/accounts/{account_id}")

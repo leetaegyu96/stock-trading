@@ -61,7 +61,8 @@ def test_stock_detail_contract():
 
 
 def _position(**kw) -> Position:
-    p = Position(id=1, account_id=1, symbol="005930", quantity=10,
+    symbol = kw.pop("symbol", "005930")
+    p = Position(id=1, account_id=1, symbol=symbol, quantity=10,
                  avg_price_minor=70_000, opened_at=datetime(2026, 1, 2))
     for k, v in kw.items():
         setattr(p, k, v)
@@ -107,3 +108,31 @@ def test_account_summary_contract(db):
     db.add(acct)
     db.flush()
     _assert_contract("AccountSummary", ser.account_summary(db, acct))
+
+
+# ── 화면 간 종목명 일관성 ────────────────────────────────────────────────
+def test_종목명은_화면마다_같아야_한다(monkeypatch):
+    """목록에서 '한화에어로스페이스'로 본 종목이 보유 화면에서 '012450'으로 보이면
+    사용자는 자기가 무엇을 샀는지 확신할 수 없다.
+
+    실제로 정적 이름표(simcore.names)에 없는 종목에서 그런 일이 있었다.
+    """
+    from v2.backend import market as market_mod
+
+    monkeypatch.setattr(market_mod, "name_for",
+                        lambda symbol: "한화에어로스페이스" if symbol == "012450" else None)
+    pos = _position(symbol="012450")
+    assert ser.position_out(pos, "KRW", 100_000, False, None)["name"] == "한화에어로스페이스"
+
+    t = Trade(id=1, account_id=1, symbol="012450", side="BUY", quantity=1,
+              price_minor=100_000, fee_minor=0, tax_minor=0, gross_minor=100_000,
+              net_minor=-100_000, reason="MANUAL", executed_at=datetime(2026, 1, 2))
+    assert ser.trade_out(t, "KRW")["name"] == "한화에어로스페이스"
+
+
+def test_거래소_이름이_없으면_정적표_그다음_코드로_폴백(monkeypatch):
+    from v2.backend import market as market_mod
+
+    monkeypatch.setattr(market_mod, "name_for", lambda symbol: None)
+    assert ser.name_of("005930") == "삼성전자"        # 정적 표
+    assert ser.name_of("999999") == "999999"          # 최후 폴백

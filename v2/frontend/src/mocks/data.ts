@@ -6,6 +6,7 @@ import type {
   EquityPoint,
   Me,
   Position,
+  RankingRow,
   Stock,
   StockDetail,
   Trade,
@@ -300,3 +301,64 @@ export function initialMockState(): MockState {
     nextRuleId: 10,
   };
 }
+
+// ── 랭킹 목 데이터 ───────────────────────────────────────────────────────
+/** 서버가 붙여 주는 값(rank·is_me)은 목 서버가 계산하므로 여기서는 뺀다. */
+export type RankingSeed = Omit<RankingRow, "rank" | "is_me">;
+
+/**
+ * 나 말고 다른 참가자들. 일간 수익률을 넓게 흩어 두어 발산형 막대와 시상대가
+ * 실제로 어떻게 보이는지 확인할 수 있게 했다.
+ *
+ * 의도한 배치: '전체' 탭에서 내 두 캐릭터는 6·7위 → 표 아래 '내 순위'가 뜨고,
+ * '해외' 탭에서는 내 캐릭터가 3위 → 시상대 위에서 강조되는 경우까지 덮는다.
+ */
+export const MOCK_RIVALS: RankingSeed[] = [
+  {
+    account_id: 101, nickname: "불꽃개미", kind: "KR", currency: "KRW",
+    daily_return_pct: 9.24, daily_pnl: 8_120_000,
+    total_return_pct: 12.4, total_asset: 112_400_000, position_count: 5, stale: false,
+  },
+  {
+    account_id: 201, nickname: "달러사랑", kind: "US", currency: "USD",
+    daily_return_pct: 7.43, daily_pnl: 4_120.55,
+    total_return_pct: 9.8, total_asset: 77_200.4, position_count: 4, stale: false,
+  },
+  {
+    account_id: 102, nickname: "느긋한곰", kind: "KR", currency: "KRW",
+    daily_return_pct: 5.61, daily_pnl: 4_980_000,
+    total_return_pct: 2.1, total_asset: 102_100_000, position_count: 3, stale: false,
+  },
+  {
+    account_id: 202, nickname: "밤에깨는사람", kind: "US", currency: "USD",
+    daily_return_pct: 3.32, daily_pnl: 2_180.1,
+    total_return_pct: 3.1, total_asset: 72_490.2, position_count: 2, stale: false,
+  },
+  {
+    account_id: 103, nickname: "점심시간매수", kind: "KR", currency: "KRW",
+    daily_return_pct: 2.87, daily_pnl: 2_410_000,
+    total_return_pct: -1.6, total_asset: 98_400_000, position_count: 2, stale: false,
+  },
+  {
+    account_id: 203, nickname: "커피값벌기", kind: "US", currency: "USD",
+    daily_return_pct: -1.85, daily_pnl: -1_290.75,
+    total_return_pct: -2.4, total_asset: 68_620.9, position_count: 3, stale: false,
+  },
+  {
+    account_id: 104, nickname: "존버중", kind: "KR", currency: "KRW",
+    daily_return_pct: -4.12, daily_pnl: -3_760_000,
+    total_return_pct: -8.9, total_asset: 91_100_000, position_count: 6, stale: true,
+  },
+];
+
+/**
+ * 내 캐릭터의 **어제 마감 자산**(일간 수익률의 분모). 백엔드는 마감 스냅샷에서
+ * 가져오지만, 목에서는 초기 총자산에서 역산해 고정한다 — 그래야 처음 화면이
+ * 국내 +0.62% / 해외 −0.85% 로 항상 같게 나와 눈으로 비교할 수 있다.
+ * (매수·매도로 총자산이 바뀌면 일간 수익률도 따라 움직인다.)
+ */
+const INITIAL_FOR_BASE = initialMockState();
+export const MOCK_DAILY_BASE: Record<number, number> = {
+  1: Math.round(INITIAL_FOR_BASE.accounts[0].total_asset / 1.0062),
+  2: Math.round((INITIAL_FOR_BASE.accounts[1].total_asset / 0.9915) * 100) / 100,
+};

@@ -565,6 +565,15 @@ def page_size() -> int:
     return _PAGE_SIZE
 
 
+def name_for(symbol: str) -> str | None:
+    """거래소가 알려준 종목명(있으면). 서비스가 아직 없으면 None — 호출부가 폴백한다."""
+    svc = _default
+    if svc is None:
+        return None
+    with svc._lock:
+        return svc._names.get(symbol)
+
+
 def get_stock(kind: str, symbol: str) -> StockDetail:
     return service().get_stock(kind, symbol)
 

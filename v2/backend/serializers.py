@@ -28,7 +28,19 @@ def money(minor: int | None, currency: str) -> float | int | None:
 
 
 def name_of(symbol: str) -> str:
-    return SYMBOL_NAMES.get(symbol, symbol)
+    """표시용 종목명. **거래소가 알려준 이름 → 정적 표 → 코드** 순.
+
+    정적 표(simcore.names)만 보면 목록에는 '한화에어로스페이스'로 뜬 종목이 보유·거래내역
+    에서는 '012450'으로 보인다. 같은 종목이 화면마다 다른 이름으로 나오면 사용자는 자기가
+    무엇을 샀는지 확신할 수 없다 — 이름 조회는 한 곳으로 모은다.
+    """
+    from v2.backend import market as market_mod       # 순환 import 회피(런타임 지연 로딩)
+
+    try:
+        live = market_mod.name_for(symbol)
+    except Exception:
+        live = None
+    return live or SYMBOL_NAMES.get(symbol, symbol)
 
 
 def pct(value: Decimal | float | None) -> float | None:
