@@ -292,3 +292,13 @@
   .shell { padding: 14px 14px 64px; }
   .stocklist { grid-template-columns: 1fr; }
 }
+
+/* 종목 목록 하단 '더 보기' — 개수 안내와 버튼을 한 줄에 */
+.loadmore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 20px 0 8px;
+}

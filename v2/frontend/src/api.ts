@@ -17,8 +17,8 @@ import type {
   SellRule,
   SellRuleRequest,
   SignupRequest,
-  Stock,
   StockDetail,
+  StocksPage,
   TradesPage,
   TradesQuery,
 } from "./types";
@@ -131,8 +131,16 @@ export function getEvents(accountId: number): Promise<EventLog[]> {
 }
 
 // ── 시세 ────────────────────────────────────────────────────────────────
-export function getStocks(kind: AccountKind): Promise<Stock[]> {
-  return request<Stock[]>(`/api/market/${kind}/stocks`);
+export const STOCKS_PAGE_SIZE = 30;
+
+export function getStocks(
+  kind: AccountKind,
+  offset = 0,
+  limit = STOCKS_PAGE_SIZE
+): Promise<StocksPage> {
+  return request<StocksPage>(
+    `/api/market/${kind}/stocks?offset=${offset}&limit=${limit}`
+  );
 }
 
 export function getStock(kind: AccountKind, symbol: string): Promise<StockDetail> {

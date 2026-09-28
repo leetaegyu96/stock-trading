@@ -59,7 +59,7 @@ def _warm_market_cache() -> None:
     def run() -> None:
         for kind in ("KR", "US"):
             try:
-                market_mod.list_stocks(kind)
+                market_mod.list_stocks(kind)      # 첫 페이지만 — 뒤는 '더 보기' 시점에
             except Exception as exc:
                 log.warning("[v2] %s 종목 예열 실패(요청 시 재시도): %s", kind, exc)
 

@@ -36,7 +36,12 @@ from v2.backend.trading import TradingError
 # 52주보다 넉넉한 창을 받는다(휴장일 포함 달력일 기준).
 _BARS_WINDOW_DAYS = 400
 _LIST_TTL_SEC = 60.0
-_TOP_N = 30
+# 한 번에 화면에 내보내는 기본 개수. 유니버스 전체는 이보다 훨씬 크고, 필요한 만큼만
+# 상세(현재가·일봉)를 채운다 — 500종목을 한꺼번에 채우면 KIS 호출이 1,000회가 된다.
+_PAGE_SIZE = 30
+# 유니버스 조회 상한(폴백 경로). 실제 KIS 랭킹은 30행이 상한이라 그 이상은 오지 않지만,
+# 페이지 크기와 유니버스 크기를 같은 상수로 묶으면 '더 보기'가 조용히 막힌다.
+_UNIVERSE_MAX = 500
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -95,6 +100,9 @@ _QUOTE_FAIL_TTL = 30.0
 # 목록 조립 동시 실행 수. KIS 레이트리미터(기본 초당 10회)가 상한을 지키므로
 # 여기서는 커넥션을 과하게 열지 않을 만큼만 잡는다.
 _FETCH_WORKERS = 8
+# 위키백과는 pandas 기본 UA 를 403 으로 막는다. 브라우저 UA 면 정상 응답한다.
+_WIKI_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
 
 
 def make_kis_client(session_factory, settings: V2Settings) -> KisClient:
@@ -178,6 +186,8 @@ class MarketService:
         self._quotes: dict[tuple[str, str], tuple[float, float | None, bool]] = {}
         # 거래소가 알려준 종목명. 정적 이름표에 없는 신규·변경 종목을 메운다.
         self._names: dict[str, str] = {}
+        # KR 유니버스가 시총 랭킹 없이 만들어졌는지 — True 면 캐시하지 않는다.
+        self._kr_universe_partial = False
 
     # ---- 캐시 ----
     def clear_cache(self) -> None:
@@ -213,44 +223,162 @@ class MarketService:
             if hit and hit[0] == today:
                 return list(hit[1])
         if kind == "KR":
-            # 시총 랭킹 응답에 한글 종목명(hts_kor_isnm)이 이미 들어 있다. v1 의 정적
-            # 이름표(simcore.names)는 코스피200 일부만 담고 있어서 랭킹에 새로 들어온
-            # 종목이 "034020" 같은 숫자로 보였다 — 같은 호출에서 이름까지 받아 쓴다.
-            syms = self._kr_ranking(_TOP_N)
+            syms = self._kr_universe()
         elif kind == "US":
-            syms = list(_universe.sp500(self._cache_dir))[:_TOP_N]
+            syms = self._us_universe()
         else:
             raise TradingError("MARKET_MISMATCH", f"알 수 없는 시장입니다: {kind}")
-        with self._lock:
-            self._symbols[kind] = (today, syms)
+        # 시총 랭킹이 빠진 채 만들어진 KR 유니버스는 순서가 신뢰할 수 없다 — 캐시하지 않고
+        # 다음 요청에서 다시 시도한다.
+        if not (kind == "KR" and getattr(self, "_kr_universe_partial", False)):
+            with self._lock:
+                self._symbols[kind] = (today, syms)
         return list(syms)
 
-    def _kr_ranking(self, top_n: int) -> list[str]:
-        """시총 상위 종목코드. 부수적으로 한글 종목명을 이름 캐시에 채운다."""
+    def _rank_rows(self, path: str, tr: str, params: dict, attempts: int = 1) -> list[dict]:
+        """KIS 랭킹 1건 조회. 실패·빈 응답은 빈 목록으로 돌려준다.
+
+        KIS 랭킹은 가끔 rt_cd=0 인데 output 이 비어 오거나(초당 호출 초과 등) 예외를 낸다.
+        중요한 랭킹은 `attempts` 를 올려 재시도한다 — 한 번 실패한 결과가 하루치 유니버스로
+        굳으면 목록 순서가 종일 망가진다.
+        """
+        for i in range(max(1, attempts)):
+            try:
+                j = self.kis_bars._get(path, tr, params)
+                rows = list(j.get("output") or [])
+                if rows:
+                    return rows
+            except Exception:
+                pass
+            if i + 1 < attempts:
+                _time.sleep(0.4)
+        return []
+
+    @staticmethod
+    def _is_derivative(name: str) -> bool:
+        """ETF·레버리지·인버스 등 파생상품인가.
+
+        거래량·등락률 랭킹 상위는 레버리지/인버스 ETF 가 점령한다. v2 는 '주식 초보'용
+        모의투자라, 설명 없이 인버스2X 를 목록 앞에 놓는 건 도움이 아니라 함정이다.
+        종목명으로 거르는 건 정밀하지 않지만, 국내 ETF 는 운용사 브랜드가 이름 앞에
+        반드시 붙어서 실무적으로 충분히 잡힌다.
+        """
+        if not name:
+            return False
+        brands = ("KODEX", "TIGER", "KBSTAR", "ARIRANG", "HANARO", "SOL ", "ACE ",
+                  "PLUS ", "RISE ", "KOSEF", "TIMEFOLIO", "WOORI", "히어로즈", "마이다스")
+        keywords = ("레버리지", "인버스", "선물", "ETN", "커버드콜", "혼합형")
+        upper = name.upper()
+        return (any(upper.startswith(b) for b in brands)
+                or any(k in name for k in keywords))
+
+    def _kr_universe(self) -> list[str]:
+        """국내 유니버스 — **랭킹 3종의 합집합**.
+
+        KIS 시총 랭킹은 한 번에 30행이 상한이고 연속조회가 없다(tr_cont 빈 값). 그래서
+        "더 보기"를 시총만으로는 만들 수 없다. 성격이 다른 랭킹(거래량·등락률)을 합쳐
+        넓히되, 시총 순서를 앞에 두어 첫 화면은 익숙한 대형주부터 보이게 한다.
+        """
         from simcore.live.kis_client import _TR
 
-        try:
-            j = self.kis_bars._get(
-                "/uapi/domestic-stock/v1/ranking/market-cap", _TR[("rank_mcap", "KR")],
-                {"fid_cond_mrkt_div_code": "J", "fid_cond_scr_div_code": "20174",
-                 "fid_div_cls_code": "0", "fid_input_iscd": "0000",
-                 "fid_trgt_cls_code": "0", "fid_trgt_exls_cls_code": "0",
-                 "fid_input_price_1": "", "fid_input_price_2": "", "fid_vol_cnt": ""})
-        except Exception:
-            # 이름은 못 얻어도 목록은 나와야 한다 — v1 헬퍼로 폴백한다.
-            return list(self.kis_bars.market_cap_ranking(top_n))[:top_n]
-
+        base = {"fid_cond_mrkt_div_code": "J", "fid_input_iscd": "0000",
+                "fid_div_cls_code": "0"}
+        # 시총 랭킹이 목록의 '골격'이다 — 이게 빠지면 첫 화면이 잡주로 채워진다. 재시도한다.
+        mcap = self._rank_rows(
+            "/uapi/domestic-stock/v1/ranking/market-cap", _TR[("rank_mcap", "KR")],
+            dict(base, fid_cond_scr_div_code="20174", fid_trgt_cls_code="0",
+                 fid_trgt_exls_cls_code="0", fid_input_price_1="",
+                 fid_input_price_2="", fid_vol_cnt=""), attempts=3)
+        batches = [
+            mcap,
+            self._rank_rows(
+                "/uapi/domestic-stock/v1/quotations/volume-rank", "FHPST01710000",
+                dict(base, fid_cond_scr_div_code="20171", fid_blng_cls_code="0",
+                     fid_trgt_cls_code="111111111", fid_trgt_exls_cls_code="000000",
+                     fid_input_price_1="", fid_input_price_2="", fid_vol_cnt="",
+                     fid_input_date_1="")),
+            self._rank_rows(
+                "/uapi/domestic-stock/v1/ranking/fluctuation", "FHPST01700000",
+                dict(base, fid_cond_scr_div_code="20170", fid_rank_sort_cls_code="0",
+                     fid_input_cnt_1="0", fid_prc_cls_code="0", fid_rsfl_rate1="",
+                     fid_rsfl_rate2="", fid_trgt_cls_code="0", fid_trgt_exls_cls_code="0",
+                     fid_input_price_1="", fid_input_price_2="", fid_vol_cnt="")),
+        ]
         syms: list[str] = []
+        seen: set[str] = set()
         with self._lock:
-            for row in j.get("output", [])[:top_n]:
-                code = row.get("mksc_shrn_iscd")
-                if not code:
-                    continue
-                syms.append(code)
-                name = (row.get("hts_kor_isnm") or "").strip()
-                if name:
-                    self._names[code] = name
-        return syms
+            for rows in batches:
+                for row in rows:
+                    code = (row.get("mksc_shrn_iscd") or row.get("stck_shrn_iscd") or "").strip()
+                    if not code or code in seen:
+                        continue
+                    name = (row.get("hts_kor_isnm") or "").strip()
+                    if self._is_derivative(name):
+                        continue        # 초보용 목록에 인버스·레버리지를 올리지 않는다
+                    seen.add(code)
+                    syms.append(code)
+                    if name:
+                        self._names[code] = name
+        self._kr_universe_partial = not mcap
+        if mcap:
+            return syms
+        # 골격(시총)이 없다 — 첫 화면이 잡주로 채워지지 않도록 대형주를 앞에 세운다.
+        # ① v1 헬퍼로 한 번 더 시도 → ② 그래도 없으면 정적 대형주 목록.
+        # 이 결과는 `symbols()` 가 캐시하지 않는다(일시적 실패가 하루를 망치면 안 된다).
+        head: list[str] = []
+        try:
+            head = [c for c in self.kis_bars.market_cap_ranking(_UNIVERSE_MAX)
+                    if c and c not in seen]
+        except Exception:
+            head = []
+        if not head:
+            head = [c for c in _universe.FALLBACK_KOSPI200 if c not in seen]
+        return head + syms
+
+    def _us_universe(self) -> list[str]:
+        """미국 유니버스 — S&P 500 전체(약 500종목).
+
+        v1 의 `universe.sp500` 은 pandas 기본 UA 로 위키백과를 긁는데 지금은 403 이라
+        **내장 폴백 30종목**만 캐시돼 있었다. 브라우저 UA 를 주면 503종목 + 회사명까지
+        받을 수 있다. v1 캐시 파일(`universe_sp500.csv`)은 건드리지 않는다 — v1 리플레이의
+        유니버스가 조용히 바뀌면 과거 백테스트와 비교가 깨진다.
+        """
+        path = Path(self._cache_dir) / "universe_sp500_v2.csv"
+        if path.exists():
+            try:
+                df = pd.read_csv(path, dtype=str)
+                with self._lock:
+                    for sym, nm in zip(df["symbol"], df.get("name", [])):
+                        if isinstance(nm, str) and nm.strip():
+                            self._names[sym] = nm.strip()
+                return df["symbol"].tolist()
+            except Exception:
+                pass
+        try:
+            import io
+            import urllib.request
+
+            req = urllib.request.Request(
+                "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
+                headers={"User-Agent": _WIKI_UA})
+            html = urllib.request.urlopen(req, timeout=30).read().decode()
+            table = pd.read_html(io.StringIO(html))[0]
+            syms = [str(x).replace(".", "-") for x in table["Symbol"].tolist()]
+            names = [str(x) for x in table["Security"].tolist()]
+            # 위키백과 표는 **알파벳순**이라 그대로 쓰면 첫 화면이 "3M, A. O. Smith" 가 된다.
+            # 시총 상위 목록(FALLBACK_SP500)을 앞으로 당겨 익숙한 이름부터 보이게 한다.
+            order = {s: i for i, s in enumerate(_universe.FALLBACK_SP500)}
+            pairs = sorted(zip(syms, names),
+                           key=lambda sn: (order.get(sn[0], len(order)), sn[0]))
+            syms = [s for s, _ in pairs]
+            names = [n for _, n in pairs]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame({"symbol": syms, "name": names}).to_csv(path, index=False)
+            with self._lock:
+                self._names.update(dict(zip(syms, names)))
+            return syms
+        except Exception:
+            return list(_universe.sp500(self._cache_dir))
 
     def _name_of(self, symbol: str, kind: str) -> str:
         with self._lock:
@@ -338,14 +466,25 @@ class MarketService:
             stale=stale,
         )
 
-    def list_stocks(self, kind: str) -> list[StockInfo]:
-        """종목 리스트 — 60초 TTL 캐시. 한 종목이 실패해도 목록 전체를 버리지 않는다."""
+    def list_stocks(self, kind: str, offset: int = 0,
+                    limit: int = _PAGE_SIZE) -> tuple[list[StockInfo], int]:
+        """종목 리스트 한 페이지와 유니버스 전체 개수.
+
+        상세(현재가·일봉)는 **요청한 구간만** 채운다 — S&P500 전체를 한 번에 채우면
+        KIS 호출이 1,000회라 첫 화면이 몇 분 걸린다. 비용이 '보이는 만큼'에 비례하게 둔다.
+        페이지별 60초 TTL 캐시, 한 종목이 실패해도 목록 전체를 버리지 않는다.
+        """
+        universe = self.symbols(kind)
+        total = len(universe)
+        offset = max(0, int(offset))
+        limit = max(1, int(limit))
+        symbols = universe[offset:offset + limit]
+        cache_key = f"{kind}:{offset}:{limit}"
         now = self._clock()
         with self._lock:
-            hit = self._lists.get(kind)
+            hit = self._lists.get(cache_key)
             if hit and now - hit[0] < _LIST_TTL_SEC:
-                return list(hit[1])
-        symbols = self.symbols(kind)
+                return list(hit[1]), total
         # 종목당 현재가+일봉 2회를 순차로 돌면 30종목에 분 단위가 걸린다(첫 로드가 특히).
         # KisClient 의 레이트리미터가 초당 호출을 제한하므로 병렬로 던져도 안전하다.
         # 순서는 랭킹 순서를 유지해야 하므로 인덱스로 되돌린다.
@@ -360,8 +499,8 @@ class MarketService:
                     continue      # 개별 종목 실패는 화면 전체를 막을 이유가 못 된다
         out = [results[i] for i in sorted(results)]
         with self._lock:
-            self._lists[kind] = (self._clock(), out)
-        return list(out)
+            self._lists[cache_key] = (self._clock(), out)
+        return list(out), total
 
     def get_stock(self, kind: str, symbol: str) -> StockDetail:
         """단일 종목 + 최근 30일 일봉(SPEC §7 `/market/{kind}/stocks/{symbol}`)."""
@@ -409,8 +548,13 @@ def clear_cache() -> None:
         _default.clear_cache()
 
 
-def list_stocks(kind: str) -> list[StockInfo]:
-    return service().list_stocks(kind)
+def list_stocks(kind: str, offset: int = 0,
+                limit: int = _PAGE_SIZE) -> tuple[list[StockInfo], int]:
+    return service().list_stocks(kind, offset, limit)
+
+
+def page_size() -> int:
+    return _PAGE_SIZE
 
 
 def get_stock(kind: str, symbol: str) -> StockDetail:
