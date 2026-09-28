@@ -123,6 +123,9 @@ class Trade(Base):
     # 'MANUAL' | 'AUTO_STOP_LOSS' | 'AUTO_TAKE_PROFIT'
     reason: Mapped[str] = mapped_column(String(24), nullable=False)
     sell_rule_id: Mapped[int | None] = mapped_column(BigInteger)
+    # 자동매도가 '어느 선에서 발동했는지'. 체결가는 발동 시점 현재가라 이 값과 다르며,
+    # 그 괴리를 나란히 보여주는 것이 매도벽 기능의 학습 포인트다(SPEC §6.2). MANUAL 은 NULL.
+    trigger_price_minor: Mapped[int | None] = mapped_column(BigInteger)
     # 시세 조회 실패로 마지막 종가를 썼는지 — 사후 감사를 위해 체결에 남긴다.
     stale_price: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     executed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)

@@ -33,4 +33,6 @@ build-backend = "setuptools.build_meta"
 include = ["simcore*", "dashboard*", "v2*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# v1 엔진(tests)과 v2 앱(v2/tests)을 한 번에 수집한다 — 한쪽만 도는 설정이면
+# 공용 모듈(simcore.names, kis_client)을 건드렸을 때 회귀를 놓친다.
+testpaths = ["tests", "v2/tests"]

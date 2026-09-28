@@ -327,6 +327,7 @@ v1 의 `simcore.live.kis_client.KisClient` 재사용.
 **오류 규약**: `{"error": {"code": "INSUFFICIENT_CASH", "message": "사람이 읽는 한국어 설명"}}`
 - 코드: `UNAUTHORIZED` `FORBIDDEN` `NOT_FOUND` `INSUFFICIENT_CASH` `INSUFFICIENT_QUANTITY`
   `INVALID_QUANTITY` `INVALID_SELL_RULE` `PRICE_UNAVAILABLE` `MARKET_MISMATCH` `RATE_LIMITED`
+  `INVALID_INPUT`(400 — 약한 비밀번호·이메일 형식 등 입력 유효성) `EMAIL_TAKEN`(409 — 중복 가입)
 - message 는 **초보가 이해할 한국어**로. 예: "현금이 부족합니다. 8,320,000원이 필요한데
   잔고는 5,100,000원입니다."
 
