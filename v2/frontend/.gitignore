@@ -1,0 +1,3 @@
+# 빌드 산출물·의존성은 커밋하지 않는다(루트 .gitignore 의 v1 규칙과 같은 취지).
+node_modules/
+dist/
